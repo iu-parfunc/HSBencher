@@ -465,7 +465,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
    , e$ "# `date`"
    , e$ "# `uname -a`" 
    , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
-   , e$ "# `ghc -V`" 
+   , e$ "# `"++ghc++" -V`" 
    , e$ "# "                                                                
    , e$ "# Running each test for "++show trials++" trial(s)."
    , e$ "#  ... with compiler options: " ++ ghc_flags
