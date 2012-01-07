@@ -21,6 +21,7 @@ import HSH
 import System.Environment
 import System.Directory
 import System.FilePath 
+import System.Console.GetOpt
  
 import Text.Printf
 
@@ -37,13 +38,30 @@ import Text.Printf
 date :: IO (Integer,Int,Int) -- :: (year,month,day)
 date = getCurrentTime >>= return . toGregorian . utctDay
 
+data Flag = Copy deriving Eq
+
+cli_options :: [OptDescr Flag]
+cli_options = 
+     [ 
+--     Option ['V']     ["version"] (NoArg Version)   "show version number"
+       Option [] ["copy"] (NoArg Copy) "copy rather than moving the files"
+     ]
+
 main = do 
   args <- getArgs
+  let (options,_,_) = getOpt Permute cli_options args
   (host,root) <- case args of 
 	          [name, root] -> return (name,root)
 	          ls -> do putStrLn "Usage file_away <HOST> <results_dir_for_machine>"
 			   putStrLn "  This script will file away ./results_HOST.dat and ./bench_HOST.log"
+                           putStr$ usageInfo "Options:" cli_options
+			   putStrLn ""
                            error$ " Incorrect arguments,  " ++ show (length args) ++" args: "++ unwords args
+
+  let (op,opstr) = if Copy `elem` options 
+		   then (copyFile, "Copying")
+		   else (renameFile, "Moving")
+
   -- This is insufficient to get the directory name:
   -- prg <- getProgName
 
@@ -81,11 +99,11 @@ main = do
   unless e $ do printf "Creating directory: %s\n" absDir
 		createDirectory absDir
 
-  printf "Moving %s -> %s/%s \n" rf absDir rdname
-  renameFile rf (absDir </> rdname)
+  printf "%s %s -> %s/%s \n" opstr rf absDir rdname
+  op rf (absDir </> rdname)
 
-  printf "Moving %s -> %s/%s \n" bf absDir bdname
-  renameFile bf (absDir </> bdname)
+  printf "%s %s -> %s/%s \n" opstr bf absDir bdname
+  op bf (absDir </> bdname)
   
   return ()
 
