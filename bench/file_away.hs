@@ -48,13 +48,16 @@ cli_options =
      ]
 
 main = do 
-  args <- getArgs
-  let (options,_,_) = getOpt Permute cli_options args
+  argv <- getArgs
+  let (options,args,errs) = getOpt Permute cli_options argv
+  unless (null errs) $
+     ioError (userError (concat errs ++ usageInfo "Error:" cli_options))
+
   (host,root) <- case args of 
 	          [name, root] -> return (name,root)
 	          ls -> do putStrLn "Usage file_away <HOST> <results_dir_for_machine>"
 			   putStrLn "  This script will file away ./results_HOST.dat and ./bench_HOST.log"
-                           putStr$ usageInfo "Options:" cli_options
+                           putStr$ usageInfo "Additional Options:" cli_options
 			   putStrLn ""
                            error$ " Incorrect arguments,  " ++ show (length args) ++" args: "++ unwords args
 
