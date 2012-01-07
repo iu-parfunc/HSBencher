@@ -12,19 +12,40 @@ import Control.Monad
 import HSH
 import System.Directory
 import System.FilePath 
+import System.Environment
 import Text.Printf
 
 import ScriptHelpers
 
 main = do 
-  files <- run "ls */*/results_*.dat"
+
+  putStrLn "Usage ./plot_ALL [DIR]"
+  putStrLn "  Searches for result_*.dat files and plots them."
+  putStrLn "  * Default is to search ./*/*/results*.dat"
+  putStrLn "  * Will use GHC environment variable"
+  putStrLn "----------------------------------------"
+
+  argv <- getArgs
+  unless (null argv) $  putStrLn$ "Passing args on to plot_scaling script: "++ show argv
+
+  env      <- getEnvironment
+  let get v x = case lookup v env of 
+		  Nothing -> x
+		  Just  s -> s
+
+  files <- case argv of
+             []    -> run "ls */*/results_*.dat"
+	     [dir] -> run ("find "++dir++" -name \"results_*.dat\" ")
   printf "Found %d results files:\n"  (length files)
   mapM_ (putStrLn . indent) files
 
-
   -- unlessM (doesFileExist "plot_scaling.exe") $ do 
   printf "\nFirst, build a binary version of the plotting script.\n"
-  runIO$ "make plot_scaling.exe" -|- indent
+  let ghc = get "GHC" "ghc"
+      buildcmd = ghc++" --make plot_scaling.hs -o plot_scaling.exe"
+
+  putStrLn$ indent$ buildcmd
+  runIO$ buildcmd -|- indent
 
   printf "\nNext, plot each data file."
 

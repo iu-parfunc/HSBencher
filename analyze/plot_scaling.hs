@@ -262,9 +262,12 @@ isMatch rg str = case matchRegex rg str of { Nothing -> False; _ -> True }
 
 main = do 
  args <- getArgs 
- let file = case args of 
-	      [f] -> f 
-	      []     -> "results.dat"
+ file <- case args of 
+	      [f] -> return f 
+	      _   -> do putStrLn "Usage plot_scaling <results.dat>"
+ 		        putStrLn "  This script will plot scaling graphs and summarize results."
+--		       putStr$ usageInfo "Additional Options:" cli_options
+                        error$ " Incorrect arguments,  " ++ show (length args) ++" args: "++ unwords args
  dat <- run$ catFrom [file] -|- remComments 
 
  -- Here we remove
