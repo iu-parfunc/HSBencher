@@ -203,6 +203,8 @@ expandMode "Sparks"   = [Sparks]
 expandMode "Direct"   = [Direct]
 expandMode "ContFree" = [ContFree]
 
+expandMode s = error$ "Unknown Scheduler or mode: " ++s
+
 -- Omitting Direct until its bugs are fixed:
 ivarScheds = [Trace, ContFree, Direct] 
 
