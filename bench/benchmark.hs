@@ -2,7 +2,7 @@
 {-# LANGUAGE NamedFieldPuns, ScopedTypeVariables, RecordWildCards #-}
 
 -- NOTE: Under 7.2 I'm running into this HSH problem:
-
+-- 
 -- benchmark.hs: HSH/Command.hs:(289,14)-(295,45): Missing field in record construction System.Process.Internals.create_group
 
 {- 
