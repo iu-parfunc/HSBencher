@@ -316,27 +316,61 @@ mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "
 -- launchConfigs allconfs idleMachines gitroot
 
 -- | 
-launchConfigs :: [OneRunConfig] -> MVar Executor -> String -> IO [ThreadId]
-launchConfigs confs idles gitroot = loop confs []
- where 
-  loop [] tids = do
-     putStrLn$ "Done with all configurations."
-     return tids
+launchConfigs :: [OneRunConfig] -> MVar Executor -> String -> IO ()
+launchConfigs confs idles gitroot = do
 
-  loop (conf:rest) tids = do
-     putStrLn$ "\n ** Scheduling configuration: " ++ show conf
-     Executor host runcmd <- takeMVar idles
-     putStrLn$ "  * Running config on idle machine: "++host
-     let action = do bs <- runcmd (buildCommand conf)
-		     case bs of 
-		       Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
-				     error "NOT IMPLEMENTED YET"
---				     loop (conf:rest) tids
-		       Just bs -> return ()
-		     return ()
-     tid <- forkIO action
+  -- If a configuration run fails, it fails on another thread so we
+  -- need a mutable structure to keep track of them.
+  --
+  -- This atomically modified state tracks the confs and the TIDS of
+  -- outstanding threads. 
+  state <- newIORef (confs, S.empty)
 
-     loop rest (tid:tids)
+  -- The main job scheduling loop:
+  let loop = do
+         peek <- readIORef state 
+         case peek of 
+     	   ([],e) | S.null e -> putStrLn$ "Done with all configurations.  All jobs finished." 
+     	   ([],tids) -> error$ "UNIMPLEMENTED - need to wait on TIDs " ++ show tids
+           _  -> do 
+	    -- We do the blocking operation inside the loop to hold it back:
+	    Executor host runcmd <- takeMVar idles  -- BLOCKING!
+	    putStrLn$ " ** Running config on idle machine: "++host
+
+	    -- This gets a bit awkward.  We fork before we know if we
+	    -- really need to or not just so we have the TID at hand.
+	    forkIO $ do { 
+	      mytid <- myThreadId;
+	      mconf <- atomicModifyIORef state (\ st -> 
+			case st of 
+			  ([],_)            -> (st,Nothing)
+			  (conf:rest, tids) -> ((rest, S.insert mytid tids), Just conf));
+
+	      case mconf of 
+		Nothing   -> return ()
+		Just conf -> do
+
+		  putStrLn$ "\n  * Selected configuration: " ++ show conf
+
+		  cmdoutput <- runcmd (buildCommand conf)
+		  case cmdoutput of 
+		    Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
+				  atomicModifyIORef_ state  
+				     (\ (confs,tids) -> (conf:confs, S.delete mytid tids))
+
+				  -- TODO: WRITE TO FILE
+
+		    Just bs -> return ()
+		  return ()              
+
+--              return ()
+	    } -- End forkIO
+
+	    -- Finally, keep going around the loop:
+	    loop 
+
+  loop -- Kick it off
+
 
 -- FIXME
 buildCommand conf = ["ls"]
