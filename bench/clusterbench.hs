@@ -16,9 +16,13 @@ import Data.Char (isSpace)
 import Data.List
 import Data.IORef
 import Data.Typeable (Typeable, typeOf)
+--import qualified Data.Array.IO as A
+import qualified Data.ByteString.Lazy.Char8 as B
+import qualified Data.Set as S
+import qualified Data.Map as M
 import Control.Concurrent
 import System.Console.GetOpt
-import System.Environment
+import System.Environment (getEnv, getArgs)
 import System.Exit
 import System.Process
 import System.Directory (doesDirectoryExist, getCurrentDirectory)
@@ -58,11 +62,22 @@ data ParamType = RTS     String   -- e.g. "-A"
 -- | The full configuration (list of parameter settings) for a single run.
 type OneRunConfig = [(ParamType,String)]
 
+-- | An abstract executor for remote commands.
+data Executor = Executor { name :: String, 
+			   runcmd :: [String] -> IO (Maybe B.ByteString) }
+
 --------------------------------------------------------------------------------
 
+-- <boilerplate>  Should be derivable:
 isMachineList (MachineList _) = True 
 isMachineList _               = False
 unMachineList (MachineList ls) = ls
+isVary (Vary _ _) = True
+isVary _ = False
+isSet (Set _ _) = True
+isSet _ = False
+-- </boilerplate>
+
 
 cli_options :: [OptDescr Flag]
 cli_options = 
@@ -84,8 +99,7 @@ machineIdle host = do
       user = case remoteUser of 
                 Nothing -> localUser
 		Just s  -> s 
-
-  who :: String <- run $ sshRun host ["who"] -|- grepV user
+  who :: String <- run $ mkSSHCmd host ["who"] -|- grepV user
   return (null who)
 
 ------------------------------------------------------------
@@ -96,26 +110,43 @@ readConfig s =
   myread $ trim $ unlines $
   -- We allow comments in the file.
   -- (Scheme readers handle this by default.)
---  filter (not . isPrefixOf "--") $  map trim $ 
- -- Cannot get this to work:
---  filter (not . isJust . (matchRegex$ mkRegexWithOpts "^\\s*\\-\\-" True True)) $  
   filter (not . isCommentLine) $ 
---  filter (not . isJust . (matchRegex$ mkRegexWithOpts "\\-*\\-\\-" True True)) $  
   lines s 
 
 isCommentLine :: String -> Bool
 isCommentLine = isPrefixOf "--" . trim 
+ -- Cannot get this to work:
+--  (not . isJust . (matchRegex$ mkRegexWithOpts "^\\s*\\-\\-" True True)) $  
+
 
 countConfigs :: [BenchmarkSetting] -> Int
-countConfigs = undefined
+countConfigs settings = 
+  foldl (*) 1 $ 
+  map (\ (Vary _ ls) -> length ls) $
+  filter isVary $ 
+  settings
+
+-- | List out all combinations explicitly.
+listConfigs :: [BenchmarkSetting] -> [OneRunConfig]
+listConfigs settings = loop constant varies  
+ where 
+  constant = map (\ (Set x y) -> (x,y)) $ 
+             filter isSet settings
+  varies = filter isVary settings
+  loop consts [] = [consts]
+  loop consts (Vary param vals : varies) =
+    concatMap (\ val -> loop ((param,val) : consts) varies ) 
+              vals 
+    
+    
 
 --------------------------------------------------------------------------------
 -- Misc Helpers:
 
 newtype TimeOut = Seconds Double
 
--- | Fork a list of computations with a timeout.  Return an  that
--- will be asynchronously updated with the results.
+-- | Fork a list of computations with a timeout.  Return a lazy list
+--   of the results.
 forkCmds :: TimeOut -> [IO a] -> IO [a]
 forkCmds (Seconds s) comps  = do
   chan <- newChan 
@@ -128,16 +159,12 @@ forkCmds (Seconds s) comps  = do
   ls <- getChanContents chan 
   return (map fromJust $ 
 	  takeWhile isJust $ 
+          -- Make sure that we don't wait for the timeout if all respond:
 	  -- There can no more than one response per computation:
 	  take (length comps) ls)
 
+atomicModifyIORef_ ref fn = atomicModifyIORef ref (\x -> (fn x, ()))
 
--- | Construct a command string that will ssh into another machine and
---   run a series of commands.
-sshRun :: String -> [String] -> String
--- This just makes sure that we can login:
-sshRun host []    = "ssh "++host++" ' ' "
-sshRun host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "'"
 
 ------------------------------------------------------------
 -- Directory and Path helpers
@@ -210,16 +237,109 @@ myread str = result
       (x,""):_   -> x
       (_,ext):_  -> error$ "read: valid parse as type "++typ++"but extra characters at the end: "++ ext
 
+--------------------------------------------------------------------------------
+-- idleExecutors: The heart of remote execution.
 
--- myread str = helper undefined str
---  where 
---   helper dummy str = 
---     let typ = show (typeOf dummy) in
---     case reads str of 
---       [] -> error$ "read: Could not read as type "++typ++": "++ str
---       (x,""):_   -> x
---       (_,ext):_  -> error$ "read: valid parse as type "++typ++"but extra characters at the end: "++ ext
---       []         -> dummy
+-- | An infinite stream of idle machines ready to do work.
+idleExecutors :: [String] -> IO (MVar Executor)
+idleExecutors hosts = do 
+  -- Create an array to track whether each machine is running one of OUR jobs.
+--  arr :: A.IOArray Int Bool <- A.newArray (0, length hosts - 1) False
+--  arr :: A.IOArray String Bool <- A.newArray (0, length hosts - 1) False
+
+  -- The set of hosts that are actively running jobs.
+  activehosts <- newIORef S.empty
+
+  let executors = M.fromList $ 
+		  map (\h -> (h, Executor h (runner activehosts h))) hosts
+
+  strm <- newEmptyMVar
+  let loop = do busies <- readIORef activehosts
+                let remaining = filter (not . (`S.member` busies)) hosts
+		if null remaining then do
+		   putStrLn$ "  - Polling... wait, all nodes are busy, waiting 10 seconds..."
+		   threadDelay (10 * 1000 * 1000)
+                 else do
+		   putStrLn$ "  - Polling for idleness: "++unwords remaining
+		   ls <- pollidles remaining
+		   let execs = map (executors M.!) ls
+		   forM_ execs $ putMVar strm 
+		loop
+
+  forkIO $ loop 
+  return strm
+ where 
+
+  runner activehosts host cmds = do
+    -- When we are invoked to run commands we add ourselves to the active set:
+    atomicModifyIORef_ activehosts (S.insert host)
+    putStrLn$ "  + Executor on host "++host++" invoking commands: "++show cmds
+    output <- strongSSH host cmds
+    -- Once we're all done with the commands, we can join the next round of polling:
+    atomicModifyIORef_ activehosts (S.delete host)
+    return output
+    
+  pollidles []    =  return [] 
+  pollidles hosts =  fmap catMaybes $ 
+  	             forkCmds (Seconds 10) $  
+		     map (\s -> do idle <- machineIdle s
+			           return (if idle then Just s else Nothing)
+			 ) hosts
+
+--------------------------------------------------------------------------------
+
+-- | SSH to start a job, but don't give up on disconnection.
+--   Returns Nothing in the case of an unrecoverable error.
+--
+-- TODO: Finish this.  It should do something like the following to
+-- record the PID:
+--    ssh -n host '(sleep 100 & echo asynchpid $!) > /tmp/foo'
+-- Then, after disconnection it should poll to see if the job is
+-- really done, for example with "ps h 1234" or kill -0.
+-- 
+strongSSH :: String -> [String] -> IO (Maybe B.ByteString)
+strongSSH host cmds = 
+  fmap Just $ 
+  run (mkSSHCmd host cmds)
+
+
+-- | Construct a command string that will ssh into another machine and
+--   run a series of commands.
+mkSSHCmd :: String -> [String] -> String
+  -- With no arguments it just makes sure that we can login:
+mkSSHCmd host []    = "ssh "++host++" ' ' "
+mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "'"
+
+
+--------------------------------------------------------------------------------
+
+-- launchConfigs allconfs idleMachines gitroot
+
+-- | 
+launchConfigs :: [OneRunConfig] -> MVar Executor -> String -> IO [ThreadId]
+launchConfigs confs idles gitroot = loop confs []
+ where 
+  loop [] tids = do
+     putStrLn$ "Done with all configurations."
+     return tids
+
+  loop (conf:rest) tids = do
+     putStrLn$ "\n ** Scheduling configuration: " ++ show conf
+     Executor host runcmd <- takeMVar idles
+     putStrLn$ "  * Running config on idle machine: "++host
+     let action = do bs <- runcmd (buildCommand conf)
+		     case bs of 
+		       Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
+				     error "NOT IMPLEMENTED YET"
+--				     loop (conf:rest) tids
+		       Just bs -> return ()
+		     return ()
+     tid <- forkIO action
+
+     loop rest (tid:tids)
+
+-- FIXME
+buildCommand conf = ["ls"]
 
 --------------------------------------------------------------------------------
 -- Main Script
@@ -251,23 +371,21 @@ main = do
   ------------------------------------------------------------
 
   putStrLn$ "Reading benchmark config from file: "++configFile++":"
-  config <- fmap readConfig$ readFile configFile
+  settings <- fmap readConfig$ readFile configFile
 --  print$ nest 4 $ pPrint config
-  mapM_ (print . nest 4 . pPrint) config
+  mapM_ (print . nest 4 . pPrint) settings
+  let numconfs = countConfigs settings
+      allconfs = listConfigs settings
+  putStrLn$ "Size of configuration space: "++ show numconfs
 
   ------------------------------------------------------------
   -- Search for idle Machines
 
-  idleMachines <- fmap catMaybes $ 
-  	          forkCmds (Seconds 10) $  
-		  map (\s -> do idle <- machineIdle s
-				return (if idle then Just s else Nothing)
-		       ) machines
-
---  config <- case filter isConfigFile options
-
-  putStr$ "IDLE machines:\n   "
-  print idleMachines
+--   idleMachines <- fmap catMaybes $ 
+--   	          forkCmds (Seconds 10) $  
+-- 		  map (\s -> do idle <- machineIdle s
+-- 				return (if idle then Just s else Nothing)
+-- 		       ) machines
 
   ------------------------------------------------------------
 
@@ -280,21 +398,20 @@ main = do
     gitroot <- findGitRoot
     putStrLn$ "    "++gitroot
 
-   else do 
+    idleMachines <- idleExecutors machines    
+    launchConfigs allconfs idleMachines gitroot
     return ()
 
-  ------------------------------------------------------------
+   else do 
+    error "Non --git mode not implemented."
+    return ()
 
 
+--------------------------------------------------------------------------------
 
-  ------------------------------------------------------------
-  -- TEMP
+-- | A global, mutable array that tracks outstanding remote jobs.
 
---   forM_ idleMachines $ \ host -> do
---     putStrLn$ "Doing listing on analogous directory on machine "++ host
---     runIO$ sshRun host ["cd "++path, "ls"]
-
-  return ()
-
-
+-- newtype ScanResult = ScanResult (IO ([String], ScanResult))
+-- idleScanner :: [String] -> IO ([String], )
+-- idleScanner :: [String] -> IO (Chan [String])
 
