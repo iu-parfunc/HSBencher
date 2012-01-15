@@ -21,8 +21,9 @@ import System.Console.GetOpt
 import System.Environment
 import System.Exit
 import System.Process
-import System.Directory (doesDirectoryExist)
-import System.FilePath (dropTrailingPathSeparator, takeDirectory, (</>))
+import System.Directory (doesDirectoryExist, getCurrentDirectory)
+import System.FilePath (dropTrailingPathSeparator, 
+			addTrailingPathSeparator, takeDirectory, (</>))
 import Text.Regex 
 import Text.PrettyPrint.HughesPJClass (Pretty, pPrint, text)
 import Text.PrettyPrint.HughesPJ (nest)
@@ -87,17 +88,29 @@ machineIdle host = do
   who :: String <- run $ sshRun host ["who"] -|- grepV user
   return (null who)
 
+------------------------------------------------------------
+-- Configuration helpers
+
 readConfig :: String -> [BenchmarkSetting]
 readConfig s = 
   myread $ trim $ unlines $
   -- We allow comments in the file.
   -- (Scheme readers handle this by default.)
---  filter (not . isJust . (matchRegex$ mkRegexWithOpts "^\\w*\\-\\-" True True)) $  
-  filter (not . isJust . (matchRegex$ mkRegexWithOpts "\\w*\\-\\-" True True)) $  
+--  filter (not . isPrefixOf "--") $  map trim $ 
+ -- Cannot get this to work:
+--  filter (not . isJust . (matchRegex$ mkRegexWithOpts "^\\s*\\-\\-" True True)) $  
+  filter (not . isCommentLine) $ 
+--  filter (not . isJust . (matchRegex$ mkRegexWithOpts "\\-*\\-\\-" True True)) $  
   lines s 
 
+isCommentLine :: String -> Bool
+isCommentLine = isPrefixOf "--" . trim 
+
+countConfigs :: [BenchmarkSetting] -> Int
+countConfigs = undefined
+
 --------------------------------------------------------------------------------
--- Helpers:
+-- Misc Helpers:
 
 newtype TimeOut = Seconds Double
 
@@ -129,26 +142,36 @@ sshRun host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "'"
 ------------------------------------------------------------
 -- Directory and Path helpers
 
--- Get a path of the form "~/foo" that will work on another machine.
-getPortableHomePath :: IO String
-getPortableHomePath = do
+-- Get the current directory as a path of the form "~/foo" that will
+-- work on another machine when expanded by the shell.
+getPortableWD :: IO String
+getPortableWD = do
   logical <- runSL "pwd -L"    -- getCurrentDirectory won't cut it.
-  home    <- getEnv "HOME"
-
   b <- isHomePath logical
-  unless b$ error$ "getPortableHomePath: not a path under the home directory: "++logical
-  let path = subRegex (mkRegex home) logical "~/"
+  unless b$ error$ "getPortableWD: not a path under the home directory: "++logical
+  makeHomePathPortable logical
+
+makeHomePathPortable :: String -> IO String
+makeHomePathPortable str = do 
+  home    <- getEnv "HOME"
+  let path = subRegex (mkRegex$ addTrailingPathSeparator home) str "~/"
   return (dropTrailingPathSeparator path)
 
--- | This assumes that there is a parent directory containing a ".git"
+-- | Return a portable "~/foo" path describing the location of the git
+--   working copy root.  This assumes that there is a parent directory
+--   containing a ".git"
 findGitRoot :: IO String
-findGitRoot = getPortableHomePath >>= loop 
+findGitRoot = 
+   runSL "pwd -L" >>= loop 
  where 
   loop path = do 
-    putStrLn$ "Looping... " ++ path
-    putStrLn$ "Checking "++ path </> ".git"
+--    putStrLn$ "Checking "++ path </> ".git"
+    b0 <- isHomePath path 
+    unless b0 $ do
+       putStrLn$ "ERROR, findGitRoot: descended out of the users home directory to: "++ path
+       exitFailure 
     b <- doesDirectoryExist$ path </> ".git"
-    if b then return path
+    if b then makeHomePathPortable path
          else loop (takeDirectory path)
 
 -- | Is this a path under the home directory?
@@ -249,7 +272,7 @@ main = do
   ------------------------------------------------------------
 
   putStrLn "Getting current directory relative to home dir:" 
-  path <- getPortableHomePath 
+  path <- getPortableWD 
   putStrLn$ "    "++path
 
   if isgit then do
