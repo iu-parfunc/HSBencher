@@ -15,6 +15,7 @@ import Data.Maybe
 import Data.Char (isSpace)
 import Data.List
 import Data.IORef
+import Data.Word
 import Data.Typeable (Typeable, typeOf)
 --import qualified Data.Array.IO as A
 import qualified Data.ByteString.Lazy.Char8 as B
@@ -25,7 +26,8 @@ import System.Console.GetOpt
 import System.Environment (getEnv, getArgs)
 import System.Exit
 import System.Process
-import System.Directory (doesDirectoryExist, getCurrentDirectory)
+import System.Random    (randomIO)
+import System.Directory (doesDirectoryExist, getCurrentDirectory, createDirectoryIfMissing)
 import System.FilePath (dropTrailingPathSeparator, 
 			addTrailingPathSeparator, takeDirectory, (</>))
 import Text.Regex 
@@ -64,6 +66,8 @@ type OneRunConfig = [(ParamType,String)]
 
 -- | An abstract executor for remote commands.
 data Executor = Executor { name :: String, 
+                           -- Remote execution of a series of shell commands:
+			   -- Returns shell output if successfull.
 			   runcmd :: [String] -> IO (Maybe B.ByteString) }
 
 --------------------------------------------------------------------------------
@@ -313,9 +317,8 @@ mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "
 
 --------------------------------------------------------------------------------
 
--- launchConfigs allconfs idleMachines gitroot
-
--- | 
+-- | Job management.  Consume a stream of Idle Executors to schedule
+--   jobs remotely.
 launchConfigs :: [OneRunConfig] -> MVar Executor -> String -> IO ()
 launchConfigs confs idles gitroot = do
 
@@ -344,7 +347,7 @@ launchConfigs confs idles gitroot = do
 			loop
            _  -> do 
 	    -- We do the blocking operation inside the loop to hold it back:
-	    Executor host runcmd <- takeMVar idles  -- BLOCKING!
+	    exec @ (Executor host runcmd) <- takeMVar idles  -- BLOCKING!
 	    putStrLn$ " ** Running config on idle machine: "++host
 
 	    -- FIXME: Awkward: We fork before we know if we really need to.
@@ -362,15 +365,14 @@ launchConfigs confs idles gitroot = do
 		Nothing   -> return ()
 		Just conf -> do
 		  putStrLn$ "\n  * Selected configuration: " ++ show conf
-		  cmdoutput <- runcmd (buildCommand conf)
+		  cmdoutput <- runcmd (buildCommand conf gitroot)
 		  case cmdoutput of 
 		    Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
 				  atomicModifyIORef_ state  
 				     (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
 
-				  -- TODO: WRITE TO FILE
-
-		    Just bs -> return () ); 
+		    Just bs -> writeToLog conf bs 
+	      );
 
 	      putStrLn$ "\n  @ Forked thread with ID " ++ show mytid ++ " completed.";
 	      putMVar myCompletion ();
@@ -383,7 +385,33 @@ launchConfigs confs idles gitroot = do
 
 
 -- FIXME
-buildCommand conf = ["ls"]
+buildCommand conf gitroot = ["ls"]
+
+writeToLog :: OneRunConfig -> B.ByteString -> IO () 
+writeToLog conf bytes = do
+  home <- getEnv "HOME"
+  -- TODO: create another level of nesting based on date.
+  file <- confToFileName conf
+  let logd = home </> "clusterbench"
+      path = logd </> file
+  createDirectoryIfMissing False logd
+  B.writeFile path bytes
+  putStrLn$ "\n  * Wrote log output to file: " ++ path
+  
+confToFileName :: OneRunConfig -> IO String
+confToFileName conf = do
+  uid :: Word64 <- randomIO 
+  let descr = intercalate "_" $ map paramPlainText conf
+  -- TODO: include more information here.
+  return (show uid ++ ".log")
+
+-- Emit some 
+paramPlainText (p,v) = fn p ++ v
+ where 
+  fn (RTS s)     = s
+  fn (Compile s) = s
+  fn (EnvVar  s) = s
+
 
 --------------------------------------------------------------------------------
 -- Main Script
