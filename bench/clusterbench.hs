@@ -322,48 +322,58 @@ launchConfigs confs idles gitroot = do
   -- If a configuration run fails, it fails on another thread so we
   -- need a mutable structure to keep track of them.
   --
-  -- This atomically modified state tracks the confs and the TIDS of
-  -- outstanding threads. 
-  state <- newIORef (confs, S.empty)
+  -- This atomically modified state tracks the confs and outstanding
+  -- threads (each of which is modeled by an mvar that will be written
+  -- at completion.).
+  state <- newIORef (confs, M.empty)
 
   -- The main job scheduling loop:
   let loop = do
          peek <- readIORef state 
          case peek of 
-     	   ([],e) | S.null e -> putStrLn$ "Done with all configurations.  All jobs finished." 
-     	   ([],tids) -> error$ "UNIMPLEMENTED - need to wait on TIDs " ++ show tids
+     	   ([],m) | M.null m -> putStrLn$ "Done with all configurations.  All jobs finished." 
+     	   ([],m) -> do -- Here we atomically discharge the obligation to wait for outstanding workers.
+		        mvs <- atomicModifyIORef state 
+			        (\ (confs,mp) -> 
+				  case confs of 
+				   []  -> (([], M.empty), M.elems mp)
+				   _   -> ((confs, mp), []))
+			putStrLn$ "  - launchConfigs: All launched, waiting for "++
+				  show (length mvs)++" outstanding jobs to complete or fail."
+			mapM_ readMVar mvs
+			loop
            _  -> do 
 	    -- We do the blocking operation inside the loop to hold it back:
 	    Executor host runcmd <- takeMVar idles  -- BLOCKING!
 	    putStrLn$ " ** Running config on idle machine: "++host
 
-	    -- This gets a bit awkward.  We fork before we know if we
-	    -- really need to or not just so we have the TID at hand.
+	    -- FIXME: Awkward: We fork before we know if we really need to.
 	    forkIO $ do { 
 	      mytid <- myThreadId;
+              myCompletion <- newEmptyMVar;
+	      
 	      mconf <- atomicModifyIORef state (\ st -> 
 			case st of 
 			  ([],_)            -> (st,Nothing)
-			  (conf:rest, tids) -> ((rest, S.insert mytid tids), Just conf));
+			  (conf:rest, tids) -> ((rest, M.insert mytid myCompletion tids),
+						Just conf));
 
-	      case mconf of 
+	      (case mconf of 
 		Nothing   -> return ()
 		Just conf -> do
-
 		  putStrLn$ "\n  * Selected configuration: " ++ show conf
-
 		  cmdoutput <- runcmd (buildCommand conf)
 		  case cmdoutput of 
 		    Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
 				  atomicModifyIORef_ state  
-				     (\ (confs,tids) -> (conf:confs, S.delete mytid tids))
+				     (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
 
 				  -- TODO: WRITE TO FILE
 
-		    Just bs -> return ()
-		  return ()              
+		    Just bs -> return () ); 
 
---              return ()
+	      putStrLn$ "\n  @ Forked thread with ID " ++ show mytid ++ " completed.";
+	      putMVar myCompletion ();
 	    } -- End forkIO
 
 	    -- Finally, keep going around the loop:
