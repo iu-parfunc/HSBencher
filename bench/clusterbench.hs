@@ -12,7 +12,7 @@ import HSH
 import HSH.ShellEquivs
 import Control.Monad 
 import Data.Maybe
-import Data.Char (isSpace)
+import Data.Char (isSpace, isAlphaNum, isNumber)
 import Data.List
 import Data.IORef
 import Data.Word
@@ -27,9 +27,10 @@ import System.Environment (getEnv, getArgs)
 import System.Exit
 import System.Process
 import System.Random    (randomIO)
-import System.Directory (doesDirectoryExist, getCurrentDirectory, createDirectoryIfMissing)
+import System.Directory (doesDirectoryExist, getCurrentDirectory, 
+			 createDirectoryIfMissing, doesFileExist)
 import System.FilePath (dropTrailingPathSeparator, 
-			addTrailingPathSeparator, takeDirectory, (</>))
+			addTrailingPathSeparator, takeDirectory, (</>), (<.>))
 import Text.Regex 
 import Text.PrettyPrint.HughesPJClass (Pretty, pPrint, text)
 import Text.PrettyPrint.HughesPJ (nest)
@@ -319,9 +320,9 @@ mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "
 
 -- | Job management.  Consume a stream of Idle Executors to schedule
 --   jobs remotely.
-launchConfigs :: [OneRunConfig] -> MVar Executor -> String -> IO ()
-launchConfigs confs idles gitroot = do
-
+launchConfigs :: [BenchmarkSetting] -> MVar Executor -> String -> IO ()
+launchConfigs settings idles gitroot = do
+  let confs = listConfigs settings
   -- If a configuration run fails, it fails on another thread so we
   -- need a mutable structure to keep track of them.
   --
@@ -329,6 +330,7 @@ launchConfigs confs idles gitroot = do
   -- threads (each of which is modeled by an mvar that will be written
   -- at completion.).
   state <- newIORef (confs, M.empty)
+  logd  <- makeLogDir settings
 
   -- The main job scheduling loop:
   let loop = do
@@ -348,7 +350,7 @@ launchConfigs confs idles gitroot = do
            _  -> do 
 	    -- We do the blocking operation inside the loop to hold it back:
 	    exec @ (Executor host runcmd) <- takeMVar idles  -- BLOCKING!
-	    putStrLn$ " ** Running config on idle machine: "++host
+	    putStrLn$ "\n  * Running config on idle machine: "++host
 
 	    -- FIXME: Awkward: We fork before we know if we really need to.
 	    forkIO $ do { 
@@ -364,17 +366,17 @@ launchConfigs confs idles gitroot = do
 	      (case mconf of 
 		Nothing   -> return ()
 		Just conf -> do
-		  putStrLn$ "\n  * Selected configuration: " ++ show conf
+		  putStrLn$ " ** Selected configuration: " ++ show conf
 		  cmdoutput <- runcmd (buildCommand conf gitroot)
 		  case cmdoutput of 
 		    Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
 				  atomicModifyIORef_ state  
 				     (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
 
-		    Just bs -> writeToLog conf bs 
+		    Just bs -> writeToLog logd conf bs 
 	      );
 
-	      putStrLn$ "\n  @ Forked thread with ID " ++ show mytid ++ " completed.";
+	      putStrLn$ "  - Forked thread with ID " ++ show mytid ++ " completed.";
 	      putMVar myCompletion ();
 	    } -- End forkIO
 
@@ -387,30 +389,61 @@ launchConfigs confs idles gitroot = do
 -- FIXME
 buildCommand conf gitroot = ["ls"]
 
-writeToLog :: OneRunConfig -> B.ByteString -> IO () 
-writeToLog conf bytes = do
+-- Create and return a directory for storing logs during this run.
+makeLogDir :: [BenchmarkSetting] -> IO String 
+makeLogDir settings = do
   home <- getEnv "HOME"
   -- TODO: create another level of nesting based on date.
-  file <- confToFileName conf
-  let logd = home </> "clusterbench"
-      path = logd </> file
-  createDirectoryIfMissing False logd
-  B.writeFile path bytes
-  putStrLn$ "\n  * Wrote log output to file: " ++ path
-  
-confToFileName :: OneRunConfig -> IO String
-confToFileName conf = do
-  uid :: Word64 <- randomIO 
-  let descr = intercalate "_" $ map paramPlainText conf
-  -- TODO: include more information here.
-  return (show uid ++ ".log")
+  let root   = home </> "clusterbench"
+      prefix = "run_"
+      suffix = ""  -- TODO: add more interesting description based on what is *varied* in settings.
+--  existing :: [String] <- run$ "ls "++root </> prefix++"*"
+--  let numexisting = length existing 
+  -- Here is an inefficient system to find out what the next run should be:
+  let loop n = do let dir = root </> prefix ++ show n ++ suffix
+                  b <- doesDirectoryExist dir
+		  if b then loop (n+1)
+		       else return dir
+  nextdir <- loop 1 
+  createDirectoryIfMissing True nextdir 
+  return nextdir
 
--- Emit some 
-paramPlainText (p,v) = fn p ++ v
- where 
-  fn (RTS s)     = s
-  fn (Compile s) = s
-  fn (EnvVar  s) = s
+writeToLog :: String -> OneRunConfig -> B.ByteString -> IO () 
+writeToLog logd conf bytes = do
+  file <- confToFileName logd conf
+  let path = logd </> file
+  B.writeFile path bytes
+  putStrLn$ "  - Wrote log output to file: " ++ path
+  
+confToFileName :: String -> OneRunConfig -> IO String
+confToFileName logd conf = do
+--  uid :: Word64 <- randomIO 
+  let descr = intercalate "_" $ map paramPlainText conf
+      ext   = "log" 
+      loop n = do
+        let suffix = if n==0 then "" else "_"++show n
+	    path = logd </> descr ++ suffix <.> ext
+	b <- doesFileExist path
+	if b then loop (n+1)
+	     else return path
+  loop 0
+
+-- Emit something descriptive for the option settings.
+-- paramPlainText (p,v) = fn p ++ filter (not . isSpace) v
+--  where 
+--   fn (RTS s)     = s
+--   fn (Compile s) = s
+--   fn (EnvVar  s) = s
+
+paramPlainText (RTS   "-s",_) = ""
+paramPlainText (RTS     s,v) = clean s ++ clean v
+paramPlainText (Compile s,v) = clean s ++ clean v
+paramPlainText (EnvVar "GHC",v) = "GHC" ++ filter isNumber v
+paramPlainText (EnvVar  s,v) = clean s ++ clean v
+-- paramPlainText (EnvVar  s,v) = clean s
+
+-- Remove characters we don't want in filenames:
+clean = filter isAlphaNum
 
 
 --------------------------------------------------------------------------------
@@ -447,7 +480,7 @@ main = do
 --  print$ nest 4 $ pPrint config
   mapM_ (print . nest 4 . pPrint) settings
   let numconfs = countConfigs settings
-      allconfs = listConfigs settings
+--      allconfs = listConfigs settings
   putStrLn$ "Size of configuration space: "++ show numconfs
 
   ------------------------------------------------------------
@@ -471,7 +504,8 @@ main = do
     putStrLn$ "    "++gitroot
 
     idleMachines <- idleExecutors machines    
-    launchConfigs allconfs idleMachines gitroot
+--    launchConfigs allconfs idleMachines gitroot
+    launchConfigs settings idleMachines gitroot
     return ()
 
    else do 
