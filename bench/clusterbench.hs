@@ -90,6 +90,10 @@ isMachineList _               = False
 unMachineList (MachineList ls) = ls
 isEnvVar (EnvVar _) = True
 isEnvVar _ = False
+isRTS    (RTS _) = True
+isRTS    _       = False
+isCompile (Compile _) = True
+isCompile          _  = False
 isVary (Vary _ _) = True
 isVary          _ = False
 isSet  (Set _ _)  = True
@@ -288,12 +292,12 @@ myread str = result
 
 -- | An infinite stream of idle machines ready to do work.
 idleExecutors :: [String] -> IO (MVar Executor)
+-- Note: this is not a demand-driven stream.  It is an actor that
+-- PUSHES a stream of idle workers. However the stream is implemented
+-- as an MVar so it has a buffer size of one.  Thus this will try to
+-- keep one step ahead of the consumer asking for executors.
 idleExecutors hosts = do 
-  -- Create an array to track whether each machine is running one of OUR jobs.
---  arr :: A.IOArray Int Bool <- A.newArray (0, length hosts - 1) False
---  arr :: A.IOArray String Bool <- A.newArray (0, length hosts - 1) False
-
-  -- The set of hosts that are actively running jobs.
+  -- The set of hosts that are actively running OUR jobs:
   activehosts <- newIORef S.empty
 
   let executors = M.fromList $ 
@@ -444,12 +448,22 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 -- FIXME
 buildCommand :: String -> OneRunConfig -> (String,String) -> String -> [String]
 buildCommand finalcmd conf (gitroot,gitoffset) remoteWorkingDir = 
-  ["cd " ++ remoteWorkingDir </> gitoffset,
-   finalcmd
-  ]
+  ["cd " ++ remoteWorkingDir </> gitoffset] ++
+  map exportCmd (filter (isEnvVar  . fst) conf) ++
+  [rtsOpts    (filter (isRTS     . fst) conf)] ++ 
+  [ghcOpts    (filter (isCompile . fst) conf)] ++ 
+  [finalcmd]
  where 
   envs = filter (isEnvVar . fst) conf
---  where cmd = getCommand conf
+  exportCmd (EnvVar v,val) = ("export "++v++"=\""++val++"\"")
+
+  -- These are interpreted in an EXTREMELY SIMPLE way right now.  The two strings are just appended:
+  combineRTS  (RTS     flag, val) = flag++val
+  combineFlag (Compile flag, val) = flag++val
+  rtsOpts ls = exportCmd (EnvVar "GHC_RTS",   unwords (map combineRTS  ls))
+  ghcOpts ls = exportCmd (EnvVar "GHC_FLAGS", unwords (map combineFlag ls))
+
+
 
 -- | Setup a git clone as a fresh working directory.
 setupRemoteWorkingDirectory (Executor host runcmd) gitroot workingDir = do
