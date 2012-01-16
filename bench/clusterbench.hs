@@ -42,12 +42,14 @@ import Text.PrettyPrint.HughesPJ (nest)
 --------------------------------------------------------------------------------
 -- Type definitions:
 
+
 -- | Command line Flags.
 data Flag = Git
           | MachineList [String]
+          | ListIdle 
 --	  | ConfigFile String
-
  deriving (Show, Eq, Read)
+
 
 -- | Benchmark configuration spaces.
 data BenchmarkSetting =  
@@ -56,11 +58,11 @@ data BenchmarkSetting =
    -- Set parameter across all runs:
  | Set ParamType String
  | Command String 
-
  deriving (Show, Eq, Read, Typeable)
 
 instance Pretty BenchmarkSetting where
   pPrint x = text $ show x 
+
 
 -- | Different types of parameters that may be set or varied.
 data ParamType = RTS     String   -- e.g. "-A"
@@ -68,8 +70,10 @@ data ParamType = RTS     String   -- e.g. "-A"
                | EnvVar  String
  deriving (Show, Eq, Read)
 
+
 -- | The full configuration (list of parameter settings) for a single run.
 type OneRunConfig = [(ParamType,String)]
+
 
 -- | An abstract executor for remote commands.
 data Executor = Executor { name :: String, 
@@ -83,6 +87,8 @@ data Executor = Executor { name :: String,
 isMachineList (MachineList _) = True 
 isMachineList _               = False
 unMachineList (MachineList ls) = ls
+isEnvVar (EnvVar _) = True
+isEnvVar _ = False
 isVary (Vary _ _) = True
 isVary          _ = False
 isSet  (Set _ _)  = True
@@ -98,6 +104,7 @@ getCommand settings =
 
 -- </boilerplate>
 
+-- | Command line options.
 cli_options :: [OptDescr Flag]
 cli_options = 
      [ Option ['g'] ["git"] (NoArg Git) 
@@ -105,21 +112,13 @@ cli_options =
      , Option ['m'] ["machines"] 
           (ReqArg (MachineList . words) "HOSTS")
           "list of machines to use for running benchmarks"
+     , Option ['l'] ["listidle"] 
+          (NoArg ListIdle)
+          "don't run anything, just list idle machines."
 --      , Option ['f'] ["config"] 
 --           (ReqArg ConfigFile "FILE")
 --           "read benchmark configuration from file"
      ]
-
-machineIdle :: String -> IO Bool
-machineIdle host = do 
-  localUser <- getEnv "USER"
-  let 
-      remoteUser = parseUser host
-      user = case remoteUser of 
-                Nothing -> localUser
-		Just s  -> s 
-  who :: String <- run $ mkSSHCmd host ["who"] -|- grepV user
-  return (null who)
 
 ------------------------------------------------------------
 -- Configuration helpers
@@ -183,6 +182,18 @@ forkCmds (Seconds s) comps  = do
 	  take (length comps) ls)
 
 atomicModifyIORef_ ref fn = atomicModifyIORef ref (\x -> (fn x, ()))
+
+
+machineIdle :: String -> IO Bool
+machineIdle host = do 
+  localUser <- getEnv "USER"
+  let 
+      remoteUser = parseUser host
+      user = case remoteUser of 
+                Nothing -> localUser
+		Just s  -> s 
+  who :: String <- run $ mkSSHCmd host ["who"] -|- grepV user
+  return (null who)
 
 
 ------------------------------------------------------------
@@ -295,7 +306,7 @@ idleExecutors hosts = do
 		   threadDelay (10 * 1000 * 1000)
                  else do
 		   putStrLn$ "  - Polling for idleness: "++unwords remaining
-		   ls <- pollidles remaining
+		   ls <- pollIdles remaining
 		   let execs = map (executors M.!) ls
 		   forM_ execs $ putMVar strm 
 		loop
@@ -313,8 +324,9 @@ idleExecutors hosts = do
     atomicModifyIORef_ activehosts (S.delete host)
     return output
     
-  pollidles []    =  return [] 
-  pollidles hosts =  fmap catMaybes $ 
+pollIdles :: [String] -> IO [String]
+pollIdles []    =  return [] 
+pollIdles hosts =  fmap catMaybes $ 
   	             forkCmds (Seconds 10) $  
 		     map (\s -> do idle <- machineIdle s
 			           return (if idle then Just s else Nothing)
@@ -359,10 +371,11 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
   -- threads (each of which is modeled by an mvar that will be written
   -- at completion.).
   state <- newIORef (confs, M.empty)
-  logd  <- makeLogDir settings
+  logd  <- makeLogDir settings  
 
   -- The main job scheduling loop:
-  let loop = do
+  let finalcommand = getCommand settings
+      loop = do
          peek <- readIORef state 
          case peek of 
      	   ([],m) | M.null m -> putStrLn$ "Done with all configurations.  All jobs finished." 
@@ -407,7 +420,7 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
                   -- Perform the git clone:
                   setupRemoteWorkingDirectory exec gitroot workingDir  
 
-		  cmdoutput <- runcmd (buildCommand conf (gitroot,gitoffset) workingDir)
+		  cmdoutput <- runcmd (buildCommand finalcommand conf (gitroot,gitoffset) workingDir)
 		  case cmdoutput of 
 		    Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
 				  atomicModifyIORef_ state  
@@ -429,11 +442,13 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 
 
 -- FIXME
-buildCommand :: OneRunConfig -> (String,String) -> String -> [String]
-buildCommand conf (gitroot,gitoffset) remoteWorkingDir = 
+buildCommand :: String -> OneRunConfig -> (String,String) -> String -> [String]
+buildCommand finalcmd conf (gitroot,gitoffset) remoteWorkingDir = 
   ["cd " ++ remoteWorkingDir </> gitoffset,
-   "ls"
+   finalcmd
   ]
+ where 
+  envs = filter (isEnvVar . fst) conf
 --  where cmd = getCommand conf
 
 -- | Setup a git clone as a fresh working directory.
@@ -532,6 +547,17 @@ main = do
   let machines = case filter isMachineList options of 
 		   [] -> ["rrnewton@tank.cs.indiana.edu"]
 		   ls -> concat $ map unMachineList ls
+
+  -- If we're in ListIdle mode we do that and exit:
+  when (ListIdle `elem` options) $ do 
+    putStrLn$ "Polling: " ++ unwords machines
+    putStrLn$ "All currently Idle machines (no one logged in):"
+    putStrLn$ "==============================================="
+    idles <- pollIdles machines
+    mapM_ putStrLn idles
+    exitSuccess
+
+  -- Otherwise proceed to read in a config file:
   configFile  <- case args of 
     []  -> error$ "must take a config file"
     [f] -> return f
@@ -550,15 +576,6 @@ main = do
   putStrLn$ "Size of configuration space: "++ show numconfs
 
   ------------------------------------------------------------
-  -- Search for idle Machines
-
---   idleMachines <- fmap catMaybes $ 
---   	          forkCmds (Seconds 10) $  
--- 		  map (\s -> do idle <- machineIdle s
--- 				return (if idle then Just s else Nothing)
--- 		       ) machines
-
-  ------------------------------------------------------------
 
   putStrLn "Getting current directory relative to home dir:" 
   startpath <- getPortableWD 
@@ -570,7 +587,9 @@ main = do
 --    putStrLn$ "    "++fst gitloc
     putStrLn$ "    "++show gitloc
 
+    -- Grab idle machines as a stream of workers:
     idleMachines <- idleExecutors machines    
+
 --    launchConfigs allconfs idleMachines gitroot
     launchConfigs settings idleMachines gitloc startpath
     return ()
