@@ -1,5 +1,5 @@
 #!/usr/bin/env runhaskell
-{-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable #-}
+{-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable, NamedFieldPuns #-}
 
 -- Benchmark different configurations over a cluster of machines.
 --
@@ -12,7 +12,7 @@
 -- TODO: 
 --  * Detect and handle error codes in remote commands.
 --  * Add robustness to disconnection (finish strongSSH)
-
+--  * Check "who" repeatedly rather than just at the outset.
 
 import HSH
 import HSH.ShellEquivs
@@ -77,10 +77,14 @@ type OneRunConfig = [(ParamType,String)]
 
 
 -- | An abstract executor for remote commands.
-data Executor = Executor { name :: String, 
-                           -- Remote execution of a series of shell commands:
-			   -- Returns shell output if successfull.
-			   runcmd :: [String] -> IO (Maybe B.ByteString) }
+data Executor = Executor 
+  { host :: String, 
+    -- Remote execution of a series of shell commands:
+    -- Returns shell output if successfull.
+    runcmd :: [String] -> IO (Maybe B.ByteString),
+    lockRemote   :: IO Bool,
+    unlockRemote :: IO ()
+  }
 
 --------------------------------------------------------------------------------
 
@@ -300,8 +304,13 @@ idleExecutors hosts = do
   -- The set of hosts that are actively running OUR jobs:
   activehosts <- newIORef S.empty
 
-  let executors = M.fromList $ 
-		  map (\h -> (h, Executor h (runner activehosts h))) hosts
+  let executors = M.fromList $ zip hosts (map makeone hosts)
+      makeone h = 
+        Executor { host   = h
+		 , runcmd = runner activehosts h
+		 , lockRemote   = locker   activehosts h
+		 , unlockRemote = unlocker activehosts h
+		 }
 
   strm <- newEmptyMVar
   let loop = do busies <- readIORef activehosts
@@ -319,16 +328,29 @@ idleExecutors hosts = do
   forkIO $ loop 
   return strm
  where 
+  locker activehosts host = do 
+    -- When we are locked to run commands we add ourselves to the active/busy set:
+--    atomicModifyIORef_ activehosts (S.insert host)
+    b <- atomicModifyIORef activehosts (\set -> if S.member host set
+					        then (set, False)
+					        else (S.insert host set, True))
+    when b $ putStrLn$ "  + LOCKED host for execution: "++host
+    -- Right now we only track remote-machine activity CENTRALLY (on the master).
+    -- TODO -- should also create a /tmp/ file on the remote to signify locking.
+    -- This would enable us to run multiple clusterbench jobs on the same resources.
+    return b
 
-  runner activehosts host cmds = do
-    -- When we are invoked to run commands we add ourselves to the active set:
-    atomicModifyIORef_ activehosts (S.insert host)
-    putStrLn$ "  + Executor on host "++host++" invoking commands: "++show cmds
-    output <- strongSSH host cmds
+  unlocker activehosts host = do 
+    putStrLn$ "  + UNLOCKING host: "++host
     -- Once we're all done with the commands, we can join the next round of polling:
     atomicModifyIORef_ activehosts (S.delete host)
+
+  runner activehosts host cmds = do
+    putStrLn$ "  + Executor on host "++host++" invoking commands: "++show cmds
+    output <- strongSSH host cmds
     return output
-    
+
+      
 pollIdles :: [String] -> IO [String]
 pollIdles []    =  return [] 
 pollIdles hosts =  fmap catMaybes $ 
@@ -395,52 +417,66 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 			mapM_ readMVar mvs
 			loop
            _  -> do 
-	    -- We do the blocking operation inside the loop to hold it back:
-	    exec @ (Executor host runcmd) <- takeMVar idles  -- BLOCKING!
-	    putStrLn$ "\n  * Running config on idle machine: "++host
 
-	    -- FIXME: Awkward: We fork before we know if we really need to.
-	    forkIO $ do { 
-	      mytid <- myThreadId;
-              myCompletion <- newEmptyMVar;
-	      
-	      mconf <- atomicModifyIORef state (\ st -> 
-			case st of 
-			  ([],_)            -> (st,Nothing)
-			  (conf:rest, tids) -> ((rest, M.insert mytid myCompletion tids),
-						Just conf));
+	    -- We do the blocking operation INSIDE 'loop' to hold it back:
+	    exec @ (Executor{host,runcmd,lockRemote,unlockRemote}) <- takeMVar idles  -- BLOCKING!
 
-	      (case mconf of 
-		Nothing   -> return ()
-		Just conf -> do
-		  putStrLn$ " ** Selected configuration: " ++ show conf
+            -- Try to lock the remote machine:
+	    -- TODO FIXME -- set up exception handler so that we UNLOCK the machine if we run into an error.
+	    b <- lockRemote
+	    if not b then do
+              putStrLn$ " !! FAILED to lock remote machine "++host++", moving on..."
+	      loop 
+             else do {
+	      putStrLn$ "\n  * Running config on idle machine: "++host;
 
-		  -- Create the output directory locally on this machine:
-		  confdir <- createConfDir logd conf 
-                  -- .log file is at the same level as the conf-specific directory:
-		  let logfile = dropTrailingPathSeparator confdir <.> "log"
-		      workingDir = confdir </> "working_copy"
+	      -- FIXME: Awkward: We fork before we know if we really need to.
+	      forkIO $ do { 
+		mytid <- myThreadId;
+		myCompletion <- newEmptyMVar;
 
-                  -- Perform the git clone:
-                  setupRemoteWorkingDirectory exec gitroot workingDir  
+		mconf <- atomicModifyIORef state (\ st -> 
+			  case st of 
+			    ([],_)            -> (st,Nothing)
+			    (conf:rest, tids) -> ((rest, M.insert mytid myCompletion tids),
+						  Just conf));
 
-		  cmdoutput <- runcmd (buildCommand finalcommand conf (gitroot,gitoffset) workingDir)
-		  case cmdoutput of 
-		    Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
-				  atomicModifyIORef_ state  
-				     (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
+		(case mconf of 
+		  Nothing   -> return ()
+		  Just conf -> do
+		    putStrLn$ " ** Selected configuration: " ++ show conf
 
---		    Just bs -> do logfile <- writeToLog slogd conf bs 
-		    Just bs -> do writeToLog logfile bs 
-                                  return ()
-	      );
+		    -- Create the output directory locally on this machine:
+		    confdir <- createConfDir logd conf 
+		    -- .log file is at the same level as the conf-specific directory:
+		    let logfile = dropTrailingPathSeparator confdir <.> "log"
+			workingDir = confdir </> "working_copy"
 
-	      putStrLn$ "  - Forked thread with ID " ++ show mytid ++ " completed.";
-	      putMVar myCompletion ();
-	    } -- End forkIO
+		    -- Perform the git clone:
+		    setupRemoteWorkingDirectory exec gitroot workingDir  
 
-	    -- Finally, keep going around the loop:
-	    loop 
+                    -- This is it.  Here we run the remote benchmark suite:
+		    cmdoutput <- runcmd (buildCommand finalcommand conf (gitroot,gitoffset) workingDir)
+		    
+                    -- Now we're done with all remote operations and can unlock:
+		    unlockRemote
+
+		    case cmdoutput of 
+		      Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
+				    atomicModifyIORef_ state  
+				       (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
+		      Just bs -> do writeToLog logfile bs 
+				    return ()
+		);
+
+		putStrLn$ "  - Forked thread with ID " ++ show mytid ++ " completed.";
+		putMVar myCompletion ();
+	      }; -- End forkIO
+
+	      -- Finally, keep going around the loop:
+	      loop;
+            }
+	    -- end else
 
   loop -- Kick it off
 
@@ -466,7 +502,7 @@ buildCommand finalcmd conf (gitroot,gitoffset) remoteWorkingDir =
 
 
 -- | Setup a git clone as a fresh working directory.
-setupRemoteWorkingDirectory (Executor host runcmd) gitroot workingDir = do
+setupRemoteWorkingDirectory (Executor{runcmd}) gitroot workingDir = do
   wd <- makeHomePathPortable workingDir
   -- Create the directory locally first:
   runIO$ "mkdir -p "++wd -- Use HSH to handle ~/ path.
