@@ -11,7 +11,8 @@
 
 -- TODO: 
 --  * Detect and handle error codes in remote commands.
---  * Add robustness to disconnection
+--  * Add robustness to disconnection (finish strongSSH)
+
 
 import HSH
 import HSH.ShellEquivs
@@ -415,7 +416,6 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
                   -- .log file is at the same level as the conf-specific directory:
 		  let logfile = dropTrailingPathSeparator confdir <.> "log"
 		      workingDir = confdir </> "working_copy"
---                  workingDir <- makeHomePathPortable (confdir </> "working_copy")
 
                   -- Perform the git clone:
                   setupRemoteWorkingDirectory exec gitroot workingDir  
@@ -469,7 +469,6 @@ setupRemoteWorkingDirectory (Executor host runcmd) gitroot workingDir = do
 makeLogDir :: [BenchmarkSetting] -> IO String 
 makeLogDir settings = do
   home <- getEnv "HOME"
-  -- TODO: create another level of nesting based on date.
   let root   = home </> "clusterbench"
       prefix = "run_"
       suffix = ""  -- TODO: add more interesting description based on what is *varied* in settings.
@@ -528,12 +527,12 @@ clean = filter isAlphaNum
 
 
 --------------------------------------------------------------------------------
--- Main Script
+--                              Main Script                                   --
+--------------------------------------------------------------------------------
 
 main = do
-  ------------------------------------------------------------
   -- First parse and check options:
-
+  ---------------------------------
   argv <- getArgs
   let (options,args,errs) = getOpt Permute cli_options argv  
 
@@ -542,6 +541,8 @@ main = do
     mapM_ (putStr . ("   "++)) errs
     putStr$ usageInfo "\nUsage: [options] configFile" cli_options
     exitFailure
+
+  let isgit = Git `elem` options 
 
   -- Find idle machines:
   let machines = case filter isMachineList options of 
@@ -563,19 +564,14 @@ main = do
     [f] -> return f
     ls  -> error$ "Error, extra arguments to script not understood: " ++ unwords ls
 
-  let isgit = Git `elem` options 
-
   ------------------------------------------------------------
+  -- Now the core actions:
 
   putStrLn$ "Reading benchmark config from file: "++configFile++":"
   settings <- fmap readConfig$ readFile configFile
---  print$ nest 4 $ pPrint config
   mapM_ (print . nest 4 . pPrint) settings
   let numconfs = countConfigs settings
---      allconfs = listConfigs settings
   putStrLn$ "Size of configuration space: "++ show numconfs
-
-  ------------------------------------------------------------
 
   putStrLn "Getting current directory relative to home dir:" 
   startpath <- getPortableWD 
@@ -584,13 +580,11 @@ main = do
   if isgit then do
     putStrLn$ "Finding root of .git repository:"
     gitloc <- findGitRoot
---    putStrLn$ "    "++fst gitloc
     putStrLn$ "    "++show gitloc
 
     -- Grab idle machines as a stream of workers:
     idleMachines <- idleExecutors machines    
 
---    launchConfigs allconfs idleMachines gitroot
     launchConfigs settings idleMachines gitloc startpath
     return ()
 
@@ -598,12 +592,4 @@ main = do
     error "Non --git mode not implemented."
     return ()
 
-
---------------------------------------------------------------------------------
-
--- | A global, mutable array that tracks outstanding remote jobs.
-
--- newtype ScanResult = ScanResult (IO ([String], ScanResult))
--- idleScanner :: [String] -> IO ([String], )
--- idleScanner :: [String] -> IO (Chan [String])
 

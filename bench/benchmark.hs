@@ -479,8 +479,15 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
    , e$ "# Git_Hash: "   ++ trim revision
    , e$ "# Git_Depth: "  ++ show (length (lines hashes))
    , e$ "# Using the following settings from environment variables:" 
-   , e$ "#   BENCHLIST=$BENCHLIST THREADS=$THREADS  TRIALS=$TRIALS  SHORTRUN=$SHORTRUN SCHEDS=$SCHEDS"
-   , e$ "#   KEEPGOING=$KEEPGOING  GHC=$GHC  GHC_FLAGS=$GHC_FLAGS  GHC_RTS=$GHC_RTS"
+   , e$ "#  ENV BENCHLIST=$BENCHLIST"
+   , e$ "#  ENV THREADS=$THREADS"
+   , e$ "#  ENV TRIALS=$TRIALS"
+   , e$ "#  ENV SHORTRUN=$SHORTRUN"
+   , e$ "#  ENV SCHEDS=$SCHEDS"
+   , e$ "#  ENV KEEPGOING=$KEEPGOING"
+   , e$ "#  ENV GHC=$GHC"
+   , e$ "#  ENV GHC_FLAGS=$GHC_FLAGS"
+   , e$ "#  ENV GHC_RTS=$GHC_RTS"
    ]
  where 
     e s = ("echo \""++s++"\"") -|- tee ["/dev/stdout", logFile] -|- appendTo resultsFile
