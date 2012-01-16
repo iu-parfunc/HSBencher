@@ -83,9 +83,11 @@ fi
 
     # Be nice, post SIGTERM first.
     # The 'exit 0' below will be executed if any preceeding command fails.
-    kill -s SIGTERM $$ && kill -0 $$ || exit 0
+    kill -s SIGTERM $$ && kill -0 $$ || exit 143
     sleep $delay
     kill -s SIGKILL $$
+    # RRN: We're using 143 exit code here to indicate timeout:
+    exit 143
 ) 2> /dev/null &
 
 exec "$@"

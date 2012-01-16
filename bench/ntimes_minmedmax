@@ -2,6 +2,10 @@
 
 # Ported from Haskell CnC script (BSD license)
 
+# Usage: ntimes <N> cmd args ...
+# Returns MIN MED MAX times on stdout all on one line.
+
+
 ntimes=`dirname $0`/ntimes
 
 times=`$ntimes $*`

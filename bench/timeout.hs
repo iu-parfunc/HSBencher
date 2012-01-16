@@ -28,7 +28,8 @@ main =
 	       let loop acc = 
 		    if acc > (timeout :: Int)
 		    then do putStrLn$ "\nERROR: TIMED OUT!"
-			    putMVar sync (ExitFailure 88)
+			    -- RRN: We're using 143 exit code here to indicate timeout:
+			    putMVar sync (ExitFailure 143)
 	 		    --exitWith (ExitFailure 88)
                             
 	 	    else do sleep polltime

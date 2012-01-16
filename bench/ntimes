@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Ported from Haskell CnC script (BSD license)
+# Ported from Haskell-CnC script (BSD license)
 
 # Usage: ntimes <N> cmd args ...
 # ========================================
@@ -21,7 +21,8 @@
 # ================================================================================
 
 # Time out processes after a few minutes.
-TIMEOUT=120
+TIMEOUT=2
+# TIMEOUT=120
 # TIMEOUT=1000
 
 
@@ -68,7 +69,7 @@ EXITCODE=0
     TMP2=`mytempfile 2`
 
 # [2009.12.17] I need to get a good cross-platform process time-out system:
-     # HACK: Sometimes I run this on systems WITHOUT a working GHC:
+     # HACK: Sometimes I run this on systems WITHOUT a working GHC thus bash:
     if [ -e ./timeout.sh ];
     then TIMEOUTRUN="./timeout.sh -t $TIMEOUT"
     elif [ -e ./timeout ];

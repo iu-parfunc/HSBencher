@@ -447,6 +447,8 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
        case code of
 	ExitSuccess     -> str
 	ExitFailure 143 -> "TIMEOUT TIMEOUT TIMEOUT"
+	-- TEMP: [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily:
+	ExitFailure 15  -> "TIMEOUT TIMEOUT TIMEOUT"
 	ExitFailure _   -> "ERR ERR ERR"		     
 
   log $ " >>> MIN/MEDIAN/MAX TIMES " ++ times
