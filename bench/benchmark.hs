@@ -62,7 +62,7 @@ import Text.Printf
 import Debug.Trace
 import Data.Char (isSpace)
 import qualified Data.Set as S
-import Data.List (isPrefixOf, tails, isInfixOf)
+import Data.List (isPrefixOf, tails, isInfixOf, delete)
 
 -- The global configuration for benchmarking:
 data Config = Config 
@@ -364,6 +364,18 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
   log$ "(In directory "++ pwd ++")"
+
+  log$ "Next run who, reporting users other than the current user.  This may help with detectivework."
+--  whos <- lift$ run "who | awk '{ print $1 }' | grep -v $USER"
+  whos <- lift$ run$ "who" -|- map (head . words)
+  user <- lift$ getEnv "USER"
+  case whos of 
+    [] -> do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported nothing!"
+    	     lift$ exit 1
+    ls | not (elem user ls) -> 
+          do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported: "++ unwords ls
+    	     lift$ exit 1
+    ls -> log$ "Who_Output: "++ unwords (filter (/= user) whos)
 
   -- numthreads == 0 indicates a serial run:
   let (rts,flags_) = case numthreads of
