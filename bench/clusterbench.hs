@@ -8,6 +8,11 @@
 -- This script is a layer on top of benchmark.hs and file_away.hs.
 -- It may need to be compiled due to problems with HSH and ghci [2012.01.14].
 
+
+-- TODO: 
+--  * Detect and handle error codes in remote commands.
+--  * Add robustness to disconnection
+
 import HSH
 import HSH.ShellEquivs
 import Control.Monad 
@@ -27,9 +32,9 @@ import System.Environment (getEnv, getArgs)
 import System.Exit
 import System.Process
 import System.Random    (randomIO)
-import System.Directory (doesDirectoryExist, getCurrentDirectory, 
+import System.Directory (doesDirectoryExist, getCurrentDirectory, canonicalizePath,
 			 createDirectoryIfMissing, doesFileExist)
-import System.FilePath (dropTrailingPathSeparator, 
+import System.FilePath (dropTrailingPathSeparator, makeRelative, 
 			addTrailingPathSeparator, takeDirectory, (</>), (<.>))
 import Text.Regex 
 import Text.PrettyPrint.HughesPJClass (Pretty, pPrint, text)
@@ -50,6 +55,7 @@ data BenchmarkSetting =
    Vary ParamType [String]
    -- Set parameter across all runs:
  | Set ParamType String
+ | Command String 
 
  deriving (Show, Eq, Read, Typeable)
 
@@ -78,11 +84,19 @@ isMachineList (MachineList _) = True
 isMachineList _               = False
 unMachineList (MachineList ls) = ls
 isVary (Vary _ _) = True
-isVary _ = False
-isSet (Set _ _) = True
-isSet _ = False
--- </boilerplate>
+isVary          _ = False
+isSet  (Set _ _)  = True
+isSet           _ = False
+isCommand (Command _) = True
+isCommand           _ = False
+getCommand :: [BenchmarkSetting] -> String
+getCommand settings = 
+  case filter isCommand settings of 
+   []  -> error "No Command form in benchmark description."
+   [Command c] -> c
+   _   -> error "More than one Command form in benchmark description."
 
+-- </boilerplate>
 
 cli_options :: [OptDescr Flag]
 cli_options = 
@@ -189,21 +203,36 @@ makeHomePathPortable str = do
   let path = subRegex (mkRegex$ addTrailingPathSeparator home) str "~/"
   return (dropTrailingPathSeparator path)
 
+-- And the reverse, get rid of ~/:
+dePortablize :: String -> IO String
+dePortablize ('~':'/':tl) = do 
+  home <- getEnv "HOME" 
+  return (home </> tl)
+dePortablize path = return path
+
 -- | Return a portable "~/foo" path describing the location of the git
---   working copy root.  This assumes that there is a parent directory
---   containing a ".git"
-findGitRoot :: IO String
+--   working copy root containing the current working directory.  This
+--   assumes that there is a parent directory containing a ".git"
+--
+--   It returns both the absolute location of the gitroot and the
+--   relative offset inside it to reach the current dir.
+findGitRoot :: IO (String,String)
 findGitRoot = 
-   runSL "pwd -L" >>= loop 
+   do start <- runSL "pwd -L" 
+      root  <- loop start
+      canonA <- canonicalizePath root
+      canonB <- canonicalizePath start
+      let offset = makeRelative canonA canonB
+      portroot <- makeHomePathPortable root
+      return (portroot,offset)
  where 
   loop path = do 
---    putStrLn$ "Checking "++ path </> ".git"
     b0 <- isHomePath path 
     unless b0 $ do
        putStrLn$ "ERROR, findGitRoot: descended out of the users home directory to: "++ path
        exitFailure 
     b <- doesDirectoryExist$ path </> ".git"
-    if b then makeHomePathPortable path
+    if b then return path
          else loop (takeDirectory path)
 
 -- | Is this a path under the home directory?
@@ -320,8 +349,8 @@ mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "
 
 -- | Job management.  Consume a stream of Idle Executors to schedule
 --   jobs remotely.
-launchConfigs :: [BenchmarkSetting] -> MVar Executor -> String -> IO ()
-launchConfigs settings idles gitroot = do
+launchConfigs :: [BenchmarkSetting] -> MVar Executor -> (String,String) -> String -> IO ()
+launchConfigs settings idles (gitroot,gitoffset) startpath = do
   let confs = listConfigs settings
   -- If a configuration run fails, it fails on another thread so we
   -- need a mutable structure to keep track of them.
@@ -367,13 +396,26 @@ launchConfigs settings idles gitroot = do
 		Nothing   -> return ()
 		Just conf -> do
 		  putStrLn$ " ** Selected configuration: " ++ show conf
-		  cmdoutput <- runcmd (buildCommand conf gitroot)
+
+		  -- Create the output directory locally on this machine:
+		  confdir <- createConfDir logd conf 
+                  -- .log file is at the same level as the conf-specific directory:
+		  let logfile = dropTrailingPathSeparator confdir <.> "log"
+		      workingDir = confdir </> "working_copy"
+--                  workingDir <- makeHomePathPortable (confdir </> "working_copy")
+
+                  -- Perform the git clone:
+                  setupRemoteWorkingDirectory exec gitroot workingDir  
+
+		  cmdoutput <- runcmd (buildCommand conf (gitroot,gitoffset) workingDir)
 		  case cmdoutput of 
 		    Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
 				  atomicModifyIORef_ state  
 				     (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
 
-		    Just bs -> writeToLog logd conf bs 
+--		    Just bs -> do logfile <- writeToLog slogd conf bs 
+		    Just bs -> do writeToLog logfile bs 
+                                  return ()
 	      );
 
 	      putStrLn$ "  - Forked thread with ID " ++ show mytid ++ " completed.";
@@ -387,7 +429,26 @@ launchConfigs settings idles gitroot = do
 
 
 -- FIXME
-buildCommand conf gitroot = ["ls"]
+buildCommand :: OneRunConfig -> (String,String) -> String -> [String]
+buildCommand conf (gitroot,gitoffset) remoteWorkingDir = 
+  ["cd " ++ remoteWorkingDir </> gitoffset,
+   "ls"
+  ]
+--  where cmd = getCommand conf
+
+-- | Setup a git clone as a fresh working directory.
+setupRemoteWorkingDirectory (Executor host runcmd) gitroot workingDir = do
+  wd <- makeHomePathPortable workingDir
+  -- Create the directory locally first:
+  runIO$ "mkdir -p "++wd -- Use HSH to handle ~/ path.
+  runcmd ["mkdir -p "++wd, 
+	  "git clone "++gitroot++" "++wd,
+	  "cd "++wd,
+	  "git submodule init",
+	  "git submodule update"]
+  putStrLn$ "  - Done cloning remote working copy:" ++ wd
+
+--------------------------------------------------------------------------------
 
 -- Create and return a directory for storing logs during this run.
 makeLogDir :: [BenchmarkSetting] -> IO String 
@@ -408,25 +469,30 @@ makeLogDir settings = do
   createDirectoryIfMissing True nextdir 
   return nextdir
 
-writeToLog :: String -> OneRunConfig -> B.ByteString -> IO () 
-writeToLog logd conf bytes = do
-  file <- confToFileName logd conf
-  let path = logd </> file
-  B.writeFile path bytes
+-- | Write out log file and return the file name used.
+-- writeToLog :: String -> OneRunConfig -> B.ByteString -> IO String
+-- writeToLog logd conf bytes = do
+--  file <- confToFileName logd conf
+--  let path = logd </> file
+writeToLog path bytes = do
+  path' <- dePortablize path
+  B.writeFile path' bytes
   putStrLn$ "  - Wrote log output to file: " ++ path
-  
-confToFileName :: String -> OneRunConfig -> IO String
-confToFileName logd conf = do
---  uid :: Word64 <- randomIO 
+
+
+-- | Create a descriptive (and unused) directory based on a
+-- configuration.  It will be a child of the run_N directory. This
+-- will be the destination for output results.
+createConfDir :: String -> OneRunConfig -> IO String
+createConfDir logd conf = do
   let descr = intercalate "_" $ map paramPlainText conf
-      ext   = "log" 
       loop n = do
         let suffix = if n==0 then "" else "_"++show n
-	    path = logd </> descr ++ suffix <.> ext
+	    path = logd </> descr ++ suffix
 	b <- doesFileExist path
 	if b then loop (n+1)
 	     else return path
-  loop 0
+  loop 0 >>= makeHomePathPortable
 
 -- Emit something descriptive for the option settings.
 -- paramPlainText (p,v) = fn p ++ filter (not . isSpace) v
@@ -495,17 +561,18 @@ main = do
   ------------------------------------------------------------
 
   putStrLn "Getting current directory relative to home dir:" 
-  path <- getPortableWD 
-  putStrLn$ "    "++path
+  startpath <- getPortableWD 
+  putStrLn$ "    "++startpath
 
   if isgit then do
     putStrLn$ "Finding root of .git repository:"
-    gitroot <- findGitRoot
-    putStrLn$ "    "++gitroot
+    gitloc <- findGitRoot
+--    putStrLn$ "    "++fst gitloc
+    putStrLn$ "    "++show gitloc
 
     idleMachines <- idleExecutors machines    
 --    launchConfigs allconfs idleMachines gitroot
-    launchConfigs settings idleMachines gitroot
+    launchConfigs settings idleMachines gitloc startpath
     return ()
 
    else do 
