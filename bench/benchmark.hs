@@ -415,10 +415,15 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
 
      else if (d && mf && containingdir /= ".") then do 
 	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
-	log " ** WARNING: Can't currently control compiler options for this benchmark!"
+	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
+	log " **          (Hopefully it will obey the GHC_FLAGS env var.)"
+	log$ " **          (Setting GHC_FLAGS="++ flags++")"
 	inDirectory containingdir $ do
-	   code <- lift$ run$ setenv [("GHC_FLAGS",flags)] "make"
-	   check code "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
+           -- First we make clean because we can't trust the makefile to rebuild when flags change:
+	   code1 <- lift$ run "make clean" 
+	   check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
+	   code2 <- lift$ run$ setenv [("GHC_FLAGS",flags)] "make"
+	   check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
 
      else do 
 	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
