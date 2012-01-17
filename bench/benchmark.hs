@@ -370,11 +370,12 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
   whos <- lift$ run$ "who" -|- map (head . words)
   user <- lift$ getEnv "USER"
   case whos of 
-    [] -> do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported nothing!"
-    	     lift$ exit 1
-    ls | not (elem user ls) -> 
-          do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported: "++ unwords ls
-    	     lift$ exit 1
+-- Hmm, it seems that this is not always true:
+    -- [] -> do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported nothing!"
+    -- 	     lift$ exit 1
+    -- ls | not (elem user ls) -> 
+    --       do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported: "++ unwords ls
+    -- 	     lift$ exit 1
     ls -> log$ "Who_Output: "++ unwords (filter (/= user) whos)
 
   -- numthreads == 0 indicates a serial run:
