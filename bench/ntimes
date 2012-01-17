@@ -21,8 +21,8 @@
 # ================================================================================
 
 # Time out processes after a few minutes.
-TIMEOUT=2
-# TIMEOUT=120
+# TIMEOUT=2
+TIMEOUT=150
 # TIMEOUT=1000
 
 

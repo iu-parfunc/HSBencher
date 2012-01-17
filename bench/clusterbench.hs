@@ -34,7 +34,7 @@ import System.Exit
 import System.Process
 import System.Random    (randomIO)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, canonicalizePath,
-			 createDirectoryIfMissing, doesFileExist)
+			 createDirectoryIfMissing, doesFileExist, removeDirectory)
 import System.FilePath (dropTrailingPathSeparator, makeRelative, 
 			addTrailingPathSeparator, takeDirectory, (</>), (<.>))
 import Text.Regex 
@@ -347,8 +347,7 @@ idleExecutors hosts = do
 
   runner activehosts host cmds = do
     putStrLn$ "  + Executor on host "++host++" invoking commands: "++show cmds
-    output <- strongSSH host cmds
-    return output
+    strongSSH host cmds
 
       
 pollIdles :: [String] -> IO [String]
@@ -371,9 +370,24 @@ pollIdles hosts =  fmap catMaybes $
 -- really done, for example with "ps h 1234" or kill -0.
 -- 
 strongSSH :: String -> [String] -> IO (Maybe B.ByteString)
-strongSSH host cmds = 
-  fmap Just $ 
-  run (mkSSHCmd host cmds)
+strongSSH host cmds = do
+  (output, checkResults) <- run (mkSSHCmd host cmds)
+  (descr,code) <- checkResults
+  case code of
+    ExitSuccess -> return (Just output)
+    ExitFailure cd -> do putStrLn$ "SSH command returned error code "++show cd++" "++descr
+			 return Nothing
+
+-- s, throws an exception on error, and sends stdout to stdout
+-- IO String runs, throws an exception on error, reads stdout into a buffer, and returns it as a string. Note: This output is not lazy.
+-- IO [String] is same as IO String, but returns the results as lines. Note: this output is not lazy.
+-- IO ExitCode runs and returns an ExitCode with the exit information. stdout is sent to stdout. Exceptions are not thrown.
+-- IO (String, ExitCode) is like IO ExitCode, but also includes a description of the last command in the pipe to have an error (or the last command, if there was no error).
+-- IO ByteString and are similar to their String counterparts.
+-- IO (String, IO (String, ExitCode)) returns a String read lazily and an IO action that, when evaluated, finishes up the process and results in its exit status. This command returns immediately.
+-- IO (IO (String, ExitCode)) sends stdout to stdout but returns immediately. It forks off the child but does not wait for it to finish. You can use checkResults to wait for the finish.
+-- IO Int returns the exit code from a program directly. If a signal caused the command to be reaped, returns 128 + SIGNUM.
+-- IO Bool returns True if the program exited normally (exit code 0, not stopped by a signal) and False otherwise.
 
 
 -- | Construct a command string that will ssh into another machine and
@@ -390,14 +404,14 @@ mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "
 --   jobs remotely.
 launchConfigs :: [BenchmarkSetting] -> MVar Executor -> (String,String) -> String -> IO ()
 launchConfigs settings idles (gitroot,gitoffset) startpath = do
-  let confs = listConfigs settings
+  let allconfs = listConfigs settings
   -- If a configuration run fails, it fails on another thread so we
   -- need a mutable structure to keep track of them.
   --
   -- This atomically modified state tracks the confs and outstanding
   -- threads (each of which is modeled by an mvar that will be written
   -- at completion.).
-  state <- newIORef (confs, M.empty)
+  state <- newIORef (allconfs, M.empty)
   logd  <- makeLogDir settings  
 
   -- The main job scheduling loop:
@@ -444,7 +458,8 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 		(case mconf of 
 		  Nothing   -> return ()
 		  Just conf -> do
-		    putStrLn$ " ** Selected configuration: " ++ show conf
+		    putStrLn$ " ** Selected configuration "++show (elemIndex conf allconfs)
+		           ++" of "++show (length allconfs)++": " ++ show conf
 
 		    -- Create the output directory locally on this machine:
 		    confdir <- createConfDir logd conf 
@@ -463,6 +478,9 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 
 		    case cmdoutput of 
 		      Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
+				    -- Delete the directory with erroneous output:
+				    putStrLn$ "  ! Deleting output directory: "++confdir
+				    removeDirectory confdir 
 				    atomicModifyIORef_ state  
 				       (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
 		      Just bs -> do writeToLog logfile bs 
