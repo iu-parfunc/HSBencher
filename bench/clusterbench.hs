@@ -316,13 +316,13 @@ idleExecutors hosts = do
   let loop = do busies <- readIORef activehosts
                 let remaining = filter (not . (`S.member` busies)) hosts
 		if null remaining then do
-		   putStrLn$ "  - Polling... wait, all nodes are busy, waiting 10 seconds..."
-		   threadDelay (10 * 1000 * 1000)
+		   putStrLn$ "  - Not polling... all nodes are busy, waiting 10 seconds..."
                  else do
 		   putStrLn$ "  - Polling for idleness: "++unwords remaining
 		   ls <- pollIdles remaining
 		   let execs = map (executors M.!) ls
 		   forM_ execs $ putMVar strm 
+		threadDelay (10 * 1000 * 1000)
 		loop
 
   forkIO $ loop 
@@ -377,18 +377,6 @@ strongSSH host cmds = do
     ExitSuccess -> return (Just output)
     ExitFailure cd -> do putStrLn$ "SSH command returned error code "++show cd++" "++descr
 			 return Nothing
-
--- s, throws an exception on error, and sends stdout to stdout
--- IO String runs, throws an exception on error, reads stdout into a buffer, and returns it as a string. Note: This output is not lazy.
--- IO [String] is same as IO String, but returns the results as lines. Note: this output is not lazy.
--- IO ExitCode runs and returns an ExitCode with the exit information. stdout is sent to stdout. Exceptions are not thrown.
--- IO (String, ExitCode) is like IO ExitCode, but also includes a description of the last command in the pipe to have an error (or the last command, if there was no error).
--- IO ByteString and are similar to their String counterparts.
--- IO (String, IO (String, ExitCode)) returns a String read lazily and an IO action that, when evaluated, finishes up the process and results in its exit status. This command returns immediately.
--- IO (IO (String, ExitCode)) sends stdout to stdout but returns immediately. It forks off the child but does not wait for it to finish. You can use checkResults to wait for the finish.
--- IO Int returns the exit code from a program directly. If a signal caused the command to be reaped, returns 128 + SIGNUM.
--- IO Bool returns True if the program exited normally (exit code 0, not stopped by a signal) and False otherwise.
-
 
 -- | Construct a command string that will ssh into another machine and
 --   run a series of commands.
@@ -458,7 +446,8 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 		(case mconf of 
 		  Nothing   -> return ()
 		  Just conf -> do
-		    putStrLn$ " ** Selected configuration "++show (elemIndex conf allconfs)
+                    let confindex = show (fromJust$ elemIndex conf allconfs)
+		    putStrLn$ " ** Selected configuration "++confindex
 		           ++" of "++show (length allconfs)++": " ++ show conf
 
 		    -- Create the output directory locally on this machine:
@@ -473,6 +462,7 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
                     -- This is it.  Here we run the remote benchmark suite:
 		    cmdoutput <- runcmd (buildCommand finalcommand conf (gitroot,gitoffset) workingDir)
 		    
+                    putStrLn$ "  * Remote command finished for config "++confindex
                     -- Now we're done with all remote operations and can unlock:
 		    unlockRemote
 
