@@ -1,5 +1,4 @@
-#!/usr/bin/env runhaskell
-{-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable, NamedFieldPuns #-}
+{-# LANGUAGE ScopedTypeVariables, DeriveDataTypeable, NamedFieldPuns, CPP #-}
 
 -- Benchmark different configurations over a cluster of machines.
 --
@@ -371,12 +370,23 @@ pollIdles hosts =  fmap catMaybes $
 -- 
 strongSSH :: String -> [String] -> IO (Maybe B.ByteString)
 strongSSH host cmds = do
+#if 0 
   (output, checkResults) <- run (mkSSHCmd host cmds)
   (descr,code) <- checkResults
   case code of
     ExitSuccess -> return (Just output)
     ExitFailure cd -> do putStrLn$ "SSH command returned error code "++show cd++" "++descr
 			 return Nothing
+#else 
+-- Having failure-to-exit problems with the above.  Trying System.Process directly:
+   (code,out,err) <- readProcessWithExitCode "ssh" [host, concat (intersperse " && " cmds)] ""
+   -- TODO: Dropping down to createProcess would allow using ByteStrings:
+   case code of 
+     ExitSuccess -> do forkIO $ putStr err  
+		       return (Just$ B.pack out)
+     ExitFailure _ -> return Nothing
+#endif
+
 
 -- | Construct a command string that will ssh into another machine and
 --   run a series of commands.
@@ -446,7 +456,7 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 		(case mconf of 
 		  Nothing   -> return ()
 		  Just conf -> do
-                    let confindex = show (fromJust$ elemIndex conf allconfs)
+                    let confindex = show (1 ++ fromJust$ elemIndex conf allconfs)
 		    putStrLn$ " ** Selected configuration "++confindex
 		           ++" of "++show (length allconfs)++": " ++ show conf
 
