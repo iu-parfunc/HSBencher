@@ -456,7 +456,7 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 		(case mconf of 
 		  Nothing   -> return ()
 		  Just conf -> do
-                    let confindex = show (1 ++ fromJust$ elemIndex conf allconfs)
+                    let confindex = show (1 + (fromJust$ elemIndex conf allconfs))
 		    putStrLn$ " ** Selected configuration "++confindex
 		           ++" of "++show (length allconfs)++": " ++ show conf
 
