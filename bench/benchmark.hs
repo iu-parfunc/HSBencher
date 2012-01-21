@@ -51,22 +51,24 @@
 
 module Main (main) where 
 
-import System.Environment
-import System.Directory
-import System.Random -- (randomIO)
-import System.Exit
-import System.FilePath (splitFileName, (</>))
-import System.Process (system)
+
 --import GHC.Conc (numCapabilities)
 import HSH
 import Prelude hiding (log)
+import Control.Concurrent
 import Control.Monad.Reader
-import Text.Printf
 import Debug.Trace
 import Data.Char (isSpace)
 import Data.Word (Word64)
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
+import System.Environment
+import System.Directory
+import System.Random (randomIO)
+import System.Exit
+import System.FilePath (splitFileName, (</>))
+import System.Process (system)
+import Text.Printf
 
 -- The global configuration for benchmarking:
 data Config = Config 
@@ -224,18 +226,8 @@ trim :: String -> String
 trim = f . f
    where f = reverse . dropWhile isSpace
 
--- Create a sliding window over the list.  The last element of each
--- window is the "current position" and samples each element of the
--- original list once.  Any additional elements are "history".
-slidingWin w ls = 
-  reverse $ map reverse $ 
-  filter (not . null) $ 
-  map (take w) (tails$ reverse ls)
-
-prop1 w ls = map (head . reverse) (slidingWin w ls) == ls
-t1 = prop1 3  [1..50]
-t2 = prop1 30 [1..20]
-
+-- | Parse a simple "benchlist.txt" file.
+parseBenchList :: String -> [Benchmark]
 parseBenchList str = 
   map parseBench $                 -- separate operator, operands
   filter (not . null) $            -- discard empty lines
@@ -244,6 +236,7 @@ parseBenchList str =
   map trim $
   lines str
 
+-- Parse one line of a benchmark file (a single benchmark name with args).
 parseBench (h:m:tl) = Benchmark {name=h, compatScheds=expandMode m, args=tl }
 parseBench ls = error$ "entry in benchlist does not have enough fields (name mode args): "++ unwords ls
 
@@ -291,8 +284,19 @@ uniqueSuffix BenchRun{threads,sched,bench} =
   "_" ++ show sched ++ 
    if threads == 0 then "_serial"
                    else "_threaded"
--- where 
---  Bench {name,args} = bench
+
+-- | Parallel for loops.
+-- parForM_ :: MonadIO m => [a] -> (a -> IO b) -> m ()
+parForM_ :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO ()
+parForM_ ls action = 
+  do
+     answers <- liftIO$ sequence$ 
+		replicate (length ls) newEmptyMVar
+     state <- ask
+     liftIO$ forM_ (zip answers ls) $ \ (mv,x) -> 
+ 	forkIO $ do r <- runReaderT (action x) state
+		    putMVar mv r
+     liftIO$ mapM_ readMVar answers
 
 
 --------------------------------------------------------------------------------
@@ -584,6 +588,7 @@ main = do
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist) ++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
 
+--        parForM_ 
         forM_ (zip [1..] pruned) $ \ (confnum,bench) -> do
               compileOne bench (confnum,length pruned)
 
