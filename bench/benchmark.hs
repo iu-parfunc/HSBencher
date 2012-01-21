@@ -49,6 +49,8 @@
 
 -}
 
+module Main (main) where 
+
 import System.Environment
 import System.Directory
 import System.Random -- (randomIO)
@@ -176,20 +178,9 @@ getConfig = do
 	   , resultsFile    = "results_" ++ hostname ++ ".dat"
 	   }
 
+-- | Remove RTS options that are specific to -threaded mode.
 pruneThreadedOpts :: [String] -> [String]
 pruneThreadedOpts = filter (`notElem` ["-qa", "-qb"])
-
--- Does a change in settings require recompilation?
-recompRequired (BenchRun t1 s1 b1) (BenchRun t2 s2 b2) =
- if b1 /= b2 || s1 /= s2 then True else
- case (t1,t2) of
-   -- Switching from serial to parallel or back requires recompile:
-   (0,t) | t > 0  -> True 
-   (t,0) | t > 0  -> True 
-   -- Otherwise, no recompile:
-   (last,current) -> False
-
-benchChanged (BenchRun _ _ b1) (BenchRun _ _ b2) = b1 /= b2
 
 -- | Expand the mode string into a list of specific schedulers to run:
 expandMode :: String -> [Sched]
@@ -551,12 +542,6 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
 -- Main Script
 ----------------------------------------------------------------------------------------------------
 
-
-data ActionList = 
-   Run Bool BenchRun -- Bool signifies recompile required.
- | Print String
-
-
 main = do
 
   -- HACK: with all the inter-machine syncing and different version
@@ -580,17 +565,17 @@ main = do
 	log " -> Succeeded."
 	liftIO$ removeFile "make_output.tmp"
 
-        let genConfigs threadsettings = 
+        let listConfigs threadsettings = 
                       [ BenchRun t s b | 
 			b@(Benchmark {compatScheds}) <- benchlist, 
 			s <- S.toList (S.intersection scheds (S.fromList compatScheds)),
 			t <- threadsettings ]
 
-            allruns = genConfigs threadsettings
+            allruns = listConfigs threadsettings
             total = length allruns
 
             -- All that matters for compilation is nonthreaded (0) or threaded [1,inf)
-            pruned = genConfigs $
+            pruned = listConfigs $
                      S.toList $ S.fromList $
                      map (\ x -> if x==0 then 0 else 1) threadsettings
 
@@ -600,28 +585,10 @@ main = do
         log$ "--------------------------------------------------------------------------------"
 
         forM_ (zip [1..] pruned) $ \ (confnum,bench) -> do
---	      let (BenchRun _ _ (Benchmark test _ args)) = bench
               compileOne bench (confnum,length pruned)
 
         forM_ (zip [1..] allruns) $ \ (confnum,bench) -> do
-	      let (BenchRun _ _ (Benchmark test _ args)) = bench
 	      runOne bench (confnum,total)
-{-
-        forM_ (zip [1..] (slidingWin 2 allruns)) $ \ (confnum,win) -> do
-              let (recomp,newbench) = 
-                        case win of 
-			     [x]   -> (True,True) -- First run, must compile.
-			     [a,b] -> (recompRequired a b, benchChanged a b)
-		  bench@(BenchRun _ _ (Benchmark test _ args)) = head$ reverse win
-              when recomp   $ log "Recompile required for next config:"
-              when newbench $ logR$ "\n# *** Config ["++show confnum++"..?], testing with ./"++ test ++".exe "++unwords args
-
-	      success <- if recomp then compileOne bench (confnum,total)
-	                           else return True
-              if success 
-               then runOne bench (confnum,total)
-	       else log$ "Compile failed, not running benchmark for config "++show confnum
--}
 
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
