@@ -405,7 +405,7 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
      mf <- lift$ doesFileExist$     containingdir ++ "/Makefile"
      if e then do 
 	 log "Compiling with a single GHC command: "
-	 let cmd = unwords [ghc, "-i../", "-i"++containingdir, flags, 
+	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, flags, 
 			    hsfile, "-o "++test++".exe"]		
 	 log$ "  "++cmd ++"\n"
 	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
