@@ -51,7 +51,7 @@
 
 import System.Environment
 import System.Directory
-import System.Random (randomIO)
+import System.Random -- (randomIO)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
 import System.Process (system)
@@ -62,7 +62,10 @@ import Control.Monad.Reader
 import Text.Printf
 import Debug.Trace
 import Data.Char (isSpace)
-import Data.Word (Word64)
+-- [2012.01.21] Having a weird problem when running through
+-- ghci/runhaskell.  It can't find the Word64 Random instance.
+-- import Data.Word -- (Word64)
+import Data.Int -- (Int64)
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 
@@ -481,8 +484,10 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 -- Helpers for creating temporary files:
 ------------------------------------------------------------
 mktmpfile = do 
-   n :: Word64 <- lift$ randomIO
-   return$ "._Temp_output_buffer_"++show n++".txt"
+--   n :: Word64 <- lift$ randomIO
+--   return$ "._Temp_output_buffer_"++show (n)++".txt"
+   n :: Int64 <- lift$ randomIO
+   return$ "._Temp_output_buffer_"++show (abs n)++".txt"
 -- Flush the temporary file to the log file (deleting it in the process):
 flushtmp tmpfile = 
            do Config{shortrun, logFile} <- ask
