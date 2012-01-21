@@ -51,8 +51,9 @@
 
 import System.Environment
 import System.Directory
+import System.Random (randomIO)
 import System.Exit
-import System.FilePath (splitFileName)
+import System.FilePath (splitFileName, (</>))
 import System.Process (system)
 --import GHC.Conc (numCapabilities)
 import HSH
@@ -61,6 +62,7 @@ import Control.Monad.Reader
 import Text.Printf
 import Debug.Trace
 import Data.Char (isSpace)
+import Data.Word (Word64)
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 
@@ -347,13 +349,58 @@ backupResults Config{resultsFile, logFile} = do
     renameFile logFile     (logFile     ++"."++date++".bak")
 
 --------------------------------------------------------------------------------
+-- Compiling Benchmarks
+--------------------------------------------------------------------------------
+
+runCompile :: FilePath -> FilePath -> BenchRun -> ReaderT Config IO Bool
+runCompile containingdir hsfile
+           (BenchRun numthreads sched (Benchmark test _ args_)) = 
+  do Config{ghc, ghc_flags} <- ask
+
+     let flags_ = case numthreads of
+		   0 -> ghc_flags
+		   _ -> ghc_flags++" -threaded"
+	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""
+
+     e  <- lift$ doesFileExist hsfile
+     d  <- lift$ doesDirectoryExist containingdir
+     mf <- lift$ doesFileExist$     containingdir </> "Makefile"
+     if e then do 
+	 log "Compiling with a single GHC command: "
+	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, flags, 
+			    hsfile, "-o "++test++".exe"]		
+	 log$ "  "++cmd ++"\n"
+	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
+         tmpfile <- mktmpfile
+	 code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
+	 flushtmp tmpfile 
+	 check code "ERROR, benchmark.hs: compilation failed."
+
+
+     else if (d && mf && containingdir /= ".") then do 
+	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
+	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
+	log " **          (Hopefully it will obey the GHC_FLAGS env var.)"
+	log$ " **          (Setting GHC_FLAGS="++ flags++")"
+	inDirectory containingdir $ do
+           -- First we make clean because we can't trust the makefile to rebuild when flags change:
+	   code1 <- lift$ run "make clean" 
+	   check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
+	   code2 <- lift$ run$ setenv [("GHC_FLAGS",flags)] "make"
+	   check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
+
+     else do 
+	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
+	lift$ exit 1
+
+--------------------------------------------------------------------------------
 -- Running Benchmarks
 --------------------------------------------------------------------------------
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
 runOne :: Bool -> BenchRun -> (Int,Int) -> ReaderT Config IO ()
-runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,totalIters) = do
+runOne doCompile br@(BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,totalIters) = do
 
   Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
@@ -379,56 +426,21 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
     ls -> log$ "Who_Output: "++ unwords (filter (/= user) whos)
 
   -- numthreads == 0 indicates a serial run:
-  let (rts,flags_) = case numthreads of
-		     0 -> (ghc_RTS, ghc_flags)
-		     _ -> (ghc_RTS  ++" -N"++show numthreads, 
-			   ghc_flags++" -threaded")
-      flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""
+  let 
+      rts = case numthreads of
+	     0 -> ghc_RTS
+	     _ -> ghc_RTS  ++" -N"++show numthreads
 
       (containingdir,_) = splitFileName test
       hsfile = test++".hs"
-      tmpfile = "._Temp_output_buffer.txt"
-      flushtmp = do lift$ runIO$ catFrom [tmpfile] -|- indent -|- appendTo logFile
-		    unless shortrun $ 
-		       lift$ runIO$ catFrom [tmpfile] -|- indent -- To stdout
-		    lift$ removeFile tmpfile
-      -- Indent for prettier output
-      indent = map ("    "++)
+
 
   ----------------------------------------
   -- Do the Compile
   ----------------------------------------
-  success <- if not doCompile then return True else do 
-
-     e  <- lift$ doesFileExist hsfile
-     d  <- lift$ doesDirectoryExist containingdir
-     mf <- lift$ doesFileExist$     containingdir ++ "/Makefile"
-     if e then do 
-	 log "Compiling with a single GHC command: "
-	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, flags, 
-			    hsfile, "-o "++test++".exe"]		
-	 log$ "  "++cmd ++"\n"
-	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
-	 code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
-	 flushtmp 
-	 check code "ERROR, benchmark.hs: compilation failed."
-
-
-     else if (d && mf && containingdir /= ".") then do 
-	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
-	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
-	log " **          (Hopefully it will obey the GHC_FLAGS env var.)"
-	log$ " **          (Setting GHC_FLAGS="++ flags++")"
-	inDirectory containingdir $ do
-           -- First we make clean because we can't trust the makefile to rebuild when flags change:
-	   code1 <- lift$ run "make clean" 
-	   check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
-	   code2 <- lift$ run$ setenv [("GHC_FLAGS",flags)] "make"
-	   check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
-
-     else do 
-	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
-	lift$ exit 1
+  success <- if not doCompile 
+             then return True 
+             else runCompile containingdir hsfile br 
 
   ----------------------------------------
   -- Done Compiling, now Execute:
@@ -443,10 +455,11 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
   -- One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.  
 
+  tmpfile <- mktmpfile
   -- NOTE: With this form we don't get the error code.  Rather there will be an exception on error:
   (str::String,finish) <- lift$ run (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
   (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
-  flushtmp 
+  flushtmp tmpfile
   check code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
 
   let times = 
@@ -462,6 +475,23 @@ runOne doCompile (BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,t
 
   return ()
   
+
+-- Helpers for creating temporary files:
+------------------------------------------------------------
+mktmpfile = do 
+   n :: Word64 <- lift$ randomIO
+   return$ "._Temp_output_buffer_"++show n++".txt"
+-- Flush the temporary file to the log file (deleting it in the process):
+flushtmp tmpfile = 
+           do Config{shortrun, logFile} <- ask
+              lift$ runIO$ catFrom [tmpfile] -|- indent -|- appendTo logFile
+	      unless shortrun $ 
+		 lift$ runIO$ catFrom [tmpfile] -|- indent -- To stdout
+	      lift$ removeFile tmpfile
+-- Indent for prettier output
+indent = map ("    "++)
+------------------------------------------------------------
+
 
 --------------------------------------------------------------------------------
 
