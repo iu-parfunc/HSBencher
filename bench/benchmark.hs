@@ -191,7 +191,7 @@ recompRequired (BenchRun t1 s1 b1) (BenchRun t2 s2 b2) =
 
 benchChanged (BenchRun _ _ b1) (BenchRun _ _ b2) = b1 /= b2
 
--- Expand the mode string into a list of specific schedulers to run:
+-- | Expand the mode string into a list of specific schedulers to run:
 expandMode "default" = [Trace]
 expandMode "none"    = [None]
 -- TODO: Add RNG:
@@ -293,6 +293,16 @@ runIgnoreErr cm =
      (err::String, code::ExitCode) <- force
      return str
 
+-- Based on a benchmark configuration, come up with a unique suffix to
+-- distinguish the executable.
+uniqueSuffix BenchRun{threads,sched,bench} =    
+  "_" ++ show sched ++ 
+   if threads == 0 then "_serial"
+                   else "_threaded"
+-- where 
+--  Bench {name,args} = bench
+
+
 --------------------------------------------------------------------------------
 -- Error handling
 --------------------------------------------------------------------------------
@@ -353,8 +363,8 @@ backupResults Config{resultsFile, logFile} = do
 --------------------------------------------------------------------------------
 
 compileOne :: BenchRun -> (Int,Int) -> ReaderT Config IO Bool
-compileOne (BenchRun numthreads sched (Benchmark test _ args_)) 
-	   (iterNum,totalIters) = 
+compileOne br@(BenchRun numthreads sched (Benchmark test _ args_)) 
+	      (iterNum,totalIters) = 
   do Config{ghc, ghc_flags, shortrun} <- ask
 
      let flags_ = case numthreads of
@@ -364,6 +374,7 @@ compileOne (BenchRun numthreads sched (Benchmark test _ args_))
 
 	 (containingdir,_) = splitFileName test
 	 hsfile = test++".hs"
+	 exefile = test++ uniqueSuffix br ++ ".exe"
          args = if shortrun then shortArgs args_ else args_
 
      log$ "\n--------------------------------------------------------------------------------"
@@ -377,7 +388,7 @@ compileOne (BenchRun numthreads sched (Benchmark test _ args_))
      if e then do 
 	 log "Compiling with a single GHC command: "
 	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, flags, 
-			    hsfile, "-o "++test++".exe"]		
+			    hsfile, "-o "++exefile]		
 	 log$ "  "++cmd ++"\n"
 	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
          tmpfile <- mktmpfile
@@ -409,8 +420,8 @@ compileOne (BenchRun numthreads sched (Benchmark test _ args_))
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
 runOne :: BenchRun -> (Int,Int) -> ReaderT Config IO ()
-runOne (BenchRun numthreads sched (Benchmark test _ args_)) 
-       (iterNum,totalIters) = do
+runOne br@(BenchRun numthreads sched (Benchmark test _ args_)) 
+          (iterNum,totalIters) = do
   Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
   
@@ -425,28 +436,22 @@ runOne (BenchRun numthreads sched (Benchmark test _ args_))
 --  whos <- lift$ run "who | awk '{ print $1 }' | grep -v $USER"
   whos <- lift$ run$ "who" -|- map (head . words)
   user <- lift$ getEnv "USER"
-  case whos of 
--- Hmm, it seems that this is not always true:
-    -- [] -> do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported nothing!"
-    -- 	     lift$ exit 1
-    -- ls | not (elem user ls) -> 
-    --       do log$ "INTERNAL ERROR: 'who' should report at least the current user.  Reported: "++ unwords ls
-    -- 	     lift$ exit 1
-    ls -> log$ "Who_Output: "++ unwords (filter (/= user) whos)
+
+  log$ "Who_Output: "++ unwords (filter (/= user) whos)
 
   -- numthreads == 0 indicates a serial run:
   let 
       rts = case numthreads of
 	     0 -> ghc_RTS
 	     _ -> ghc_RTS  ++" -N"++show numthreads
-
+      exefile = "./" ++ test ++ uniqueSuffix br ++ ".exe"
   ----------------------------------------
   -- Now Execute:
   ----------------------------------------
 
   -- If we failed compilation we don't bother running either:
   let prunedRTS = unwords (pruneThreadedOpts (words rts)) -- ++ "-N" ++ show numthreads
-      ntimescmd = printf "%s %d ./%s.exe %s +RTS %s -RTS" ntimes trials test (unwords args) prunedRTS
+      ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) prunedRTS
   log$ "Executing " ++ ntimescmd
 
   -- One option woud be dynamic feedback where if the first one
@@ -583,6 +588,15 @@ main = do
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist) ++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
 
+        forM_ (zip [1..] allruns) $ \ (confnum,bench) -> do
+--	      let (BenchRun _ _ (Benchmark test _ args)) = bench
+              compileOne bench (confnum,total)
+
+
+        forM_ (zip [1..] allruns) $ \ (confnum,bench) -> do
+	      let (BenchRun _ _ (Benchmark test _ args)) = bench
+	      runOne bench (confnum,total)
+{-
         forM_ (zip [1..] (slidingWin 2 allruns)) $ \ (confnum,win) -> do
               let (recomp,newbench) = 
                         case win of 
@@ -597,6 +611,7 @@ main = do
               if success 
                then runOne bench (confnum,total)
 	       else log$ "Compile failed, not running benchmark for config "++show confnum
+-}
 
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
