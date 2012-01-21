@@ -56,6 +56,7 @@ module Main (main) where
 import HSH
 import Prelude hiding (log)
 import Control.Concurrent
+import Control.Concurrent.Chan
 import Control.Monad.Reader
 import Debug.Trace
 import Data.Char (isSpace)
@@ -90,7 +91,10 @@ data Config = Config
 
  -- Logging can be dynamically redirected away from the filenames
  -- (logFile, resultsFile) and towards specific Handles:
- , outHandles     :: Maybe (Handle,Handle) 
+-- , outHandles     :: Maybe (Handle,Handle) 
+ -- A Nothing on one of these chans means "end-of-stream":
+ , outHandles     :: Maybe (Chan (Maybe String), 
+			    Chan (Maybe String)) 
  }
 
 
@@ -351,7 +355,11 @@ logOn mode s = do
   case outHandles of 
     -- If these are note set, direct logging info directly to files:
     Nothing -> lift$ runIO$ echo (s++"\n") -|- tee ["/dev/stdout"] -|- appendTo file
---    Just (logfile,results) -> 
+    Just (logChan,resultChan) -> 
+     case mode of 
+      ResultsFile -> lift$ writeChan resultChan (Just s)
+      LogFile     -> lift$ writeChan logChan    (Just s)
+      
 
 
 -- | Create a backup copy of existing results_HOST.dat files.
@@ -599,10 +607,25 @@ main = do
         log$ "--------------------------------------------------------------------------------"
 
 --        parForM_ 
-        forM_ (zip [1..] pruned) $ \ (confnum,bench) -> do
+        outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
+           withBufferedLogs$ 
               compileOne bench (confnum,length pruned)
 
-        forM_ (zip [1..] allruns) $ \ (confnum,bench) -> do
+        let logOuts    = map fst outputs
+	    resultOuts = map snd outputs
+	    dumpChan ch = do ls <- getChanContents ch
+			     return (map fromJust $ 
+				     takeWhile isJust ls)
+
+        -- Here we want to print output as though the processes were
+        -- run in serial.  Interleaved output is very ugly.
+        alllogs :: [[String]] <- lift$ mapM dumpChan logOuts
+        allress :: [[String]] <- lift$ mapM dumpChan resultOuts
+        lift$ mapM_ putStrLn (concat alllogs)
+--        lift$ appendFile logFile     (concat$ concat alllogs)
+--        lift$ appendFile resultsFile (concat$ concat allress)
+
+        forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 	      runOne bench (confnum,total)
 
         log$ "\n--------------------------------------------------------------------------------"
@@ -612,4 +635,13 @@ main = do
     )
     conf
 
+-- | Capture logging output in memory.  Don't write directly to log files.
+withBufferedLogs action = 
+ do conf <- ask 
+    chan1 <- lift$ newChan
+    chan2 <- lift$ newChan
+    let handles = (chan1,chan2)
+    lift$ runReaderT action conf{outHandles= Just handles}
+    return handles
 
+    
