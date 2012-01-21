@@ -68,6 +68,7 @@ import System.Random (randomIO)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
 import System.Process (system)
+import System.IO (Handle)
 import Text.Printf
 
 -- The global configuration for benchmarking:
@@ -86,6 +87,10 @@ data Config = Config
  , hostname       :: String 
  , resultsFile    :: String -- Where to put timing results.
  , logFile        :: String -- Where to put more verbose testing output.
+
+ -- Logging can be dynamically redirected away from the filenames
+ -- (logFile, resultsFile) and towards specific Handles:
+ , outHandles     :: Maybe (Handle,Handle) 
  }
 
 
@@ -158,15 +163,12 @@ getConfig = do
   -- Note -- how do we find the # of threads ignoring hyperthreading?
   ----------------------------------------
 
-  logOn logFile$ "Reading list of benchmarks/parameters from: "++bench
   benchstr <- readFile bench
   let ver = case filter (isInfixOf "ersion") (lines benchstr) of 
 	      (h:t) -> read $ head $ filter isNumber (words h)
 	      []    -> 0
-
-  -- Here are the DEFAULT VALUES:
-  return$ 
-    Config { hostname, logFile, scheds, shortrun    
+      conf = Config 
+           { hostname, logFile, scheds, shortrun    
 	   , ghc        =       get "GHC"       "ghc"
 	   , ghc_RTS    =       get "GHC_RTS" (if shortrun then "" else "-qa -s")
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
@@ -178,7 +180,14 @@ getConfig = do
 	   , threadsettings = parseIntList$ get "THREADS" maxthreads	   
 	   , keepgoing      = strBool (get "KEEPGOING" "0")
 	   , resultsFile    = "results_" ++ hostname ++ ".dat"
+	   , outHandles     = Nothing
 	   }
+
+  runReaderT (logOn LogFile$ "Read list of benchmarks/parameters from: "++bench) conf
+
+  -- Here are the DEFAULT VALUES:
+  return conf
+
 
 -- | Remove RTS options that are specific to -threaded mode.
 pruneThreadedOpts :: [String] -> [String]
@@ -324,29 +333,30 @@ check (ExitFailure code) msg  = do
 -- Logging
 --------------------------------------------------------------------------------
 
+data LogDest = ResultsFile | LogFile
 
--- Stdout and logFile:
+-- Print a message both to stdout and logFile:
 log :: String -> ReaderT Config IO ()
-log str = do
-  Config{logFile} <- ask
-  lift$ logOn logFile str
+log = logOn LogFile 
 
--- Stdout, logFile, and resultsFile
-logBoth str = do log str; logR str 
+-- Log to a particular file and also echo to stdout.
+-- logOn :: String -> String -> IO ()
+--logOn :: LogDest -> String -> IO ()
+logOn :: LogDest -> String -> ReaderT Config IO ()
+logOn mode s = do
+  Config{outHandles,logFile,resultsFile} <- ask
+  let file = case mode of 
+	       ResultsFile -> resultsFile
+	       LogFile     -> logFile
+  case outHandles of 
+    -- If these are note set, direct logging info directly to files:
+    Nothing -> lift$ runIO$ echo (s++"\n") -|- tee ["/dev/stdout"] -|- appendTo file
+--    Just (logfile,results) -> 
 
--- Results file only:
-logR str = do 
-  Config{resultsFile} <- ask
-  lift$ runIO$ echo (str++"\n") -|- appendTo resultsFile
 
-logOn :: String -> String -> IO ()
-logOn file s = 
-  runIO$ echo (s++"\n") -|- tee ["/dev/stdout"] -|- appendTo file
-
+-- | Create a backup copy of existing results_HOST.dat files.
 backupResults Config{resultsFile, logFile} = do 
   e    <- doesFileExist resultsFile
-  --  date <- runSL "date +%s"
---  date <- runSL "date +%Y%m%d_%R"
   date <- runSL "date +%Y%m%d_%s"
   when e $ do
     renameFile resultsFile (resultsFile ++"."++date++".bak")
@@ -470,7 +480,7 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 	ExitFailure _   -> "ERR ERR ERR"		     
 
   log $ " >>> MIN/MEDIAN/MAX TIMES " ++ times
-  logR$ test ++" "++ show sched ++" "++ show numthreads ++" "++ trim times
+  logOn ResultsFile$ test ++" "++ show sched ++" "++ show numthreads ++" "++ trim times
 
   return ()
   

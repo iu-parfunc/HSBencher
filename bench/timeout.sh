@@ -75,9 +75,11 @@ fi
 (
     ((t = timeout))
 
+    sleep 0.05
     while ((t > 0)); do
-        sleep $interval
         kill -0 $$ || exit 0
+#        echo "timeout.sh: SLEEPING FOR $interval"
+        sleep $interval
         ((t -= interval))
     done
 
