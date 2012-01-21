@@ -352,15 +352,24 @@ backupResults Config{resultsFile, logFile} = do
 -- Compiling Benchmarks
 --------------------------------------------------------------------------------
 
-runCompile :: FilePath -> FilePath -> BenchRun -> ReaderT Config IO Bool
-runCompile containingdir hsfile
-           (BenchRun numthreads sched (Benchmark test _ args_)) = 
-  do Config{ghc, ghc_flags} <- ask
+compileOne :: BenchRun -> (Int,Int) -> ReaderT Config IO Bool
+compileOne (BenchRun numthreads sched (Benchmark test _ args_)) 
+	   (iterNum,totalIters) = 
+  do Config{ghc, ghc_flags, shortrun} <- ask
 
      let flags_ = case numthreads of
 		   0 -> ghc_flags
 		   _ -> ghc_flags++" -threaded"
 	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""
+
+	 (containingdir,_) = splitFileName test
+	 hsfile = test++".hs"
+         args = if shortrun then shortArgs args_ else args_
+
+     log$ "\n--------------------------------------------------------------------------------"
+     log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
+	  ": "++test++" (args \""++unwords args++"\") scheduler "++show sched
+     log$ "--------------------------------------------------------------------------------\n"
 
      e  <- lift$ doesFileExist hsfile
      d  <- lift$ doesDirectoryExist containingdir
@@ -399,9 +408,9 @@ runCompile containingdir hsfile
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-runOne :: Bool -> BenchRun -> (Int,Int) -> ReaderT Config IO ()
-runOne doCompile br@(BenchRun numthreads sched (Benchmark test _ args_)) (iterNum,totalIters) = do
-
+runOne :: BenchRun -> (Int,Int) -> ReaderT Config IO ()
+runOne (BenchRun numthreads sched (Benchmark test _ args_)) 
+       (iterNum,totalIters) = do
   Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
   
@@ -431,23 +440,11 @@ runOne doCompile br@(BenchRun numthreads sched (Benchmark test _ args_)) (iterNu
 	     0 -> ghc_RTS
 	     _ -> ghc_RTS  ++" -N"++show numthreads
 
-      (containingdir,_) = splitFileName test
-      hsfile = test++".hs"
-
-
   ----------------------------------------
-  -- Do the Compile
-  ----------------------------------------
-  success <- if not doCompile 
-             then return True 
-             else runCompile containingdir hsfile br 
-
-  ----------------------------------------
-  -- Done Compiling, now Execute:
+  -- Now Execute:
   ----------------------------------------
 
   -- If we failed compilation we don't bother running either:
-  -- when success $ 
   let prunedRTS = unwords (pruneThreadedOpts (words rts)) -- ++ "-N" ++ show numthreads
       ntimescmd = printf "%s %d ./%s.exe %s +RTS %s -RTS" ntimes trials test (unwords args) prunedRTS
   log$ "Executing " ++ ntimescmd
@@ -586,15 +583,20 @@ main = do
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist) ++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
 
-        forM_ (zip [1..] (slidingWin 2 allruns)) $ \ (n,win) -> do
+        forM_ (zip [1..] (slidingWin 2 allruns)) $ \ (confnum,win) -> do
               let (recomp,newbench) = 
                         case win of 
 			     [x]   -> (True,True) -- First run, must compile.
 			     [a,b] -> (recompRequired a b, benchChanged a b)
 		  bench@(BenchRun _ _ (Benchmark test _ args)) = head$ reverse win
               when recomp   $ log "Recompile required for next config:"
-              when newbench $ logR$ "\n# *** Config ["++show n++"..?], testing with ./"++ test ++".exe "++unwords args
-	      runOne recomp bench (n,total)
+              when newbench $ logR$ "\n# *** Config ["++show confnum++"..?], testing with ./"++ test ++".exe "++unwords args
+
+	      success <- if recomp then compileOne bench (confnum,total)
+	                           else return True
+              if success 
+               then runOne bench (confnum,total)
+	       else log$ "Compile failed, not running benchmark for config "++show confnum
 
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
