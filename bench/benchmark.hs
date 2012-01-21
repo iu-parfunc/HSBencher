@@ -62,10 +62,7 @@ import Control.Monad.Reader
 import Text.Printf
 import Debug.Trace
 import Data.Char (isSpace)
--- [2012.01.21] Having a weird problem when running through
--- ghci/runhaskell.  It can't find the Word64 Random instance.
--- import Data.Word -- (Word64)
-import Data.Int -- (Int64)
+import Data.Word (Word64)
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 
@@ -106,7 +103,7 @@ allScheds = S.fromList [Trace, Direct, Sparks, ContFree, None]
 
 data Benchmark = Benchmark
  { name :: String
- , mode :: String
+ , compatScheds :: [Sched]
  , args :: [String]
  } deriving (Eq, Show)
 
@@ -195,6 +192,7 @@ recompRequired (BenchRun t1 s1 b1) (BenchRun t2 s2 b2) =
 benchChanged (BenchRun _ _ b1) (BenchRun _ _ b2) = b1 /= b2
 
 -- | Expand the mode string into a list of specific schedulers to run:
+expandMode :: String -> [Sched]
 expandMode "default" = [Trace]
 expandMode "none"    = [None]
 -- TODO: Add RNG:
@@ -255,7 +253,7 @@ parseBenchList str =
   map trim $
   lines str
 
-parseBench (h:m:tl) = Benchmark h m tl
+parseBench (h:m:tl) = Benchmark {name=h, compatScheds=expandMode m, args=tl }
 parseBench ls = error$ "entry in benchlist does not have enough fields (name mode args): "++ unwords ls
 
 strBool ""  = False
@@ -382,7 +380,8 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 
      log$ "\n--------------------------------------------------------------------------------"
      log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
-	  ": "++test++" (args \""++unwords args++"\") scheduler "++show sched
+	  ": "++test++" (args \""++unwords args++"\") scheduler "++show sched ++ 
+           if numthreads==0 then " serial" else " threaded"
      log$ "--------------------------------------------------------------------------------\n"
 
      e  <- lift$ doesFileExist hsfile
@@ -484,10 +483,8 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 -- Helpers for creating temporary files:
 ------------------------------------------------------------
 mktmpfile = do 
---   n :: Word64 <- lift$ randomIO
---   return$ "._Temp_output_buffer_"++show (n)++".txt"
-   n :: Int64 <- lift$ randomIO
-   return$ "._Temp_output_buffer_"++show (abs n)++".txt"
+   n :: Word64 <- lift$ randomIO
+   return$ "._Temp_output_buffer_"++show (n)++".txt"
 -- Flush the temporary file to the log file (deleting it in the process):
 flushtmp tmpfile = 
            do Config{shortrun, logFile} <- ask
@@ -583,20 +580,28 @@ main = do
 	log " -> Succeeded."
 	liftIO$ removeFile "make_output.tmp"
 
-        let allruns = [ BenchRun t s b | 
-			b@(Benchmark _ mode _) <- benchlist, 
-			s <- S.toList (S.intersection scheds (S.fromList (expandMode mode))),
+        let genConfigs threadsettings = 
+                      [ BenchRun t s b | 
+			b@(Benchmark {compatScheds}) <- benchlist, 
+			s <- S.toList (S.intersection scheds (S.fromList compatScheds)),
 			t <- threadsettings ]
+
+            allruns = genConfigs threadsettings
             total = length allruns
+
+            -- All that matters for compilation is nonthreaded (0) or threaded [1,inf)
+            pruned = genConfigs $
+                     S.toList $ S.fromList $
+                     map (\ x -> if x==0 then 0 else 1) threadsettings
+
         log$ "\n--------------------------------------------------------------------------------"
         log$ "Running all benchmarks for all thread settings in "++show threadsettings
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist) ++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
 
-        forM_ (zip [1..] allruns) $ \ (confnum,bench) -> do
+        forM_ (zip [1..] pruned) $ \ (confnum,bench) -> do
 --	      let (BenchRun _ _ (Benchmark test _ args)) = bench
-              compileOne bench (confnum,total)
-
+              compileOne bench (confnum,length pruned)
 
         forM_ (zip [1..] allruns) $ \ (confnum,bench) -> do
 	      let (BenchRun _ _ (Benchmark test _ args)) = bench
