@@ -92,9 +92,9 @@ data Config = Config
 
  -- Logging can be dynamically redirected away from the filenames
  -- (logFile, resultsFile) and towards specific Handles:
--- , outHandles     :: Maybe (Handle,Handle) 
  -- A Nothing on one of these chans means "end-of-stream":
  , outHandles     :: Maybe (Chan (Maybe String), 
+			    Chan (Maybe String),
 			    Chan (Maybe String)) 
  }
 
@@ -188,7 +188,7 @@ getConfig = do
 	   , outHandles     = Nothing
 	   }
 
-  runReaderT (logOn LogFile$ "Read list of benchmarks/parameters from: "++bench) conf
+  runReaderT (log$ "Read list of benchmarks/parameters from: "++bench) conf
 
   -- Here are the DEFAULT VALUES:
   return conf
@@ -338,31 +338,34 @@ check (ExitFailure code) msg  = do
 -- Logging
 --------------------------------------------------------------------------------
 
-data LogDest = ResultsFile | LogFile
+data LogDest = ResultsFile | LogFile | StdOut
 
 -- Print a message both to stdout and logFile:
 log :: String -> ReaderT Config IO ()
-log = logOn LogFile 
+log = logOn [LogFile,StdOut] -- The commonly used default. 
 
 -- Log to a particular file and also echo to stdout.
 -- logOn :: String -> String -> IO ()
 --logOn :: LogDest -> String -> IO ()
-logOn :: LogDest -> String -> ReaderT Config IO ()
-logOn mode s = do
+logOn :: [LogDest] -> String -> ReaderT Config IO ()
+logOn modes s = do
   Config{outHandles,logFile,resultsFile} <- ask
-  let file = case mode of 
+  let tofile m = case m of 
 	       ResultsFile -> resultsFile
 	       LogFile     -> logFile
+	       StdOut      -> "/dev/stdout"
+      capped = s++"\n"
   case outHandles of 
     -- If these are note set, direct logging info directly to files:
     Nothing -> lift$ 
---               do putStrLn$ "LOGGING TO FILE.. "
-		  runIO$ echo (s++"\n") -|- tee ["/dev/stdout"] -|- appendTo file
-    Just (logChan,resultChan) -> 
-     case mode of 
-      ResultsFile -> lift$ writeChan resultChan (Just s)
-      LogFile     -> lift$ writeChan logChan    (Just s)
-      
+                 forM_ (map tofile modes) 
+		       (\ f -> appendTo f capped)
+    Just (logChan,resultChan,stdoutChan) -> 
+     forM_ modes $ \ mode -> 
+       case mode of 
+	ResultsFile -> lift$ writeChan resultChan (Just s)
+	LogFile     -> lift$ writeChan logChan    (Just s)
+	StdOut      -> lift$ writeChan stdoutChan (Just s)
 
 
 -- | Create a backup copy of existing results_HOST.dat files.
@@ -491,7 +494,7 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 	ExitFailure _   -> "ERR ERR ERR"		     
 
   log $ " >>> MIN/MEDIAN/MAX TIMES " ++ times
-  logOn ResultsFile$ test ++" "++ show sched ++" "++ show numthreads ++" "++ trim times
+  logOn [ResultsFile]$ test ++" "++ show sched ++" "++ show numthreads ++" "++ trim times
 
   return ()
   
@@ -503,14 +506,10 @@ mktmpfile = do
    return$ "._Temp_output_buffer_"++show (n)++".txt"
 -- Flush the temporary file to the log file (deleting it in the process):
 flushtmp tmpfile = 
---           do Config{shortrun, logFile} <- ask
-           do lift$ putStrLn$ "FLUSHING TMP"
+           do Config{shortrun} <- ask
               output <- lift$ readFile tmpfile
-	      mapM_ log (lines output) 
-
---              lift$ runIO$ catFrom [tmpfile] -|- indent -|- appendTo logFile
---	      unless shortrun $ 
---		 lift$ runIO$ catFrom [tmpfile] -|- indent -- To stdout
+	      let dests = if shortrun then [LogFile] else [LogFile,StdOut]
+	      mapM_ (logOn dests) (indent$ lines output) 
 	      lift$ removeFile tmpfile
 -- Indent for prettier output
 indent = map ("    "++)
@@ -617,31 +616,18 @@ main = do
         outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
            withBufferedLogs$ 
               compileOne bench (confnum,length pruned)
+        flushBuffered outputs 
 
-        lift$ putStrLn "COMPILE JOBS LAUNCHED..."
+        if shortrun then do
+	   outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
+	      withBufferedLogs$ 
+                 runOne bench (confnum,total)
+	   flushBuffered outputs 
+         else 
+ 	   forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+		runOne bench (confnum,total)
 
-        let logOuts    = map fst outputs
-	    resultOuts = map snd outputs
-	    dumpChan ch = do ls <- getChanContents ch
-			     return (map fromJust $ 
-				     takeWhile isJust ls)
-
-        -- Here we want to print output as though the processes were
-        -- run in serial.  Interleaved output is very ugly.
-        alllogs :: [[String]] <- lift$ mapM dumpChan logOuts
-        allress :: [[String]] <- lift$ mapM dumpChan resultOuts
-
-        lift$ putStrLn "ABOUT TO *JOIN* COMPILE JOBS"
-        -- This is the join:
-        lift$ mapM_ putStrLn (concat alllogs)
-        lift$ mapM_ putStrLn (concat allress)
---        lift$ appendFile logFile     (concat$ concat alllogs)
---        lift$ appendFile resultsFile (concat$ concat allress)
-
-        lift$ putStrLn "DONE compiling, now running..."
-
-        forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-	      runOne bench (confnum,total)
+--        when shortrun$ flushBuffered outputs 
 
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
@@ -655,7 +641,8 @@ withBufferedLogs action =
  do conf <- ask 
     chan1 <- lift$ newChan
     chan2 <- lift$ newChan
-    let handles = (chan1,chan2)
+    chan3 <- lift$ newChan
+    let handles = (chan1,chan2,chan3)
     -- Run in a separate thread:
     lift$ forkIO$ do 
 --    lift$ do 
@@ -666,6 +653,42 @@ withBufferedLogs action =
 		      resultsFile= error "shouldn't use resultsFile presently"}
       writeChan chan1 Nothing
       writeChan chan2 Nothing
+      writeChan chan3 Nothing
     return handles
 
-    
+fst3 (a,b,c) = a
+snd3 (a,b,c) = b
+thd3 (a,b,c) = c
+
+flushBuffered outputs = do
+        Config{logFile,resultsFile} <- ask
+        let logOuts    = map fst3 outputs
+	    resultOuts = map snd3 outputs
+	    stdOuts    = map thd3 outputs
+	    dumpChan ch = do ls <- getChanContents ch
+			     let finite = (map fromJust $ 
+				           takeWhile isJust ls)
+			     return (unlines finite)
+
+        -- Here we want to print output as though the processes were
+        -- run in serial.  Interleaved output is very ugly.
+
+        alllogs :: [String] <- lift$ mapM dumpChan logOuts
+        allress :: [String] <- lift$ mapM dumpChan resultOuts
+        allstds :: [String] <- lift$ mapM dumpChan stdOuts
+
+        -- This is the join:
+        lift$ mapM_ putStrLn allstds
+        lift$ appendFile logFile     (concat alllogs)
+        lift$ appendFile resultsFile (concat allress)
+
+        return ()
+
+--         alllogs :: [[String]] <- lift$ mapM dumpChan logOuts
+--         allress :: [[String]] <- lift$ mapM dumpChan resultOuts
+--         allstds :: [[String]] <- lift$ mapM dumpChan stdOuts
+
+--         -- This is the join:
+--         lift$ mapM_ putStrLn (concat allstds)
+--         lift$ appendFile logFile     (concat$ concat alllogs)
+--         lift$ appendFile resultsFile (concat$ concat allress)
