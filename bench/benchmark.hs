@@ -1,5 +1,5 @@
 #!/usr/bin/env runhaskell
-{-# LANGUAGE NamedFieldPuns, ScopedTypeVariables, RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
 
 -- NOTE: Under 7.2 I'm running into this HSH problem:
 -- 
@@ -57,11 +57,14 @@ import HSH
 import Prelude hiding (log)
 import Control.Concurrent
 import Control.Concurrent.Chan
+import GHC.Conc (numCapabilities)
 import Control.Monad.Reader
+import Control.Exception (evaluate)
 import Debug.Trace
 import Data.Char (isSpace)
 import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
+import Data.IORef
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 import System.Environment
@@ -312,6 +315,40 @@ parForM_ ls action =
 		    putMVar mv r
      liftIO$ mapM_ readMVar answers
 
+-- Here's a second version of parallel for loops.  The idea is to keep
+-- perform a sliding window of work and to execute on numCapabilities
+-- threads, avoiding oversubscription.
+parForM :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO [b]
+parForM ls action = 
+  do state <- ask
+     lift$ do 
+       answers <- sequence$ replicate (length ls) newEmptyMVar
+--       finit   <- newEmptyMVar
+       workIn  <- newIORef (zip ls answers)
+       forM_ [1..numCapabilities] $ \ id -> 
+	  forkIO $ do 
+             -- Pop work off the queue:
+             let loop = do -- putStrLn$ "Worker "++show id++" looping ..."
+                           x <- atomicModifyIORef workIn 
+						  (\ls -> if null ls 
+							  then ([], Nothing) 
+							  else (tail ls, Just (head ls)))
+                           case x of 
+			     Nothing -> return () -- putMVar finit ()
+			     Just (input,mv) -> 
+                               do x <- runReaderT (action input) state
+				  putMVar mv x
+                                  loop
+             loop     
+
+       -- Read out the answers in order:
+       mapM readMVar answers
+
+parfor_test = 
+--  (flip runReaderT) undefined $ 
+  do parForM [1..20] $ \ i -> 
+       lift$ putStrLn$ "PARFOR TEST: " ++ show i
+     lift$ exitSuccess
 
 --------------------------------------------------------------------------------
 -- Error handling
@@ -612,22 +649,45 @@ main = do
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist) ++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
 
---        parForM_ 
-        outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
-           withBufferedLogs$ 
-              compileOne bench (confnum,length pruned)
-        flushBuffered outputs 
 
-        if shortrun then do
-	   outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
-	      withBufferedLogs$ 
-                 runOne bench (confnum,total)
-	   flushBuffered outputs 
-         else 
- 	   forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-		runOne bench (confnum,total)
+        if False then do 
+        --------------------------------------------------------------------------------
+        -- Parallel version:
 
---        when shortrun$ flushBuffered outputs 
+	    outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
+	       forkWithBufferedLogs$ 
+    --           withBufferedLogs$
+		   compileOne bench (confnum,length pruned)
+	    flushBuffered outputs 
+
+    -- This works:
+    --        parfor_test 
+
+    -- Even this gets a stack overflow:
+    --        outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> do
+
+    --
+    --         outputs <- parForM (zip [1..] pruned) $ \ (confnum,bench) -> do
+    --            lift$ putStrLn$ "COMPILE CONFIG "++show confnum
+    --            -- Inside each action, we force the complete evaluation:
+    --            withBufferedLogs$ compileOne bench (confnum,length pruned)
+    --         flushBuffered outputs 
+
+	    if shortrun then do
+	       outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
+		  forkWithBufferedLogs$ runOne bench (confnum,total)
+	       flushBuffered outputs 
+	     else 
+	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+		    runOne bench (confnum,total)
+
+        else do
+        --------------------------------------------------------------------------------
+        -- Serial version:
+	    forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
+		compileOne bench (confnum,length pruned)
+	    forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+	        runOne bench (confnum,total)
 
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
@@ -636,8 +696,21 @@ main = do
     )
     conf
 
--- | Capture logging output in memory.  Don't write directly to log files.
+
 withBufferedLogs action = 
+ -- Inefficient: for now just execute the asynchronous version and
+ -- force it explicitly:
+ do outputs@(ch,_,_) <- withBufferedLogs action
+    msgs <- lift$ getChanContents ch
+    lift$ evaluate (length msgs)
+    return outputs
+
+type ChanPack = (Chan (Maybe String), Chan (Maybe String), Chan (Maybe String))
+
+-- | Capture logging output in memory.  Don't write directly to log files.
+forkWithBufferedLogs :: (MonadTrans t, MonadReader Config (t IO)) =>
+			ReaderT Config IO a-> t IO ChanPack
+forkWithBufferedLogs action = 
  do conf <- ask 
     chan1 <- lift$ newChan
     chan2 <- lift$ newChan
@@ -681,14 +754,4 @@ flushBuffered outputs = do
         lift$ mapM_ putStrLn allstds
         lift$ appendFile logFile     (concat alllogs)
         lift$ appendFile resultsFile (concat allress)
-
         return ()
-
---         alllogs :: [[String]] <- lift$ mapM dumpChan logOuts
---         allress :: [[String]] <- lift$ mapM dumpChan resultOuts
---         allstds :: [[String]] <- lift$ mapM dumpChan stdOuts
-
---         -- This is the join:
---         lift$ mapM_ putStrLn (concat allstds)
---         lift$ appendFile logFile     (concat$ concat alllogs)
---         lift$ appendFile resultsFile (concat$ concat allress)
