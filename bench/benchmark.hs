@@ -60,6 +60,7 @@ import Control.Concurrent.Chan
 import Control.Monad.Reader
 import Debug.Trace
 import Data.Char (isSpace)
+import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
@@ -354,7 +355,9 @@ logOn mode s = do
 	       LogFile     -> logFile
   case outHandles of 
     -- If these are note set, direct logging info directly to files:
-    Nothing -> lift$ runIO$ echo (s++"\n") -|- tee ["/dev/stdout"] -|- appendTo file
+    Nothing -> lift$ 
+--               do putStrLn$ "LOGGING TO FILE.. "
+		  runIO$ echo (s++"\n") -|- tee ["/dev/stdout"] -|- appendTo file
     Just (logChan,resultChan) -> 
      case mode of 
       ResultsFile -> lift$ writeChan resultChan (Just s)
@@ -405,8 +408,8 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, flags, 
 			    hsfile, "-o "++exefile]		
 	 log$ "  "++cmd ++"\n"
-	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
          tmpfile <- mktmpfile
+	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
 	 code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
 	 flushtmp tmpfile 
 	 check code "ERROR, benchmark.hs: compilation failed."
@@ -500,10 +503,14 @@ mktmpfile = do
    return$ "._Temp_output_buffer_"++show (n)++".txt"
 -- Flush the temporary file to the log file (deleting it in the process):
 flushtmp tmpfile = 
-           do Config{shortrun, logFile} <- ask
-              lift$ runIO$ catFrom [tmpfile] -|- indent -|- appendTo logFile
-	      unless shortrun $ 
-		 lift$ runIO$ catFrom [tmpfile] -|- indent -- To stdout
+--           do Config{shortrun, logFile} <- ask
+           do lift$ putStrLn$ "FLUSHING TMP"
+              output <- lift$ readFile tmpfile
+	      mapM_ log (lines output) 
+
+--              lift$ runIO$ catFrom [tmpfile] -|- indent -|- appendTo logFile
+--	      unless shortrun $ 
+--		 lift$ runIO$ catFrom [tmpfile] -|- indent -- To stdout
 	      lift$ removeFile tmpfile
 -- Indent for prettier output
 indent = map ("    "++)
@@ -611,6 +618,8 @@ main = do
            withBufferedLogs$ 
               compileOne bench (confnum,length pruned)
 
+        lift$ putStrLn "COMPILE JOBS LAUNCHED..."
+
         let logOuts    = map fst outputs
 	    resultOuts = map snd outputs
 	    dumpChan ch = do ls <- getChanContents ch
@@ -621,9 +630,15 @@ main = do
         -- run in serial.  Interleaved output is very ugly.
         alllogs :: [[String]] <- lift$ mapM dumpChan logOuts
         allress :: [[String]] <- lift$ mapM dumpChan resultOuts
+
+        lift$ putStrLn "ABOUT TO *JOIN* COMPILE JOBS"
+        -- This is the join:
         lift$ mapM_ putStrLn (concat alllogs)
+        lift$ mapM_ putStrLn (concat allress)
 --        lift$ appendFile logFile     (concat$ concat alllogs)
 --        lift$ appendFile resultsFile (concat$ concat allress)
+
+        lift$ putStrLn "DONE compiling, now running..."
 
         forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 	      runOne bench (confnum,total)
@@ -641,7 +656,16 @@ withBufferedLogs action =
     chan1 <- lift$ newChan
     chan2 <- lift$ newChan
     let handles = (chan1,chan2)
-    lift$ runReaderT action conf{outHandles= Just handles}
+    -- Run in a separate thread:
+    lift$ forkIO$ do 
+--    lift$ do 
+      runReaderT action 
+                 -- (return ())
+		 conf{outHandles = Just handles, 
+		      logFile    = error "shouldn't use logFile presently", 
+		      resultsFile= error "shouldn't use resultsFile presently"}
+      writeChan chan1 Nothing
+      writeChan chan2 Nothing
     return handles
 
     
