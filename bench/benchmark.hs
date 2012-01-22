@@ -67,7 +67,8 @@ import Data.Word (Word64)
 import Data.IORef
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
-import System.Environment
+import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(NoArg), usageInfo)
+import System.Environment (getEnv, getEnvironment, getArgs)
 import System.Directory
 import System.Random (randomIO)
 import System.Exit
@@ -318,8 +319,8 @@ parForM_ ls action =
 -- Here's a second version of parallel for loops.  The idea is to keep
 -- perform a sliding window of work and to execute on numCapabilities
 -- threads, avoiding oversubscription.
-parForM :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO [b]
-parForM ls action = 
+parForMAsync :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO [b]
+parForMAsync ls action = 
   do state <- ask
      lift$ do 
        answers <- sequence$ replicate (length ls) newEmptyMVar
@@ -342,7 +343,18 @@ parForM ls action =
              loop     
 
        -- Read out the answers in order:
-       mapM readMVar answers
+       chan <- newChan
+       forkIO $ forM_ answers $ \ mv -> do
+		  x <- readMVar mv
+		  writeChan chan x 
+       getChanContents chan
+
+parForM :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO [b]
+parForM ls action = do 
+   outs <- parForMAsync ls action
+   lift$ evaluate (length outs)
+   return outs
+
 
 parfor_test = 
 --  (flip runReaderT) undefined $ 
@@ -454,7 +466,6 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 	 flushtmp tmpfile 
 	 check code "ERROR, benchmark.hs: compilation failed."
 
-
      else if (d && mf && containingdir /= ".") then do 
 	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
 	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
@@ -464,6 +475,9 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
            -- First we make clean because we can't trust the makefile to rebuild when flags change:
 	   code1 <- lift$ run "make clean" 
 	   check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
+
+           -- !!! TODO: Need to redirect output to log here:
+
 	   code2 <- lift$ run$ setenv [("GHC_FLAGS",flags)] "make"
 	   check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
 
@@ -607,7 +621,26 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
 -- Main Script
 ----------------------------------------------------------------------------------------------------
 
+-- | Command line flags.
+data Flag = ParBench
+  deriving Eq
+
+-- | Command line options.
+cli_options :: [OptDescr Flag]
+cli_options = 
+     [ Option [] ["par"] (NoArg ParBench) 
+       "Build benchmarks in parallel."
+     ]
+
 main = do
+
+  cli_args <- getArgs
+  let (options,args,errs) = getOpt Permute cli_options cli_args
+  unless (null errs && null args) $ do
+    putStrLn$ "Errors parsing command line options:" 
+    mapM_ (putStr . ("   "++)) errs
+    putStr$ usageInfo "\nUsage: [options]" cli_options
+    exitFailure
 
   -- HACK: with all the inter-machine syncing and different version
   -- control systems I run into permissions problems sometimes:
@@ -650,18 +683,22 @@ main = do
         log$ "--------------------------------------------------------------------------------"
 
 
-        if False then do 
+        if ParBench `elem` options then do 
         --------------------------------------------------------------------------------
         -- Parallel version:
+            lift$ putStrLn$ "[!!!] Compiling in Parallel..."
 
+        -- Version 1: This forks ALL compiles in parallel:
 	    outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
 	       forkWithBufferedLogs$ 
-    --           withBufferedLogs$
+--               withBufferedLogs$
 		   compileOne bench (confnum,length pruned)
 	    flushBuffered outputs 
 
     -- This works:
     --        parfor_test 
+
+        -- Version 2: This uses P worker threads.
 
     -- Even this gets a stack overflow:
     --        outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> do
@@ -673,13 +710,16 @@ main = do
     --            withBufferedLogs$ compileOne bench (confnum,length pruned)
     --         flushBuffered outputs 
 
-	    if shortrun then do
-	       outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
-		  forkWithBufferedLogs$ runOne bench (confnum,total)
-	       flushBuffered outputs 
-	     else 
-	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-		    runOne bench (confnum,total)
+
+-- TEMP, DISABLING:
+-- 	    if shortrun then do
+--                lift$ putStrLn$ "[!!!] Running in Parallel..."
+-- 	       outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
+-- 		  forkWithBufferedLogs$ runOne bench (confnum,total)
+-- 	       flushBuffered outputs 
+-- 	     else 
+	    forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+		 runOne bench (confnum,total)
 
         else do
         --------------------------------------------------------------------------------
@@ -696,38 +736,39 @@ main = do
     )
     conf
 
-
-withBufferedLogs action = 
- -- Inefficient: for now just execute the asynchronous version and
- -- force it explicitly:
- do outputs@(ch,_,_) <- withBufferedLogs action
-    msgs <- lift$ getChanContents ch
-    lift$ evaluate (length msgs)
-    return outputs
-
 type ChanPack = (Chan (Maybe String), Chan (Maybe String), Chan (Maybe String))
 
 -- | Capture logging output in memory.  Don't write directly to log files.
-forkWithBufferedLogs :: (MonadTrans t, MonadReader Config (t IO)) =>
-			ReaderT Config IO a-> t IO ChanPack
-forkWithBufferedLogs action = 
+withBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO ChanPack 
+withBufferedLogs action = do
+  (hnd,io) <- makeBufferedAction action
+  lift io -- Run it immediately.
+  return hnd
+
+-- | Forking, asynchronous version.
+forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO ChanPack
+forkWithBufferedLogs action = do 
+  (hnd,io) <- makeBufferedAction action
+  lift$ forkIO io -- Run it asynchronously.
+  return hnd
+
+-- Helper function for above.
+makeBufferedAction action = 
  do conf <- ask 
-    chan1 <- lift$ newChan
-    chan2 <- lift$ newChan
-    chan3 <- lift$ newChan
+    [chan1,chan2,chan3] <- lift$ sequence [newChan,newChan,newChan]
     let handles = (chan1,chan2,chan3)
     -- Run in a separate thread:
-    lift$ forkIO$ do 
---    lift$ do 
-      runReaderT action 
-                 -- (return ())
-		 conf{outHandles = Just handles, 
-		      logFile    = error "shouldn't use logFile presently", 
-		      resultsFile= error "shouldn't use resultsFile presently"}
-      writeChan chan1 Nothing
-      writeChan chan2 Nothing
-      writeChan chan3 Nothing
-    return handles
+    let io = do runReaderT action 
+			   -- (return ())
+			   conf{outHandles = Just handles, 
+				logFile    = error "shouldn't use logFile presently", 
+				resultsFile= error "shouldn't use resultsFile presently"}
+		writeChan chan1 Nothing
+		writeChan chan2 Nothing
+		writeChan chan3 Nothing
+
+    return$ (handles, io) 
+
 
 fst3 (a,b,c) = a
 snd3 (a,b,c) = b
@@ -750,8 +791,9 @@ flushBuffered outputs = do
         allress :: [String] <- lift$ mapM dumpChan resultOuts
         allstds :: [String] <- lift$ mapM dumpChan stdOuts
 
-        -- This is the join:
+        -- This is the join.  Send all output where it is meant to go:
         lift$ mapM_ putStrLn allstds
         lift$ appendFile logFile     (concat alllogs)
         lift$ appendFile resultsFile (concat allress)
+        -- * All forked tasks will be finished by this point.
         return ()
