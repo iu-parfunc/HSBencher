@@ -692,14 +692,15 @@ main = do
 
 
 -- TEMP, DISABLING:
--- 	    if shortrun then do
---                lift$ putStrLn$ "[!!!] Running in Parallel..."
--- 	       outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
--- 		  forkWithBufferedLogs$ runOne bench (confnum,total)
--- 	       flushBuffered outputs 
--- 	     else 
-	    forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-		 runOne bench (confnum,total)
+	    if shortrun then do
+               lift$ putStrLn$ "[!!!] Running in Parallel..."
+	       outputs <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
+		  out <- forkWithBufferedLogs$ runOne bench (confnum,total)
+		  return (out, forceBuffered out)
+	       flushBuffered outputs 
+	     else 
+	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+		    runOne bench (confnum,total)
 
         else do
         --------------------------------------------------------------------------------
