@@ -357,6 +357,42 @@ parForM ls action = do
    return outs
 
 
+-- | This version takes a two-phase action that returns both a result,
+--   a completion-barrier action.
+parForMTwoPhaseAsync :: [a] -> (a -> ReaderT s IO (b, IO ())) -> ReaderT s IO [b]
+parForMTwoPhaseAsync ls action = 
+  do state <- ask
+     lift$ do 
+       answers <- sequence$ replicate (length ls) newEmptyMVar
+       workIn  <- newIORef (zip ls answers)
+       forM_ [1..numCapabilities] $ \ id -> 
+	  forkIO $ do 
+             -- Pop work off the queue:
+             let loop = do -- putStrLn$ "Worker "++show id++" looping ..."
+                           x <- atomicModifyIORef workIn 
+						  (\ls -> if null ls 
+							  then ([], Nothing) 
+							  else (tail ls, Just (head ls)))
+                           case x of 
+			     Nothing -> return () -- putMVar finit ()
+			     Just (input,mv) -> 
+                               do (result,barrier) <- runReaderT (action input) state
+				  putMVar mv result
+				  barrier 
+                                  loop
+             loop     
+
+       -- Read out the answers in order:
+       chan <- newChan
+       forkIO $ forM_ answers $ \ mv -> do
+		  x <- readMVar mv
+		  writeChan chan x 
+       strm <- getChanContents chan
+       return (take (length ls) strm)
+
+
+
+
 parfor_test = 
 --  (flip runReaderT) undefined $ 
   do parForM [1..20] $ \ i -> 
@@ -704,10 +740,11 @@ main = do
     -- Even this gets a stack overflow:
     --        outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> do
 
-            outputs <- parForMAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
+            outputs <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
                lift$ putStrLn$ "COMPILE CONFIG "++show confnum
                -- Inside each action, we force the complete evaluation:
-               withBufferedLogs$ compileOne bench (confnum,length pruned)
+               out <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
+	       return (out, forceBuffered out)
             flushBuffered outputs 
 
 
@@ -736,17 +773,17 @@ main = do
     )
     conf
 
-type ChanPack = (Chan (Maybe String), Chan (Maybe String), Chan (Maybe String))
+-- type ChanPack = (Chan (Maybe String), Chan (Maybe String), Chan (Maybe String))
 
 -- | Capture logging output in memory.  Don't write directly to log files.
-withBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO ChanPack 
+withBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
 withBufferedLogs action = do
   (hnd,io) <- makeBufferedAction action
   lift io -- Run it immediately.
   return hnd
 
 -- | Forking, asynchronous version.
-forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO ChanPack
+forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
 forkWithBufferedLogs action = do 
   (hnd,io) <- makeBufferedAction action
   lift$ forkIO io -- Run it asynchronously.
@@ -756,44 +793,48 @@ forkWithBufferedLogs action = do
 makeBufferedAction action = 
  do conf <- ask 
     [chan1,chan2,chan3] <- lift$ sequence [newChan,newChan,newChan]
-    let handles = (chan1,chan2,chan3)
     -- Run in a separate thread:
     let io = do runReaderT action 
 			   -- (return ())
-			   conf{outHandles = Just handles, 
+			   conf{outHandles = Just (chan1,chan2,chan3), 
 				logFile    = error "shouldn't use logFile presently", 
 				resultsFile= error "shouldn't use resultsFile presently"}
 		writeChan chan1 Nothing
 		writeChan chan2 Nothing
 		writeChan chan3 Nothing
+    ls1 <- lift$ dumpChan chan1
+    ls2 <- lift$ dumpChan chan2
+    ls3 <- lift$ dumpChan chan3
+    return$ ((ls1,ls2,ls3), io) 
 
-    return$ (handles, io) 
-
+dumpChan ch = do ls <- getChanContents ch
+		 let finite = (map fromJust $ 
+			       takeWhile isJust ls)
+		 return (unlines finite)
 
 fst3 (a,b,c) = a
 snd3 (a,b,c) = b
 thd3 (a,b,c) = c
 
+forceBuffered :: (String,String,String) -> IO ()
+forceBuffered (logs,results,stdouts) = do
+  evaluate (length logs)
+  evaluate (length results)
+  evaluate (length stdouts)
+  return ()
+
 flushBuffered outputs = do
         Config{logFile,resultsFile} <- ask
-        let logOuts    = map fst3 outputs
-	    resultOuts = map snd3 outputs
-	    stdOuts    = map thd3 outputs
-	    dumpChan ch = do ls <- getChanContents ch
-			     let finite = (map fromJust $ 
-				           takeWhile isJust ls)
-			     return (unlines finite)
 
         -- Here we want to print output as though the processes were
         -- run in serial.  Interleaved output is very ugly.
-
-        alllogs :: [String] <- lift$ mapM dumpChan logOuts
-        allress :: [String] <- lift$ mapM dumpChan resultOuts
-        allstds :: [String] <- lift$ mapM dumpChan stdOuts
+        let logOuts    = map fst3 outputs
+	    resultOuts = map snd3 outputs
+	    stdOuts    = map thd3 outputs
 
         -- This is the join.  Send all output where it is meant to go:
-        lift$ mapM_ putStrLn allstds
-        lift$ appendFile logFile     (concat alllogs)
-        lift$ appendFile resultsFile (concat allress)
+        lift$ mapM_ putStrLn stdOuts
+        lift$ appendFile logFile     (concat logOuts)
+        lift$ appendFile resultsFile (concat resultOuts)
         -- * All forked tasks will be finished by this point.
         return ()
