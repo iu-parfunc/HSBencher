@@ -47,12 +47,13 @@
 
    * Handle testing with multiple GHC versions and multiple flag-configs.
 
+   * Consider -outputdir to keep separate compiles fully separate.
+
 -}
 
 module Main (main) where 
 
 
---import GHC.Conc (numCapabilities)
 import HSH
 import Prelude hiding (log)
 import Control.Concurrent
@@ -93,7 +94,6 @@ data Config = Config
  , hostname       :: String 
  , resultsFile    :: String -- Where to put timing results.
  , logFile        :: String -- Where to put more verbose testing output.
-
  -- Logging can be dynamically redirected away from the filenames
  -- (logFile, resultsFile) and towards specific Handles:
  -- A Nothing on one of these chans means "end-of-stream":
@@ -263,12 +263,6 @@ strBool "0" = False
 strBool "1" = True
 strBool  x  = error$ "Invalid boolean setting for environment variable: "++x
 
-inDirectory dir action = do
-  d1 <- liftIO$ getCurrentDirectory
-  liftIO$ setCurrentDirectory dir
-  x <- action
-  liftIO$ setCurrentDirectory d1
-  return x
   
 -- Compute a cut-down version of a benchmark's args list that will do
 -- a short (quick) run.  The way this works is that benchmarks are
@@ -451,15 +445,16 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
 	log " **          (Hopefully it will obey the GHC_FLAGS env var.)"
 	log$ " **          (Setting GHC_FLAGS="++ flags++")"
-	inDirectory containingdir $ do
-           -- First we make clean because we can't trust the makefile to rebuild when flags change:
-	   code1 <- lift$ run "make clean" 
-	   check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
 
-           -- !!! TODO: Need to redirect output to log here:
+	-- First we make clean because we can't trust the makefile to rebuild when flags change:
+	code1 <- lift$ run$  "(cd "++containingdir++" && make clean)" 
+	check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
 
-	   code2 <- lift$ run$ setenv [("GHC_FLAGS",flags)] "make"
-	   check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
+	-- !!! TODO: Need to redirect output to log here:
+
+	code2 <- lift$ run$ setenv [("GHC_FLAGS",flags),("UNIQUE_SUFFIX",uniqueSuffix br)]
+		       ("(cd "++containingdir++" && make)")
+	check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
 
      else do 
 	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
@@ -668,30 +663,21 @@ main = do
         -- Parallel version:
             lift$ putStrLn$ "[!!!] Compiling in Parallel..."
 
-        -- Version 1: This forks ALL compiles in parallel:
+            -- Version 1: This forks ALL compiles in parallel:
 -- 	    outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
 -- 	       forkWithBufferedLogs$ 
 -- --               withBufferedLogs$
 -- 		   compileOne bench (confnum,length pruned)
 -- 	    flushBuffered outputs 
 
-    -- This works:
-    --        parfor_test 
-
-        -- Version 2: This uses P worker threads.
-
-    -- Even this gets a stack overflow:
-    --        outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> do
-
+            -- Version 2: This uses P worker threads.
             outputs <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
-               lift$ putStrLn$ "COMPILE CONFIG "++show confnum
+--               lift$ putStrLn$ "COMPILE CONFIG "++show confnum
                -- Inside each action, we force the complete evaluation:
                out <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
 	       return (out, forceBuffered out)
             flushBuffered outputs 
 
-
--- TEMP, DISABLING:
 	    if shortrun then do
                lift$ putStrLn$ "[!!!] Running in Parallel..."
 	       outputs <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
