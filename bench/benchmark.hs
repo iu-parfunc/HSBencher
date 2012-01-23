@@ -347,7 +347,8 @@ parForMAsync ls action =
        forkIO $ forM_ answers $ \ mv -> do
 		  x <- readMVar mv
 		  writeChan chan x 
-       getChanContents chan
+       strm <- getChanContents chan
+       return (take (length ls) strm)
 
 parForM :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO [b]
 parForM ls action = do 
@@ -689,11 +690,11 @@ main = do
             lift$ putStrLn$ "[!!!] Compiling in Parallel..."
 
         -- Version 1: This forks ALL compiles in parallel:
-	    outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
-	       forkWithBufferedLogs$ 
---               withBufferedLogs$
-		   compileOne bench (confnum,length pruned)
-	    flushBuffered outputs 
+-- 	    outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
+-- 	       forkWithBufferedLogs$ 
+-- --               withBufferedLogs$
+-- 		   compileOne bench (confnum,length pruned)
+-- 	    flushBuffered outputs 
 
     -- This works:
     --        parfor_test 
@@ -703,12 +704,11 @@ main = do
     -- Even this gets a stack overflow:
     --        outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> do
 
-    --
-    --         outputs <- parForM (zip [1..] pruned) $ \ (confnum,bench) -> do
-    --            lift$ putStrLn$ "COMPILE CONFIG "++show confnum
-    --            -- Inside each action, we force the complete evaluation:
-    --            withBufferedLogs$ compileOne bench (confnum,length pruned)
-    --         flushBuffered outputs 
+            outputs <- parForMAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
+               lift$ putStrLn$ "COMPILE CONFIG "++show confnum
+               -- Inside each action, we force the complete evaluation:
+               withBufferedLogs$ compileOne bench (confnum,length pruned)
+            flushBuffered outputs 
 
 
 -- TEMP, DISABLING:
