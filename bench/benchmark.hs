@@ -54,7 +54,8 @@
 module Main (main) where 
 
 
-import HSH
+import qualified HSH 
+import HSH ((-|-))
 import Prelude hiding (log)
 import Control.Concurrent
 import Control.Concurrent.Chan
@@ -137,7 +138,7 @@ ntimes = "./ntimes_minmedmax"
 
 -- Retrieve the configuration from the environment.
 getConfig = do
-  hostname <- runSL$ "hostname -s"
+  hostname <- HSH.runSL$ "hostname -s"
   env      <- getEnvironment
 
   let get v x = case lookup v env of 
@@ -161,12 +162,12 @@ getConfig = do
   ----------------------------------------
   -- Determine the number of cores.
   d <- doesDirectoryExist "/sys/devices/system/cpu/"
-  uname <- runSL "uname"
+  uname <- HSH.runSL "uname"
   maxthreads :: String 
        <- if d 
-	  then runSL$ "ls  /sys/devices/system/cpu/" -|- egrep "cpu[0123456789]*$" -|- wcL
+	  then HSH.runSL$ "ls  /sys/devices/system/cpu/" -|- HSH.egrep "cpu[0123456789]*$" -|- HSH.wcL
 	  else if uname == "Darwin"
-	  then runSL$ "sysctl -n hw.ncpu"
+	  then HSH.runSL$ "sysctl -n hw.ncpu"
 	  else error$ "Don't know how to determine the number of threads on platform: "++ show uname
                 -- TODO: Windows!
   -- Note -- how do we find the # of threads ignoring hyperthreading?
@@ -286,7 +287,7 @@ isNumber s =
 
 runIgnoreErr :: String -> IO String
 runIgnoreErr cm = 
-  do (str,force) <- run cm
+  do (str,force) <- HSH.run cm
      (err::String, code::ExitCode) <- force
      return str
 
@@ -354,7 +355,7 @@ check (ExitFailure code) msg  = do
 	report 
         log "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
         unless keepgoing $ 
-          lift$ exit code
+          lift$ exitWith (ExitFailure code)
   return False
 
 --------------------------------------------------------------------------------
@@ -382,7 +383,7 @@ logOn modes s = do
     -- If these are note set, direct logging info directly to files:
     Nothing -> lift$ 
                  forM_ (map tofile modes) 
-		       (\ f -> appendTo f capped)
+		       (\ f -> HSH.appendTo f capped)
     Just (logChan,resultChan,stdoutChan) -> 
      forM_ modes $ \ mode -> 
        case mode of 
@@ -394,7 +395,7 @@ logOn modes s = do
 -- | Create a backup copy of existing results_HOST.dat files.
 backupResults Config{resultsFile, logFile} = do 
   e    <- doesFileExist resultsFile
-  date <- runSL "date +%Y%m%d_%s"
+  date <- HSH.runSL "date +%Y%m%d_%s"
   when e $ do
     renameFile resultsFile (resultsFile ++"."++date++".bak")
   e2   <- doesFileExist logFile
@@ -441,24 +442,26 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 	 check code "ERROR, benchmark.hs: compilation failed."
 
      else if (d && mf && containingdir /= ".") then do 
-	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
-	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
-	log " **          (Hopefully it will obey the GHC_FLAGS env var.)"
-	log$ " **          (Setting GHC_FLAGS="++ flags++")"
+ 	log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
+        error "No makefile-based builds supported..."
+-- 	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
+-- 	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
+-- 	log " **          (Hopefully it will obey the GHC_FLAGS env var.)"
+-- 	log$ " **          (Setting GHC_FLAGS="++ flags++")"
 
-	-- First we make clean because we can't trust the makefile to rebuild when flags change:
-	code1 <- lift$ run$  "(cd "++containingdir++" && make clean)" 
-	check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
+-- 	-- First we make clean because we can't trust the makefile to rebuild when flags change:
+-- 	code1 <- lift$ run$  "(cd "++containingdir++" && make clean)" 
+-- 	check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
 
-	-- !!! TODO: Need to redirect output to log here:
+-- 	-- !!! TODO: Need to redirect output to log here:
 
-	code2 <- lift$ run$ setenv [("GHC_FLAGS",flags),("UNIQUE_SUFFIX",uniqueSuffix br)]
-		       ("(cd "++containingdir++" && make)")
-	check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
+-- 	code2 <- lift$ run$ setenv [("GHC_FLAGS",flags),("UNIQUE_SUFFIX",uniqueSuffix br)]
+-- 		       ("(cd "++containingdir++" && make)")
+-- 	check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
 
      else do 
 	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
-	lift$ exit 1
+	lift$ exitFailure
 
 --------------------------------------------------------------------------------
 -- Running Benchmarks
@@ -481,7 +484,7 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 
   log$ "Next run who, reporting users other than the current user.  This may help with detectivework."
 --  whos <- lift$ run "who | awk '{ print $1 }' | grep -v $USER"
-  whos <- lift$ run$ "who" -|- map (head . words)
+  whos <- lift$ HSH.run$ "who" -|- map (head . words)
   user <- lift$ getEnv "USER"
 
   log$ "Who_Output: "++ unwords (filter (/= user) whos)
@@ -506,7 +509,7 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 
   tmpfile <- mktmpfile
   -- NOTE: With this form we don't get the error code.  Rather there will be an exception on error:
-  (str::String,finish) <- lift$ run (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
+  (str::String,finish) <- lift$ HSH.run (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
   (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
   flushtmp tmpfile
   check code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
@@ -559,7 +562,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
   revision <- runIgnoreErr "git rev-parse HEAD"
   -- Note that this will NOT be newline-terminated:
   hashes   <- runIgnoreErr "git log --pretty=format:'%H'"
-  mapM_ runIO $ 
+  mapM_ HSH.runIO $ 
    [
      e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime"        
    , e$ "#    "        
@@ -589,7 +592,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
    , e$ "#  ENV GHC_RTS=$GHC_RTS"
    ]
  where 
-    e s = ("echo \""++s++"\"") -|- tee ["/dev/stdout", logFile] -|- appendTo resultsFile
+    e s = ("echo \""++s++"\"") -|- HSH.tee ["/dev/stdout", logFile] -|- HSH.appendTo resultsFile
 
 
 ----------------------------------------------------------------------------------------------------
