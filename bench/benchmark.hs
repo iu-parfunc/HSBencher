@@ -304,61 +304,12 @@ uniqueSuffix BenchRun{threads,sched,bench} =
                    else "_threaded"
 
 -- | Parallel for loops.
--- parForM_ :: MonadIO m => [a] -> (a -> IO b) -> m ()
-parForM_ :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO ()
-parForM_ ls action = 
-  do
-     answers <- liftIO$ sequence$ 
-		replicate (length ls) newEmptyMVar
-     state <- ask
-     liftIO$ forM_ (zip answers ls) $ \ (mv,x) -> 
- 	forkIO $ do r <- runReaderT (action x) state
-		    putMVar mv r
-     liftIO$ mapM_ readMVar answers
-
--- Here's a second version of parallel for loops.  The idea is to keep
--- perform a sliding window of work and to execute on numCapabilities
--- threads, avoiding oversubscription.
-parForMAsync :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO [b]
-parForMAsync ls action = 
-  do state <- ask
-     lift$ do 
-       answers <- sequence$ replicate (length ls) newEmptyMVar
---       finit   <- newEmptyMVar
-       workIn  <- newIORef (zip ls answers)
-       forM_ [1..numCapabilities] $ \ id -> 
-	  forkIO $ do 
-             -- Pop work off the queue:
-             let loop = do -- putStrLn$ "Worker "++show id++" looping ..."
-                           x <- atomicModifyIORef workIn 
-						  (\ls -> if null ls 
-							  then ([], Nothing) 
-							  else (tail ls, Just (head ls)))
-                           case x of 
-			     Nothing -> return () -- putMVar finit ()
-			     Just (input,mv) -> 
-                               do x <- runReaderT (action input) state
-				  putMVar mv x
-                                  loop
-             loop     
-
-       -- Read out the answers in order:
-       chan <- newChan
-       forkIO $ forM_ answers $ \ mv -> do
-		  x <- readMVar mv
-		  writeChan chan x 
-       strm <- getChanContents chan
-       return (take (length ls) strm)
-
-parForM :: [a] -> (a -> ReaderT s IO b) -> ReaderT s IO [b]
-parForM ls action = do 
-   outs <- parForMAsync ls action
-   lift$ evaluate (length outs)
-   return outs
-
-
--- | This version takes a two-phase action that returns both a result,
---   a completion-barrier action.
+-- 
+-- The idea is to keep perform a sliding window of work and to execute
+-- on numCapabilities threads, avoiding oversubscription.
+-- 
+-- This version takes a two-phase action that returns both a result, a
+--   completion-barrier action.
 parForMTwoPhaseAsync :: [a] -> (a -> ReaderT s IO (b, IO ())) -> ReaderT s IO [b]
 parForMTwoPhaseAsync ls action = 
   do state <- ask
@@ -390,14 +341,6 @@ parForMTwoPhaseAsync ls action =
        strm <- getChanContents chan
        return (take (length ls) strm)
 
-
-
-
-parfor_test = 
---  (flip runReaderT) undefined $ 
-  do parForM [1..20] $ \ i -> 
-       lift$ putStrLn$ "PARFOR TEST: " ++ show i
-     lift$ exitSuccess
 
 --------------------------------------------------------------------------------
 -- Error handling
