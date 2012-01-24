@@ -99,9 +99,9 @@ data Config = Config
  -- Logging can be dynamically redirected away from the filenames
  -- (logFile, resultsFile) and towards specific Handles:
  -- A Nothing on one of these chans means "end-of-stream":
- , outHandles     :: Maybe (Chan (Maybe String), 
-			    Chan (Maybe String),
-			    Chan (Maybe String)) 
+ , outHandles     :: Maybe (Buffer String, 
+			    Buffer String,
+			    Buffer String)
  }
 
 
@@ -308,16 +308,13 @@ forkIOH who maybhndls action =
 		      tid <- readIORef main_threadid
 		      case maybhndls of 
 		        Nothing -> return ()
-		        Just (logCh,resCh,stdoutCh) -> 
-                           do let loop ch = do
-		                    b <- isEmptyChan ch 
-				    if b then return ()
-				     else do ms <- readChan ch
-		                             print ms
-					     loop ch
--- 			      hPutStrLn stderr "Buffered contents for log:"
--- 			      hPutStrLn stderr "=========================="
--- 			      loop logCh
+		        Just (logBuf,resBuf,stdoutBuf) -> 
+                           do 
+			      hPutStrLn stderr "=========================="
+			      hPutStrLn stderr "Buffered contents for log:"
+			      hPutStrLn stderr "=========================="
+ 			      str <- peekBuffer logBuf
+			      hPutStrLn stderr (unlines str)
                               return ()
 		      throwTo tid e
 		  )
@@ -366,6 +363,38 @@ parForMTwoPhaseAsync ls action =
        return (take (length ls) strm)
 
 
+------------------------------------------------------------
+-- Chan's don't quite do the trick.  Here's something simpler.  It
+-- keeps a buffer of elemnts and an MVar to signal "end of stream".
+-- This it separates blocking behavior from data access.
+
+data Buffer a = Buf (MVar ()) (IORef [a])
+
+newBuffer :: IO (Buffer a)
+newBuffer = do
+  mv  <- newEmptyMVar
+  ref <- newIORef []
+  return (Buf mv ref)
+
+writeBuffer :: Buffer a -> a -> IO ()
+writeBuffer (Buf mv ref) x = do
+  b <- isEmptyMVar mv
+  if b
+     then atomicModifyIORef ref (\ ls -> (x:ls,()))
+   else error "writeBuffer: cannot write to closed Buffer"
+
+-- | Signal completion. 
+closeBuffer :: Buffer a -> IO ()
+closeBuffer (Buf mv _) = putMVar mv ()
+
+peekBuffer :: Buffer a -> IO [a]
+peekBuffer (Buf _ ref) = liftM reverse $ readIORef ref 
+
+getBufferContents :: Buffer a -> IO [a]
+getBufferContents buf@(Buf mv _) = do
+  readMVar mv
+  peekBuffer buf
+
 --------------------------------------------------------------------------------
 -- Error handling
 --------------------------------------------------------------------------------
@@ -413,12 +442,12 @@ logOn modes s = do
     Nothing -> lift$ 
                  forM_ (map tofile modes) 
 		       (\ f -> HSH.appendTo f capped)
-    Just (logChan,resultChan,stdoutChan) -> 
+    Just (logBuffer,resultBuffer,stdoutBuffer) -> 
      forM_ modes $ \ mode -> 
        case mode of 
-	ResultsFile -> lift$ writeChan resultChan (Just s)
-	LogFile     -> lift$ writeChan logChan    (Just s)
-	StdOut      -> lift$ writeChan stdoutChan (Just s)
+	ResultsFile -> lift$ writeBuffer resultBuffer s
+	LogFile     -> lift$ writeBuffer logBuffer    s
+	StdOut      -> lift$ writeBuffer stdoutBuffer s
 
 
 -- | Create a backup copy of existing results_HOST.dat files.
@@ -754,47 +783,42 @@ withBufferedLogs action = do
   lift io -- Run it immediately.
   return hnd
 
+makeBufferedAction :: ReaderT Config IO a-> ReaderT Config IO ((String, String, String), IO())
+makeBufferedAction action = do
+    (chans,io) <- helper action
+    lss <- convertBufs chans
+    return$ (lss, io) 
+
 -- | Forking, asynchronous version.
 forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
 forkWithBufferedLogs action = do 
 --  (hnd,io) <- makeBufferedAction action
 --  Config{outHandles} <- ask
-
   (chans,io) <- helper action
   lift$ forkIOH "log buffering" (Just chans) io -- Run it asynchronously.
-  convertChans chans
-
-makeBufferedAction action = do
-    (chans,io) <- helper action
-    lss <- convertChans chans
-    return$ (lss, io) 
+  convertBufs chans
 
 -- Helper function for above.
 helper action = 
  do conf <- ask 
-    [chan1,chan2,chan3] <- lift$ sequence [newChan,newChan,newChan]
+    [buf1,buf2,buf3] <- lift$ sequence [newBuffer,newBuffer,newBuffer]
     -- Run in a separate thread:
     let io = do runReaderT action 
 			   -- (return ())
-			   conf{outHandles = Just (chan1,chan2,chan3), 
+			   conf{outHandles = Just (buf1,buf2,buf3), 
 				logFile    = error "shouldn't use logFile presently", 
 				resultsFile= error "shouldn't use resultsFile presently"}
-		writeChan chan1 Nothing
-		writeChan chan2 Nothing
-		writeChan chan3 Nothing
-    return$ ((chan1,chan2,chan3), io) 
+		closeBuffer buf1 
+		closeBuffer buf2 
+		closeBuffer buf3 
+    return$ ((buf1,buf2,buf3), io) 
 
-convertChans (chan1,chan2,chan3) = do 
-  ls1 <- lift$ dumpChan chan1
-  ls2 <- lift$ dumpChan chan2
-  ls3 <- lift$ dumpChan chan3
-  return$ (ls1,ls2,ls3)
+convertBufs (buf1,buf2,buf3) = do 
+  ls1 <- lift$ getBufferContents buf1
+  ls2 <- lift$ getBufferContents buf2
+  ls3 <- lift$ getBufferContents buf3
+  return$ (unlines ls1, unlines ls2, unlines ls3)
 
-
-dumpChan ch = do ls <- getChanContents ch
-		 let finite = (map fromJust $ 
-			       takeWhile isJust ls)
-		 return (unlines finite)
 
 fst3 (a,b,c) = a
 snd3 (a,b,c) = b
