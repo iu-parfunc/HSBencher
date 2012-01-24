@@ -61,7 +61,7 @@ import Control.Concurrent
 import Control.Concurrent.Chan
 import GHC.Conc (numCapabilities)
 import Control.Monad.Reader
-import Control.Exception (evaluate)
+import Control.Exception (evaluate, handle, SomeException, throwTo)
 import Debug.Trace
 import Data.Char (isSpace)
 import Data.Maybe (isJust, fromJust)
@@ -76,7 +76,8 @@ import System.Random (randomIO)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
 import System.Process (system)
-import System.IO (Handle)
+import System.IO (Handle, hPutStrLn, stderr)
+import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 
 -- The global configuration for benchmarking:
@@ -298,6 +299,31 @@ uniqueSuffix BenchRun{threads,sched,bench} =
    if threads == 0 then "_serial"
                    else "_threaded"
 
+
+-- Fork a thread but ALSO set up an error handler.
+--forkIOH :: String -> Maybe (Chan (Maybe String))
+forkIOH who maybhndls action = 
+  forkIO $ handle (\ (e::SomeException) -> 
+		   do hPutStrLn stderr$ "ERROR: "++who++": Got exception inside forked thread: "++show e
+		      tid <- readIORef main_threadid
+		      case maybhndls of 
+		        Nothing -> return ()
+		        Just (logCh,resCh,stdoutCh) -> 
+                           do let loop ch = do
+		                    b <- isEmptyChan ch 
+				    if b then return ()
+				     else do ms <- readChan ch
+		                             print ms
+					     loop ch
+-- 			      hPutStrLn stderr "Buffered contents for log:"
+-- 			      hPutStrLn stderr "=========================="
+-- 			      loop logCh
+                              return ()
+		      throwTo tid e
+		  )
+           action
+
+
 -- | Parallel for loops.
 -- 
 -- The idea is to keep perform a sliding window of work and to execute
@@ -305,14 +331,16 @@ uniqueSuffix BenchRun{threads,sched,bench} =
 -- 
 -- This version takes a two-phase action that returns both a result, a
 --   completion-barrier action.
-parForMTwoPhaseAsync :: [a] -> (a -> ReaderT s IO (b, IO ())) -> ReaderT s IO [b]
+-- parForMTwoPhaseAsync :: [a] -> (a -> ReaderT s IO (b, IO ())) -> ReaderT s IO [b]
+parForMTwoPhaseAsync :: [a] -> (a -> ReaderT Config IO (b, IO ())) -> ReaderT Config IO [b]
 parForMTwoPhaseAsync ls action = 
-  do state <- ask
+  do state@Config{maxthreads,outHandles} <- ask
      lift$ do 
        answers <- sequence$ replicate (length ls) newEmptyMVar
        workIn  <- newIORef (zip ls answers)
        forM_ [1..numCapabilities] $ \ id -> 
-	  forkIO $ do 
+--       forM_ [1..maxthreads] $ \ id -> 
+           forkIOH "parFor worker" outHandles $ do 
              -- Pop work off the queue:
              let loop = do -- putStrLn$ "Worker "++show id++" looping ..."
                            x <- atomicModifyIORef workIn 
@@ -330,7 +358,8 @@ parForMTwoPhaseAsync ls action =
 
        -- Read out the answers in order:
        chan <- newChan
-       forkIO $ forM_ answers $ \ mv -> do
+       forkIOH "parFor reader thread" outHandles $ 
+                forM_ answers $ \ mv -> do
 		  x <- readMVar mv
 		  writeChan chan x 
        strm <- getChanContents chan
@@ -610,7 +639,13 @@ cli_options =
        "Build benchmarks in parallel."
      ]
 
+-- | Global variable holding the main thread id.
+main_threadid :: IORef ThreadId
+main_threadid = unsafePerformIO$ newIORef (error "main_threadid uninitialized")
+
 main = do
+  id <- myThreadId
+  writeIORef main_threadid id
 
   cli_args <- getArgs
   let (options,args,errs) = getOpt Permute cli_options cli_args
@@ -679,6 +714,10 @@ main = do
                -- Inside each action, we force the complete evaluation:
                out <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
 	       return (out, forceBuffered out)
+               -- ALTERNATIVE: Simply output directly to stdout/stderr:
+--               compileOne bench (confnum,length pruned)
+--  	         return ((), return ())
+
             flushBuffered outputs 
 
 	    if shortrun then do
@@ -718,12 +757,20 @@ withBufferedLogs action = do
 -- | Forking, asynchronous version.
 forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
 forkWithBufferedLogs action = do 
-  (hnd,io) <- makeBufferedAction action
-  lift$ forkIO io -- Run it asynchronously.
-  return hnd
+--  (hnd,io) <- makeBufferedAction action
+--  Config{outHandles} <- ask
+
+  (chans,io) <- helper action
+  lift$ forkIOH "log buffering" (Just chans) io -- Run it asynchronously.
+  convertChans chans
+
+makeBufferedAction action = do
+    (chans,io) <- helper action
+    lss <- convertChans chans
+    return$ (lss, io) 
 
 -- Helper function for above.
-makeBufferedAction action = 
+helper action = 
  do conf <- ask 
     [chan1,chan2,chan3] <- lift$ sequence [newChan,newChan,newChan]
     -- Run in a separate thread:
@@ -735,10 +782,14 @@ makeBufferedAction action =
 		writeChan chan1 Nothing
 		writeChan chan2 Nothing
 		writeChan chan3 Nothing
-    ls1 <- lift$ dumpChan chan1
-    ls2 <- lift$ dumpChan chan2
-    ls3 <- lift$ dumpChan chan3
-    return$ ((ls1,ls2,ls3), io) 
+    return$ ((chan1,chan2,chan3), io) 
+
+convertChans (chan1,chan2,chan3) = do 
+  ls1 <- lift$ dumpChan chan1
+  ls2 <- lift$ dumpChan chan2
+  ls3 <- lift$ dumpChan chan3
+  return$ (ls1,ls2,ls3)
+
 
 dumpChan ch = do ls <- getChanContents ch
 		 let finite = (map fromJust $ 
