@@ -16,11 +16,13 @@ import Control.Monad
 import System.Process (system)
 import System.IO
 import System.FilePath 
+import System.Exit
 import System.Environment
+import System.Console.GetOpt
 
 import HSH
-import Data.Array (listArray, )
-import Data.Monoid (mappend, )
+import Data.Array (listArray)
+import Data.Monoid (mappend)
 import Debug.Trace
 
 import ScriptHelpers
@@ -49,7 +51,7 @@ round_2digits n = (fromIntegral $round (n * 100)) / 100
 --------------------------------------------------------------------------------
 -- Data Types:
 
--- Here's the schema for the data from my timing tests:
+-- | Here's the schema for one data-point from my timing tests:
 data Entry = Entry { 
   name     :: String,
   variant  :: String,
@@ -63,14 +65,13 @@ data Entry = Entry {
   deriving Show
 
 instance Pretty Entry where
-  --pPrint x = pPrint$ show x
   pPrint Entry { name, sched, variant, threads, tmin, tmed, tmax, normfactor } = 
        pPrint ("ENTRY", name, sched, variant, threads, (tmin, tmed, tmax), normfactor )
---       pPrint ("ENTRY", name, variant, sched, threads, tmin, tmed, tmax, normfactor)
 
 --------------------------------------------------------------------------------
--- Sloppy parsing of lines-of-words:
 
+-- | Very sloppy parsing of lines-of-words data entries.
+parse :: [String] -> Maybe Entry
 parse [a,b,c,d,e,f] = Just $
   Entry { name     = a, 
 	  variant  = "_", -- TODO - phase out
@@ -82,6 +83,7 @@ parse [a,b,c,d,e,f] = Just $
 	  normfactor = 1.0
 	}
 
+-- For now it's a warning rather an error if one data-point doesn't parse:
 parse other = 
    trace ("WARNING: Cannot parse, wrong number of fields, "++ show (length other) ++" expected 8 or 9: "++ show other) $ 
    Nothing
@@ -116,8 +118,7 @@ groupSort fn =
    (groupBy ((==) `on` fn)) . 
    (sortBy (compare `on` fn))
 
--- Add three more levels of list nesting to organize the data:
---organize_data :: [Entry] -> [[[[Entry]]]]
+-- | Add three more levels of list nesting to organize the data:
 organize_data :: [Entry] -> [[[[Entry]]]]
 organize_data = 
 	 (map (map (groupSort sched)))  . 
@@ -168,9 +169,12 @@ plot_benchmark2 root entries =
 
   map_normalized_time = map (\x -> tmed x / normfactor x)
 
+  -- The baseline case is either 0 threads (i.e. no "-threaded") or
+  -- -threaded with +RTS -N1:
   times0 = map_normalized_time threads0
   times1 = map_normalized_time threads1
 
+  -- What is the serial execution time against which we compare?
   basetime = if    not$ null times0 
 	     then foldl1 min times0
 	     else if    not$ null times1 
@@ -260,21 +264,46 @@ plot_benchmark2 root entries =
 
 isMatch rg str = case matchRegex rg str of { Nothing -> False; _ -> True }
 
+--------------------------------------------------------------------------------
+--                              Main Script                                   --
+--------------------------------------------------------------------------------
+
+-- | Datatype for command line flags.
+data Flag = SerialBasecase
+  deriving Eq
+
+-- | Command line options.
+cli_options :: [OptDescr Flag]
+cli_options = 
+     [ Option [] ["serial"] (NoArg SerialBasecase)
+          "use THREADS=0 cases to further handicap parallel speedup based on overhead of compiling with -threaded."
+     ]
+
 main = do 
- args <- getArgs 
+ rawargs <- getArgs 
+ let (options,args,errs) = getOpt Permute cli_options rawargs
+     exitUsage = do
+	putStrLn$ "Errors parsing command line options:" 
+	mapM_ (putStr . ("   "++)) errs
+	putStr$ usageInfo "Usage plot_scaling [OPTIONS] <results.dat>" cli_options
+	exitFailure
+ unless (null errs) exitUsage
  file <- case args of 
-	      [f] -> return f 
-	      _   -> do putStrLn "Usage plot_scaling <results.dat>"
- 		        putStrLn "  This script will plot scaling graphs and summarize results."
---		       putStr$ usageInfo "Additional Options:" cli_options
-                        error$ " Incorrect arguments,  " ++ show (length args) ++" args: "++ unwords args
+	   [f] -> return f 
+	   _   -> exitUsage
+
+ -- Read in the .dat file, ignoring comments:
  dat <- run$ catFrom [file] -|- remComments 
 
- -- Here we remove
- let parsed = mapMaybe (parse . filter (not . (== "")) . splitRegex (mkRegex "[ \t]+")) 
+ -- Here we filter bad or incomplete data points:
+ let parsed0 = mapMaybe (parse . filter (not . (== "")) . splitRegex (mkRegex "[ \t]+")) 
 	          (filter (not . isMatch (mkRegex "ERR")) $
 		   filter (not . isMatch (mkRegex "TIMEOUT")) $
 		   filter (not . null) dat)
+     parsed = if SerialBasecase `elem` options
+              then parsed0
+	      else filter (\ Entry{threads} -> threads /= 0) parsed0
+-- mapM_ print parsed
  let organized = organize_data parsed
 
  putStrLn$ "Parsed "++show (length parsed)++" lines containing data."
