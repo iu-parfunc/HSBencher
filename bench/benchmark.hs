@@ -112,7 +112,7 @@ data BenchRun = BenchRun
  { threads :: Int
  , sched   :: Sched 
  , bench   :: Benchmark
- } deriving (Eq, Show)
+ } deriving (Eq, Show, Ord)
 
 data Sched 
    = Trace | Direct | Sparks | ContFree
@@ -125,7 +125,7 @@ data Benchmark = Benchmark
  { name :: String
  , compatScheds :: [Sched]
  , args :: [String]
- } deriving (Eq, Show)
+ } deriving (Eq, Show, Ord)
 
 -- Name of a script to time N runs of a program:
 -- (I used a haskell script for this but ran into problems at one point):
@@ -390,10 +390,22 @@ closeBuffer (Buf mv _) = putMVar mv ()
 peekBuffer :: Buffer a -> IO [a]
 peekBuffer (Buf _ ref) = liftM reverse $ readIORef ref 
 
+-- Returns a lazy list, just like getChanContents:
 getBufferContents :: Buffer a -> IO [a]
-getBufferContents buf@(Buf mv _) = do
-  readMVar mv
-  peekBuffer buf
+getBufferContents buf@(Buf mv ref) = do
+  chan <- newChan 
+  let loop = do 
+	 grabbed <- atomicModifyIORef ref (\ ls -> ([], reverse ls))
+	 mapM_ (writeChan chan . Just) grabbed
+	 mayb <- tryTakeMVar mv -- Check if we're done.
+	 case mayb of 
+	   Nothing -> threadDelay 10000 >> loop
+	   Just () -> writeChan chan Nothing
+  forkIO loop
+  ls <- getChanContents chan
+  return (map fromJust $ 
+	  takeWhile isJust ls)
+
 
 --------------------------------------------------------------------------------
 -- Error handling
@@ -469,6 +481,7 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 	      (iterNum,totalIters) = 
   do Config{ghc, ghc_flags, shortrun} <- ask
 
+     uid :: Word64 <- lift$ randomIO
      let flags_ = case numthreads of
 		   0 -> ghc_flags
 		   _ -> ghc_flags++" -threaded"
@@ -476,7 +489,9 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 
 	 (containingdir,_) = splitFileName test
 	 hsfile = test++".hs"
-	 exefile = test++ uniqueSuffix br ++ ".exe"
+	 suffix = uniqueSuffix br
+         outdir = "./build_"++test++suffix++"_"++show uid
+	 exefile = test++ suffix ++ ".exe"
          args = if shortrun then shortArgs args_ else args_
 
      log$ "\n--------------------------------------------------------------------------------"
@@ -485,13 +500,18 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
            if numthreads==0 then " serial" else " threaded"
      log$ "--------------------------------------------------------------------------------\n"
 
+     log "First, creating a directory for intermediate compiler files."
+     code <- lift$ system$ "mkdir -p "++outdir
+     check code "ERROR, benchmark.hs: making compiler temp dir failed."
+
      e  <- lift$ doesFileExist hsfile
      d  <- lift$ doesDirectoryExist containingdir
      mf <- lift$ doesFileExist$     containingdir </> "Makefile"
      if e then do 
 	 log "Compiling with a single GHC command: "
-	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, flags, 
-			    hsfile, "-o "++exefile]		
+	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, 
+			    "-outputdir "++outdir,
+			    flags, hsfile, "-o "++exefile]		
 	 log$ "  "++cmd ++"\n"
          tmpfile <- mktmpfile
 	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
@@ -715,7 +735,10 @@ main = do
             total = length allruns
 
             -- All that matters for compilation is nonthreaded (0) or threaded [1,inf)
-            pruned = listConfigs $
+            pruned = S.toList $ S.fromList $
+                     -- Also ARGS can be ignored for compilation purposes:
+                     map (\ (BenchRun t s b) -> BenchRun t s b{ args=[] } ) $ 
+                     listConfigs $
                      S.toList $ S.fromList $
                      map (\ x -> if x==0 then 0 else 1) threadsettings
 
@@ -723,7 +746,6 @@ main = do
         log$ "Running all benchmarks for all thread settings in "++show threadsettings
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist) ++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
-
 
         if ParBench `elem` options then do 
         --------------------------------------------------------------------------------
