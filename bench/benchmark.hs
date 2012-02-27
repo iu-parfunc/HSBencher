@@ -29,6 +29,10 @@
 
      GENERIC=1 to go through the generic (type class) monad par
                interface instead of using each scheduler directly
+ 
+     ENVS='[[("KEY1", "VALUE1")], [("KEY1", "VALUE2")]]' to set different 
+     configurations of environment variables to be set *at runtime*. Useful 
+     for NUMA_TOPOLOGY, for example.
 
    Additionally, this script will propagate any flags placed in the
    environment variables $GHC_FLAGS and $GHC_RTS.  It will also use
@@ -70,8 +74,9 @@ import Data.IORef
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(NoArg), usageInfo)
-import System.Environment (getEnv, getEnvironment, getArgs)
+import System.Environment (getArgs, getEnv, getEnvironment)
 import System.Directory
+import System.Posix.Env (setEnv)
 import System.Random (randomIO)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
@@ -102,6 +107,8 @@ data Config = Config
  , outHandles     :: Maybe (Buffer String, 
 			    Buffer String,
 			    Buffer String)
+   -- A set of environment variable configurations to test
+ , envs           :: [[(String, String)]]
  }
 
 
@@ -112,14 +119,15 @@ data BenchRun = BenchRun
  { threads :: Int
  , sched   :: Sched 
  , bench   :: Benchmark
+ , env     :: [(String, String)]
  } deriving (Eq, Show, Ord)
 
 data Sched 
-   = Trace | Direct | Sparks | ContFree
+   = Trace | Direct | Sparks | ContFree | SMP | NUMA
    | None
- deriving (Eq, Show, Read, Ord)
+ deriving (Eq, Show, Read, Ord, Enum, Bounded)
 
-allScheds = S.fromList [Trace, Direct, Sparks, ContFree, None]
+allScheds = S.fromList [minBound ..]
 
 data Benchmark = Benchmark
  { name :: String
@@ -192,6 +200,7 @@ getConfig = do
 	   , keepgoing      = strBool (get "KEEPGOING" "0")
 	   , resultsFile    = "results_" ++ hostname ++ ".dat"
 	   , outHandles     = Nothing
+           , envs           = read $ get "ENVS" "[[]]"
 	   }
 
   runReaderT (log$ "Read list of benchmarks/parameters from: "++bench) conf
@@ -218,11 +227,13 @@ expandMode "Trace"    = [Trace]
 expandMode "Sparks"   = [Sparks]
 expandMode "Direct"   = [Direct]
 expandMode "ContFree" = [ContFree]
+expandMode "SMP"      = [SMP]
+expandMode "NUMA"     = [NUMA]
 
 expandMode s = error$ "Unknown Scheduler or mode: " ++s
 
--- Omitting Direct until its bugs are fixed:
-ivarScheds = [Trace, ContFree, Direct] 
+-- Omitting ContFree, as it takes way too long for most trials
+ivarScheds = [Trace, Direct, SMP, NUMA] 
 
 schedToModule s = 
   case s of 
@@ -231,6 +242,8 @@ schedToModule s =
    Direct   -> "Control.Monad.Par.Scheds.Direct"
    ContFree -> "Control.Monad.Par.Scheds.ContFree"
    Sparks   -> "Control.Monad.Par.Scheds.Sparks"
+   SMP      -> "Control.Monad.Par.Meta.SharedMemoryOnly"
+   NUMA     -> "Control.Monad.Par.Meta.NUMAOnly"
    None     -> "qualified Control.Monad.Par as NotUsed"
   
 
@@ -265,7 +278,6 @@ strBool "0" = False
 strBool "1" = True
 strBool  x  = error$ "Invalid boolean setting for environment variable: "++x
 
-  
 -- Compute a cut-down version of a benchmark's args list that will do
 -- a short (quick) run.  The way this works is that benchmarks are
 -- expected to run and do something quick if they are invoked with no
@@ -477,7 +489,10 @@ backupResults Config{resultsFile, logFile} = do
 --------------------------------------------------------------------------------
 
 compileOne :: BenchRun -> (Int,Int) -> ReaderT Config IO Bool
-compileOne br@(BenchRun numthreads sched (Benchmark test _ args_)) 
+compileOne br@(BenchRun { threads=numthreads
+                        , sched
+                        , bench=(Benchmark test _ args_)
+                        }) 
 	      (iterNum,totalIters) = 
   do Config{ghc, ghc_flags, shortrun} <- ask
 
@@ -548,14 +563,16 @@ compileOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
 runOne :: BenchRun -> (Int,Int) -> ReaderT Config IO ()
-runOne br@(BenchRun numthreads sched (Benchmark test _ args_)) 
+runOne br@(BenchRun { threads=numthreads
+                    , sched
+                    , bench=(Benchmark test _ args_)
+                    , env}) 
           (iterNum,totalIters) = do
   Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
-  
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters++
-       ": "++test++" (args \""++unwords args++"\") scheduler "++show sched++"  threads "++show numthreads
+       ": "++test++" (args \""++unwords args++"\") scheduler "++show sched++"  threads "++show numthreads++" (Env="++show env++")"
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
   log$ "(In directory "++ pwd ++")"
@@ -587,7 +604,7 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 
   tmpfile <- mktmpfile
   -- NOTE: With this form we don't get the error code.  Rather there will be an exception on error:
-  (str::String,finish) <- lift$ HSH.run (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
+  (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
   (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
   flushtmp tmpfile
   check code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
@@ -668,6 +685,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
    , e$ "#  ENV GHC=$GHC"
    , e$ "#  ENV GHC_FLAGS=$GHC_FLAGS"
    , e$ "#  ENV GHC_RTS=$GHC_RTS"
+   , e$ "#  ENV ENVS=$ENVS"
    ]
  where 
     e s = ("echo \""++s++"\"") -|- HSH.tee ["/dev/stdout", logFile] -|- HSH.appendTo resultsFile
@@ -726,18 +744,23 @@ main = do
 	liftIO$ removeFile "make_output.tmp"
 
         let listConfigs threadsettings = 
-                      [ BenchRun t s b | 
+                      [ BenchRun { threads=t, sched=s, bench=b, env=e } | 
 			b@(Benchmark {compatScheds}) <- benchlist, 
 			s <- S.toList (S.intersection scheds (S.fromList compatScheds)),
-			t <- threadsettings ]
+			t <- threadsettings,
+                        e <- envs]
 
-            allruns = listConfigs threadsettings
+            allruns = listConfigs threadsettings 
             total = length allruns
 
             -- All that matters for compilation is nonthreaded (0) or threaded [1,inf)
             pruned = S.toList $ S.fromList $
-                     -- Also ARGS can be ignored for compilation purposes:
-                     map (\ (BenchRun t s b) -> BenchRun t s b{ args=[] } ) $ 
+                     -- Also ARGS and ENV can be ignored for compilation purposes:
+                     map (\ (BenchRun { threads, sched, bench })
+                              -> BenchRun { threads
+                                          , sched
+                                          , bench=bench{ args=[] }
+                                          , env=[]} ) $ 
                      listConfigs $
                      S.toList $ S.fromList $
                      map (\ x -> if x==0 then 0 else 1) threadsettings
