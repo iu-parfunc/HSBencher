@@ -131,7 +131,7 @@ EXITCODE=0
         # therefore have two productivities/realtimes above.
         # E.g.:  ./runs/2012.02.29_parfib_monad_Trace_threaded.exe__1330545135_1.log
 
-        echo NTIME_ONE_RESULT $REALTIME $PRODUCTIVITY >> $RESULTS
+        echo NTIMES_ONE_RESULT $REALTIME $PRODUCTIVITY >> $RESULTS
 
     # [2010.05.11] I used to just give warnings when not ALL of the trials failed:
     # This was for timing the nondeterministic hashtable hack:
