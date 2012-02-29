@@ -197,7 +197,7 @@ getConfig = do
       conf = Config 
            { hostname, logFile, scheds, shortrun    
 	   , ghc        =       get "GHC"       "ghc"
-	   , ghc_RTS    =       get "GHC_RTS" (if shortrun then "" else "-qa")
+	   , ghc_RTS    =       get "GHC_RTS" (if shortrun then "" else "-qa -s")
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
 	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
@@ -601,10 +601,10 @@ runOne br@(BenchRun { threads=numthreads
   ----------------------------------------
   -- Now Execute:
   ----------------------------------------
-  rtstmp <- mktmpfile
+--  rtstmp <- mktmpfile
   -- If we failed compilation we don't bother running either:
   let prunedRTS = unwords (pruneThreadedOpts (words rts)) -- ++ "-N" ++ show numthreads
-      ntimescmd = printf "%s %d `%s %s +RTS %s -t --machine-readable -RTS 2> %s`" ntimes trials exefile (unwords args) prunedRTS rtstmp
+      ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) prunedRTS 
   log$ "Executing " ++ ntimescmd
 
   -- One option woud be dynamic feedback where if the first one
@@ -616,26 +616,33 @@ runOne br@(BenchRun { threads=numthreads
   (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
   (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
   flushtmp tmpfile
-  (rtsStats :: [(String, String)]) <- read <$> lift (readFile rtstmp)
-  let prod :: Float
-      !prod = 1 - (gcTime / totalTime)
-      Just gcTime  = read <$> lookup "GC_cpu_seconds" rtsStats
-      Just mutTime = read <$> lookup "mutator_cpu_seconds" rtsStats
-      totalTime    = mutTime + gcTime
-  flushtmp rtstmp
+  -- (rtsStats :: [(String, String)]) <- read <$> lift (readFile rtstmp)
+  -- let prod :: Float
+  --     !prod = 1 - (gcTime / totalTime)
+  --     Just gcTime  = read <$> lookup "GC_cpu_seconds" rtsStats
+  --     Just mutTime = read <$> lookup "mutator_cpu_seconds" rtsStats
+  --     totalTime    = mutTime + gcTime
+  -- flushtmp rtstmp
   check code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
 
   let times = 
        case code of
 	ExitSuccess     -> str
-	ExitFailure 143 -> "TIMEOUT TIMEOUT TIMEOUT"
+	ExitFailure 143 -> 
+          unlines $ replicate 2 "TIMEOUT TIMEOUT TIMEOUT TIMEOUT"
 	-- TEMP: [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily:
-	ExitFailure 15  -> "TIMEOUT TIMEOUT TIMEOUT"
-	ExitFailure _   -> "ERR ERR ERR"		     
+	ExitFailure 15  -> 
+          unlines $ replicate 2 "TIMEOUT TIMEOUT TIMEOUT TIMEOUT"
+	ExitFailure _   -> unlines $ replicate 2 "ERR ERR ERR ERR"
 
-  log $ " >>> MIN/MEDIAN/MAX TIMES " ++ times
+  let (ts, prods) = case lines times of
+                      [ts, prods] -> (tail (words ts), tail (words prods))
+                      _ -> error "bad output from ntimes"
+      format (t, prod) = printf "(%s,%s%%)" t prod
+      formatted = unwords (map format (zip ts prods))
+  log $ " >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
   logOn [ResultsFile]$ 
-    printf "%s %s %s %s %s %.2f" test (intercalate "_" args) (show sched) (show numthreads) (trim times) prod
+    printf "%s %s %s %s %s" test (intercalate "_" args) (show sched) (show numthreads) formatted
 
   return ()
   
