@@ -127,10 +127,16 @@ data Benchmark = Benchmark
  , args :: [String]
  } deriving (Eq, Show, Ord)
 
--- Name of a script to time N runs of a program:
--- (I used a haskell script for this but ran into problems at one point):
--- ntimes = "./ntimes_binsearch.sh"
+-- | Name of a script to time N runs of a program:
+--   (I used a haskell script for this but ran into problems at one point):
+--
+-- CONTRACT FOR NTIMES:
+--   * Return ONLY a series of three times (min/med/max) on a single line of stdout
+--   * Return the original output of the program, or any additional
+--     output, on stderr.
 ntimes = "./ntimes_minmedmax"
+-- ntimes = "./ntimes_binsearch.sh"
+
 
 
 --------------------------------------------------------------------------------
@@ -611,7 +617,8 @@ runOne br@(BenchRun numthreads sched (Benchmark test _ args_))
 mktmpfile = do 
    n :: Word64 <- lift$ randomIO
    return$ "._Temp_output_buffer_"++show (n)++".txt"
--- Flush the temporary file to the log file (deleting it in the process):
+-- Flush the temporary file to the log file, returning its contents
+-- and deleting it in the process:
 flushtmp tmpfile = 
            do Config{shortrun} <- ask
               output <- lift$ readFile tmpfile
