@@ -1,5 +1,5 @@
 #!/usr/bin/env runhaskell
-{-# LANGUAGE NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
+{-# LANGUAGE BangPatterns, NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
 
 -- NOTE: Under 7.2 I'm running into this HSH problem:
 -- 
@@ -61,6 +61,7 @@ module Main (main) where
 import qualified HSH 
 import HSH ((-|-))
 import Prelude hiding (log)
+import Control.Applicative    
 import Control.Concurrent
 import Control.Concurrent.Chan
 import GHC.Conc (numCapabilities)
@@ -71,6 +72,7 @@ import Data.Char (isSpace)
 import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
 import Data.IORef
+import Data.List (intercalate)
 import qualified Data.Set as S
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(NoArg), usageInfo)
@@ -189,7 +191,7 @@ getConfig = do
       conf = Config 
            { hostname, logFile, scheds, shortrun    
 	   , ghc        =       get "GHC"       "ghc"
-	   , ghc_RTS    =       get "GHC_RTS" (if shortrun then "" else "-qa -s")
+	   , ghc_RTS    =       get "GHC_RTS" (if shortrun then "" else "-qa")
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
 	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
@@ -593,20 +595,28 @@ runOne br@(BenchRun { threads=numthreads
   ----------------------------------------
   -- Now Execute:
   ----------------------------------------
-
+  rtstmp <- mktmpfile
   -- If we failed compilation we don't bother running either:
   let prunedRTS = unwords (pruneThreadedOpts (words rts)) -- ++ "-N" ++ show numthreads
-      ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) prunedRTS
+      ntimescmd = printf "%s %d `%s %s +RTS %s -t --machine-readable -RTS 2> %s`" ntimes trials exefile (unwords args) prunedRTS rtstmp
   log$ "Executing " ++ ntimescmd
 
   -- One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.  
 
   tmpfile <- mktmpfile
+
   -- NOTE: With this form we don't get the error code.  Rather there will be an exception on error:
   (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
   (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
   flushtmp tmpfile
+  (rtsStats :: [(String, String)]) <- read <$> lift (readFile rtstmp)
+  let prod :: Float
+      !prod = 1 - (gcTime / totalTime)
+      Just gcTime  = read <$> lookup "GC_cpu_seconds" rtsStats
+      Just mutTime = read <$> lookup "mutator_cpu_seconds" rtsStats
+      totalTime    = mutTime + gcTime
+  flushtmp rtstmp
   check code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
 
   let times = 
@@ -618,7 +628,8 @@ runOne br@(BenchRun { threads=numthreads
 	ExitFailure _   -> "ERR ERR ERR"		     
 
   log $ " >>> MIN/MEDIAN/MAX TIMES " ++ times
-  logOn [ResultsFile]$ test ++" "++ show sched ++" "++ show numthreads ++" "++ trim times
+  logOn [ResultsFile]$ 
+    printf "%s %s %s %s %s %.2f" test (intercalate "_" args) (show sched) (show numthreads) (trim times) prod
 
   return ()
   
