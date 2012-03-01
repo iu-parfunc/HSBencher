@@ -197,7 +197,7 @@ getConfig = do
       conf = Config 
            { hostname, logFile, scheds, shortrun    
 	   , ghc        =       get "GHC"       "ghc"
-	   , ghc_RTS    =       get "GHC_RTS" (if shortrun then "" else "-qa -s")
+	   , ghc_RTS    =       get "GHC_RTS"   "-qa -s" -- Default RTS flags.
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
 	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
@@ -625,24 +625,32 @@ runOne br@(BenchRun { threads=numthreads
   -- flushtmp rtstmp
   check code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
 
-  let times = 
+  let (ts,prods) = 
        case code of
-	ExitSuccess     -> str
-	ExitFailure 143 -> 
-          unlines $ replicate 2 "TIMEOUT TIMEOUT TIMEOUT TIMEOUT"
-	-- TEMP: [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily:
-	ExitFailure 15  -> 
-          unlines $ replicate 2 "TIMEOUT TIMEOUT TIMEOUT TIMEOUT"
-	ExitFailure _   -> unlines $ replicate 2 "ERR ERR ERR ERR"
+	ExitSuccess     -> 
+           case map words (lines str) of
+	      -- Here we expect a very specific output format from ntimes:
+	      ["REALTIME":ts, "PRODUCTIVITY":prods] -> (ts, prods)
+	      _ -> error "bad output from ntimes, expected two times"     
+	ExitFailure 143 -> (["TIMEOUT","TIMEOUT","TIMEOUT"],[])
+	ExitFailure 15  -> (["TIMEOUT","TIMEOUT","TIMEOUT"],[])
+	-- TEMP ^^ : [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily ^
+	ExitFailure _   -> (["ERR","ERR","ERR"],[])
 
-  let (ts, prods) = case lines times of
-                      [ts, prods] -> (tail (words ts), tail (words prods))
-                      _ -> error "bad output from ntimes"
-      format (t, prod) = printf "(%s,%s%%)" t prod
-      formatted = unwords (map format (zip ts prods))
+-- Adam's first format: tuples of (time,prod%):
+--      format (t, prod) = printf "(%s,%s%%)" t prod
+--      formatted = unwords (map format (zip ts prods))
+-- This is more barebones and readable by gnuplot:
+      pads n s = take (max 1 (n - length s)) $ repeat ' '
+      padl n x = pads n x ++ x 
+      padr n x = x ++ pads n x
+
+      formatted = (padl 15$ unwords ts) ++"   "++ unwords prods -- prods may be empty!
+
   log $ " >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
   logOn [ResultsFile]$ 
-    printf "%s %s %s %s %s" test (intercalate "_" args) (show sched) (show numthreads) formatted
+    printf "%s %s %s %s %s" (padr 35 test) (padr 20$ intercalate "_" args)
+	                    (padr 7$ show sched) (padr 3$ show numthreads) formatted
 
   return ()
   
@@ -684,7 +692,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
   hashes   <- runIgnoreErr "git log --pretty=format:'%H'"
   mapM_ HSH.runIO $ 
    [
-     e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime"        
+     e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
    , e$ "#    "        
    , e$ "# `date`"
    , e$ "# `uname -a`" 
@@ -702,15 +710,15 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
    , e$ "# Git_Depth: "  ++ show (length (lines hashes))
    , e$ "# Using the following settings from environment variables:" 
    , e$ "#  ENV BENCHLIST=$BENCHLIST"
-   , e$ "#  ENV THREADS=$THREADS"
-   , e$ "#  ENV TRIALS=$TRIALS"
-   , e$ "#  ENV SHORTRUN=$SHORTRUN"
-   , e$ "#  ENV SCHEDS=$SCHEDS"
-   , e$ "#  ENV KEEPGOING=$KEEPGOING"
-   , e$ "#  ENV GHC=$GHC"
-   , e$ "#  ENV GHC_FLAGS=$GHC_FLAGS"
-   , e$ "#  ENV GHC_RTS=$GHC_RTS"
-   , e$ "#  ENV ENVS=$ENVS"
+   , e$ "#  ENV THREADS=   $THREADS"
+   , e$ "#  ENV TRIALS=    $TRIALS"
+   , e$ "#  ENV SHORTRUN=  $SHORTRUN"
+   , e$ "#  ENV SCHEDS=    $SCHEDS"
+   , e$ "#  ENV KEEPGOING= $KEEPGOING"
+   , e$ "#  ENV GHC=       $GHC"
+   , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
+   , e$ "#  ENV GHC_RTS=   $GHC_RTS"
+   , e$ "#  ENV ENVS=      $ENVS"
    ]
  where 
     e s = ("echo \""++s++"\"") -|- HSH.tee ["/dev/stdout", logFile] -|- HSH.appendTo resultsFile

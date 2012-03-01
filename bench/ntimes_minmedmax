@@ -24,8 +24,8 @@ function mytempfile {
 
 tmpfile=`mytempfile`
 $ntimes $* | grep NTIMES_ONE_RESULT | sed 's/NTIMES_ONE_RESULT//' > $tmpfile
-
-CODE=$?
+CODE=${PIPESTATUS[0]}
+# CODE=$?
 if [ "$CODE" != "0" ];
 then exit $CODE
 fi
