@@ -595,7 +595,7 @@ runOne br@(BenchRun { threads=numthreads
   -- numthreads == 0 indicates a serial run:
   let 
       rts = case numthreads of
-	     0 -> ghc_RTS
+	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
 	     _ -> ghc_RTS  ++" -N"++show numthreads
       exefile = "./" ++ test ++ uniqueSuffix br ++ ".exe"
   ----------------------------------------
@@ -603,8 +603,7 @@ runOne br@(BenchRun { threads=numthreads
   ----------------------------------------
 --  rtstmp <- mktmpfile
   -- If we failed compilation we don't bother running either:
-  let prunedRTS = unwords (pruneThreadedOpts (words rts)) -- ++ "-N" ++ show numthreads
-      ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) prunedRTS 
+  let ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) rts
   log$ "Executing " ++ ntimescmd
 
   -- One option woud be dynamic feedback where if the first one
