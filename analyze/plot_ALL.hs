@@ -21,7 +21,7 @@ main = do
 
   putStrLn "Usage ./plot_ALL [DIR]"
   putStrLn "  Searches for result_*.dat files and plots them."
-  putStrLn "  * Default is to search ./*/*/results*.dat"
+  putStrLn "  * Default is to search ./*/*/*/*/results*.dat"
   putStrLn "  * Will use GHC environment variable"
   putStrLn "----------------------------------------"
 
@@ -34,7 +34,7 @@ main = do
 		  Just  s -> s
 
   files <- case argv of
-             []    -> run "ls */*/results_*.dat"
+             []    -> run "ls */*/*/*/results_*.dat"
 	     [dir] -> run ("find "++dir++" -name \"results_*.dat\" ")
   printf "Found %d results files:\n"  (length files)
   mapM_ (putStrLn . indent) files
