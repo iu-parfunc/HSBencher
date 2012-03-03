@@ -532,9 +532,12 @@ compileOne br@(BenchRun { threads=numthreads
      mf <- lift$ doesFileExist$     containingdir </> "Makefile"
      if e then do 
 	 log "Compiling with a single GHC command: "
-	 let cmd = unwords [ghc, "--make", "-i../", "-i"++containingdir, 
-			    "-outputdir "++outdir,
-			    flags, hsfile, "-o "++exefile]		
+         pinObjExists <- lift $ doesFileExist "../dist/build/cbits/pin.o"
+	 let cmd = unwords [ ghc, "--make"
+                           , if pinObjExists then "../dist/build/cbits/pin.o" else ""
+                           , "-i../", "-i"++containingdir
+                           , "-outputdir "++outdir
+                           , flags, hsfile, "-o "++exefile]		
 	 log$ "  "++cmd ++"\n"
          tmpfile <- mktmpfile
 	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
