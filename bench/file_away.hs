@@ -16,6 +16,8 @@ import Data.Char
 import Data.List.Split
 import Data.Time.Clock
 import Data.Time.Calendar
+import Data.Time.Format
+import System.Locale
 
 import HSH
 import System.Environment
@@ -81,7 +83,11 @@ main = do
 
   -- Goal:
   -- results_basalt_2011_10_15_desktop_v1.dat  
-  (y,m,d) <- date
+  --(y,m,d) <- date
+  
+  -- Goal: results_basalt_2011-10-15-hh-mm-ss_desktop_v1.dat
+  t <- getCurrentTime
+  let tstr = formatTime defaultTimeLocale "%Y-%m-%d-%H-%M-%S" t
 
   variantL <- runSL $ catFrom [rf] -|- grep "Benchmarks_Variant"
   versionL <- runSL $ catFrom [rf] -|- grep "Benchmarks_Version"
@@ -91,8 +97,8 @@ main = do
       -- Here we have some strong expectations about the textual format of the file:
       [_,variant] = words$ strip variantL
       [_,version] = words$ strip versionL 
-      rdname::String = printf "results_%s_%d-%d-%d_%s_v%s.dat" host y m d variant version
-      bdname::String = printf "bench_%s_%d-%d-%d_%s_v%s.log"   host y m d variant version
+      rdname::String = printf "results_%s_%s_%s_v%s.dat" host tstr variant version
+      bdname::String = printf "bench_%s_%s_%s_v%s.log"   host tstr variant version
       
       ghcVer = head $ reverse $ words ghcVerL
       ghcDir = "ghc-"++ghcVer
