@@ -147,6 +147,8 @@ data Benchmark = Benchmark
 ntimes = "./ntimes_minmedmax"
 -- ntimes = "./ntimes_binsearch.sh"
 
+gc_stats_flag = " -s " 
+-- gc_stats_flag = " --machine-readable -t "
 
 
 --------------------------------------------------------------------------------
@@ -197,7 +199,7 @@ getConfig = do
       conf = Config 
            { hostname, logFile, scheds, shortrun    
 	   , ghc        =       get "GHC"       "ghc"
-	   , ghc_RTS    =       get "GHC_RTS"   "-qa -s" -- Default RTS flags.
+	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
 	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
@@ -241,7 +243,8 @@ expandMode "NUMA"     = [NUMA]
 expandMode s = error$ "Unknown Scheduler or mode: " ++s
 
 -- Omitting ContFree, as it takes way too long for most trials
-ivarScheds = [Trace, Direct, SMP, NUMA] 
+-- ivarScheds = [Trace, Direct, SMP, NUMA] 
+ivarScheds = [Trace, Direct]
 
 schedToModule s = 
   case s of 
@@ -432,9 +435,10 @@ getBufferContents buf@(Buf mv ref) = do
 --------------------------------------------------------------------------------
 
 -- Check the return code from a call to a test executable:
-check ExitSuccess _           = return True
-check (ExitFailure code) msg  = do
-  Config{..} <- ask
+check :: Bool -> ExitCode -> String -> ReaderT Config IO Bool
+check _ ExitSuccess _           = return True
+check keepgoing (ExitFailure code) msg  = do
+  Config{ghc_flags, ghc_RTS} <- ask
   let report = log$ printf " #      Return code %d Params: %s, RTS %s " (143::Int) ghc_flags ghc_RTS
   case code of 
    143 -> 
@@ -525,7 +529,7 @@ compileOne br@(BenchRun { threads=numthreads
 
      log "First, creating a directory for intermediate compiler files."
      code <- lift$ system$ "mkdir -p "++outdir
-     check code "ERROR, benchmark.hs: making compiler temp dir failed."
+     check False code "ERROR, benchmark.hs: making compiler temp dir failed."
 
      e  <- lift$ doesFileExist hsfile
      d  <- lift$ doesDirectoryExist containingdir
@@ -543,7 +547,7 @@ compileOne br@(BenchRun { threads=numthreads
 	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
 	 code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
 	 flushtmp tmpfile 
-	 check code "ERROR, benchmark.hs: compilation failed."
+	 check False code "ERROR, benchmark.hs: compilation failed."
 
      else if (d && mf && containingdir /= ".") then do 
  	log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
@@ -597,7 +601,8 @@ runOne br@(BenchRun { threads=numthreads
 
   -- numthreads == 0 indicates a serial run:
   let 
-      rts = case numthreads of
+      rts = gc_stats_flag ++" "++
+            case numthreads of
 	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
 	     _ -> ghc_RTS  ++" -N"++show numthreads
       exefile = "./" ++ test ++ uniqueSuffix br ++ ".exe"
@@ -625,7 +630,9 @@ runOne br@(BenchRun { threads=numthreads
   --     Just mutTime = read <$> lookup "mutator_cpu_seconds" rtsStats
   --     totalTime    = mutTime + gcTime
   -- flushtmp rtstmp
-  check code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
+  check keepgoing code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
+
+  liftIO$ putStrLn$ "OUTPUT FROM NTIMES_MINMEDMAX : "++ str
 
   let (ts,prods) = 
        case code of
@@ -774,7 +781,7 @@ main = do
 	-- Hah, make.out seems to be a special name of some sort, this actually fails:
 	--	code <- lift$ system$ "make clean &> make.out"
 	code <- lift$ system$ "make clean &> make_output.tmp"
-	check code "ERROR: 'make clean' failed."
+	check False code "ERROR: 'make clean' failed."
 	log " -> Succeeded."
 	liftIO$ removeFile "make_output.tmp"
 

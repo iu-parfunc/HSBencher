@@ -123,15 +123,28 @@ EXITCODE=0
           REALTIME=`grep real $ONERUNOUT | head -n1 | awk '{ print $1 }'`  
 	fi
 
-        # And get out JUST the productivity, if it exists:
-        PRODUCTIVITY=`grep Productivity $ONERUNOUT | head -n1 | awk '{ print $2 }' | sed 's/\%//'`
+        # And get out JUST the productivity, if it exists (+RTS -s):
+        GC_WALL=` grep GC  $ONERUNOUT | grep time | head -n2 | tail -n1 | awk '{ print $5 }' | sed 's/s//'`
+        MUT_WALL=`grep MUT $ONERUNOUT | grep time | head -n2 | tail -n1 | awk '{ print $5 }' | sed 's/s//'`
+
+        # Option 2, output may be from "+RTS --machine-readable -t"
+	# The user-time metric for sequential GC is meaningless.
+        if [ "$GC_WALL" == "" ]; then 
+          GC_WALL=` grep GC_wall_seconds      $ONERUNOUT | head -n1 | awk '{ print $2 }' | sed 's/\"//g' | sed 's/)//'`
+          MUT_WALL=`grep mutator_wall_seconds $ONERUNOUT | head -n1 | awk '{ print $2 }' | sed 's/\"//g' | sed 's/)//'`
+        fi
+
+        # Time in GC may be more intuitive than "productivity":
+        # echo "$GC_WALL / ($GC_WALL + $MUT_WALL)" | bc -l
+        PRODUCTIVITY=`echo "100.0 * $MUT_WALL / ($GC_WALL + $MUT_WALL)" | bc -l`
 
         # NOTE: [2012.02.29] When testing this on very short runs, I
         # saw an odd bug where it could run TWO "trial 1 of 1"s and
         # therefore have two productivities/realtimes above.
         # E.g.:  ./runs/2012.02.29_parfib_monad_Trace_threaded.exe__1330545135_1.log
 
-        echo NTIMES_ONE_RESULT $REALTIME $PRODUCTIVITY >> $RESULTS
+        # Here's a lame form of truncation of the longe numbers (e.g. 100.0000000000000000000)
+        echo NTIMES_ONE_RESULT $REALTIME ${PRODUCTIVITY:0:6} >> $RESULTS
 
     # [2010.05.11] I used to just give warnings when not ALL of the trials failed:
     # This was for timing the nondeterministic hashtable hack:
