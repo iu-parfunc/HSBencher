@@ -563,10 +563,10 @@ writeToLog path bytes = do
 
 
 -- | Create a descriptive (and unused) directory based on a
--- configuration.  It will be a child of the run_N directory. This
--- will be the destination for output results.
-createConfDir :: String -> OneRunConfig -> IO String
-createConfDir logd conf = do
+-- configuration.  It will be a child of logd (i.e. the run_N
+-- directory). This will be the destination for output results.
+createPerConfDir :: String -> OneRunConfig -> IO String
+createPerConfDir logd conf = do
   let descr = intercalate "_" $ map paramPlainText conf
       loop n = do
         let suffix = if n==0 then "" else "_"++show n
