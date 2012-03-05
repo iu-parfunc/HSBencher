@@ -8,10 +8,15 @@
 -- It may need to be compiled due to problems with HSH and ghci [2012.01.14].
 
 
+--------------------------------------------------------------------------------
 -- TODO: 
---  * Detect and handle error codes in remote commands.
+
 --  * Add robustness to disconnection (finish strongSSH)
 --  * Check "who" repeatedly rather than just at the outset.
+
+--  * Record all output from remote commands in a local per-worker logfile 
+
+--------------------------------------------------------------------------------
 
 import HSH
 import HSH.ShellEquivs
@@ -31,6 +36,7 @@ import System.Console.GetOpt
 import System.Environment (getEnv, getArgs)
 import System.Exit
 import System.Process
+import System.IO        (hPutStrLn, stderr, stdout)
 import System.Random    (randomIO)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, canonicalizePath,
 			 createDirectoryIfMissing, doesFileExist, removeDirectory)
@@ -58,6 +64,8 @@ data BenchmarkSetting =
    -- Set parameter across all runs:
  | Set ParamType String
  | Command String 
+-- | GitRepo { url :: String, branch :: String }
+ | GitRepo { url :: String, branch :: String, dir :: String }
  deriving (Show, Eq, Read, Typeable)
 
 instance Pretty BenchmarkSetting where
@@ -85,6 +93,15 @@ data Executor = Executor
     unlockRemote :: IO ()
   }
 
+-- A bit redundant with the above, same contents as "GitRepo", but
+-- outside the sum type:
+data FullGitLoc = FullGitLoc String String String
+  deriving (Show,Eq)
+
+-- The worker nodes do their work in a temporary location, but can
+-- direct their logs into a central (typically NFS) location.
+tmp_location = "/tmp/"
+
 --------------------------------------------------------------------------------
 
 -- <boilerplate>  Should be derivable:
@@ -103,6 +120,8 @@ isSet  (Set _ _)  = True
 isSet           _ = False
 isCommand (Command _) = True
 isCommand           _ = False
+isGitRepo (GitRepo _ _ _) = True
+isGitRepo           _ = False
 getCommand :: [BenchmarkSetting] -> String
 getCommand settings = 
   case filter isCommand settings of 
@@ -235,7 +254,7 @@ dePortablize path = return path
 --
 --   It returns both the absolute location of the gitroot and the
 --   relative offset inside it to reach the current dir.
-findGitRoot :: IO (String,String)
+findGitRoot :: IO FullGitLoc
 findGitRoot = 
    do start <- runSL "pwd -L" 
       root  <- loop start
@@ -243,7 +262,10 @@ findGitRoot =
       canonB <- canonicalizePath start
       let offset = makeRelative canonA canonB
       portroot <- makeHomePathPortable root
-      return (portroot,offset)
+
+      -- Obscure way to get the current branch:
+      branch <- runSL "git rev-parse --abbrev-ref HEAD"
+      return (FullGitLoc portroot branch offset)
  where 
   loop path = do 
     b0 <- isHomePath path 
@@ -384,7 +406,13 @@ strongSSH host cmds = do
    case code of 
      ExitSuccess -> do forkIO $ putStr err  
 		       return (Just$ B.pack out)
-     ExitFailure _ -> return Nothing
+     ExitFailure _ -> do hPutStrLn stdout "------------------------------------------------------------"
+                         hPutStrLn stdout " !!! strongSSH: Remote Command FAILURE: "
+                         hPutStrLn stdout "------------------------------------------------------------"
+                         hPutStrLn stdout out
+			 hPutStrLn stderr err
+                         hPutStrLn stdout "------------------------------------------------------------"
+                         return Nothing
 #endif
 
 
@@ -400,8 +428,8 @@ mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "
 
 -- | Job management.  Consume a stream of Idle Executors to schedule
 --   jobs remotely.
-launchConfigs :: [BenchmarkSetting] -> MVar Executor -> (String,String) -> String -> IO ()
-launchConfigs settings idles (gitroot,gitoffset) startpath = do
+launchConfigs :: [BenchmarkSetting] -> MVar Executor -> FullGitLoc -> String -> IO ()
+launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startpath = do
   let allconfs = listConfigs settings
   -- If a configuration run fails, it fails on another thread so we
   -- need a mutable structure to keep track of them.
@@ -410,7 +438,16 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
   -- threads (each of which is modeled by an mvar that will be written
   -- at completion.).
   state <- newIORef (allconfs, M.empty)
-  logd  <- makeLogDir settings  
+  logd  <- makeLogDir  settings  -- The .log destination directory.
+  -- We use the same "run_N" structure inside the temp directory.
+  -- This is the location to do a git clone and do the work:
+  let tmpd = tmp_location </> basename logd
+
+  -- Unlike the logd, we don't tiptoe around stuff in the tmp dir.  If
+  -- it's in our way, we blast it.
+  b <- doesDirectoryExist tmpd
+  when b $ removeDirectory tmpd
+  createDirectoryIfMissing True tmpd
 
   -- The main job scheduling loop:
   let finalcommand = getCommand settings
@@ -461,16 +498,21 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 		           ++" of "++show (length allconfs)++": " ++ show conf
 
 		    -- Create the output directory locally on this machine:
-		    confdir <- createPerConfDir logd conf 
+		    -- This is tricky because we want both 
+		    conf_outdir  <- createPerConfDir logd conf 
+		    conf_workdir <- createPerConfDir tmpd conf 
+
 		    -- .log file is at the same level as the conf-specific directory:
-		    let logfile = dropTrailingPathSeparator confdir <.> "log"
-			workingDir = confdir </> "working_copy"
+		    let logfile = dropTrailingPathSeparator conf_outdir <.> "log"
 
 		    -- Perform the git clone:
-		    setupRemoteWorkingDirectory exec gitroot workingDir  
+		    stillgood <- setupRemoteWorkingDirectory exec gitloc conf_workdir
 
                     -- This is it.  Here we run the remote benchmark suite:
-		    cmdoutput <- runcmd (buildCommand finalcommand conf (gitroot,gitoffset) workingDir)
+		    cmdoutput <- if stillgood then 
+                                   runcmd (buildTheCommand finalcommand conf gitloc conf_workdir conf_outdir)
+                                 else 
+                                   return Nothing
 		    
                     putStrLn$ "  * Remote command finished for config "++confindex
                     -- Now we're done with all remote operations and can unlock:
@@ -479,8 +521,9 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 		    case cmdoutput of 
 		      Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
 				    -- Delete the directory with erroneous output:
-				    putStrLn$ "  ! Deleting output directory: "++confdir
-				    removeDirectory confdir 
+				    putStrLn$ "  ! Deleting output directory: "++conf_outdir
+				    b <- doesDirectoryExist  conf_outdir 
+                                    when b $ removeDirectory conf_outdir 
 				    atomicModifyIORef_ state  
 				       (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
 		      Just bs -> do writeToLog logfile bs 
@@ -500,13 +543,18 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 
 
 -- FIXME
-buildCommand :: String -> OneRunConfig -> (String,String) -> String -> [String]
-buildCommand finalcmd conf (gitroot,gitoffset) remoteWorkingDir = 
+-- | Build the main command that runs the benchmarks.
+buildTheCommand :: String -> OneRunConfig -> FullGitLoc -> String -> String -> [String]
+buildTheCommand finalcmd conf (FullGitLoc gitroot branch gitoffset) remoteWorkingDir remoteOutputDir = 
   ["cd " ++ remoteWorkingDir </> gitoffset] ++
   map exportCmd (filter (isEnvVar  . fst) conf) ++
   [rtsOpts    (filter (isRTS     . fst) conf)] ++ 
   [ghcOpts    (filter (isCompile . fst) conf)] ++ 
-  [finalcmd]
+  [finalcmd, 
+   -- Finally retrieve results:
+   "mkdir -p "++ remoteOutputDir,
+   "touch dummy.log", "touch dummy.dat", -- This is silly... there must be a better way to avoid CP errors.
+   "cp -f *.log *.dat "++ remoteOutputDir]
  where 
   envs = filter (isEnvVar . fst) conf
   exportCmd (EnvVar v,val) = ("export "++v++"=\""++val++"\"")
@@ -518,22 +566,28 @@ buildCommand finalcmd conf (gitroot,gitoffset) remoteWorkingDir =
   ghcOpts ls = exportCmd (EnvVar "GHC_FLAGS", unwords (map combineFlag ls))
 
 
-
 -- | Setup a git clone as a fresh working directory.
-setupRemoteWorkingDirectory (Executor{runcmd}) gitroot workingDir = do
+setupRemoteWorkingDirectory (Executor{runcmd}) (FullGitLoc gitroot branch gitoffset) workingDir = do
   wd <- makeHomePathPortable workingDir
   -- Create the directory locally first:
   runIO$ "mkdir -p "++wd -- Use HSH to handle ~/ path.
-  runcmd ["mkdir -p "++wd, 
-	  "git clone "++gitroot++" "++wd,
-	  "cd "++wd,
-	  "git submodule init",
-	  "git submodule update"]
-  putStrLn$ "  - Done cloning remote working copy:" ++ wd
+  x <- runcmd ["mkdir -p "++wd, 
+	       "git clone "++gitroot++" "++wd,
+	       "cd "++wd,
+	       "git checkout "++ branch,
+	       "git submodule init",
+	       "git submodule update"]
+  case x of 
+    Nothing -> do hPutStrLn stderr " ! Failed to setup git repo on remote worker node!"
+		  return False
+    Just _  -> do putStrLn$ "  - Done cloning remote working copy:" ++ wd
+		  return True
 
 --------------------------------------------------------------------------------
 
 -- Create and return a directory for storing logs during this run.
+-- This is hardcoded to be inside $HOME/clusterbench/run_N : 
+--   Returns a directory name.
 makeLogDir :: [BenchmarkSetting] -> IO String 
 makeLogDir settings = do
   home <- getEnv "HOME"
@@ -551,6 +605,21 @@ makeLogDir settings = do
   createDirectoryIfMissing True nextdir 
   return nextdir
 
+
+-- | Create a descriptive (and unused) directory based on a
+-- configuration.  It will be a child of the logdir (i.e. the run_N
+-- directory). This will be the destination for output results.
+createPerConfDir :: String -> OneRunConfig -> IO String
+createPerConfDir parentdir conf = do
+  let descr = intercalate "_" $ map paramPlainText conf
+      loop n = do
+        let suffix = if n==0 then "" else "_"++show n
+	    path = parentdir </> descr ++ suffix
+	b <- doesFileExist path
+	if b then loop (n+1)
+	     else return path
+  loop 0 >>= makeHomePathPortable
+
 -- | Write out log file and return the file name used.
 -- writeToLog :: String -> OneRunConfig -> B.ByteString -> IO String
 -- writeToLog logd conf bytes = do
@@ -561,20 +630,6 @@ writeToLog path bytes = do
   B.writeFile path' bytes
   putStrLn$ "  - Wrote log output to file: " ++ path
 
-
--- | Create a descriptive (and unused) directory based on a
--- configuration.  It will be a child of logd (i.e. the run_N
--- directory). This will be the destination for output results.
-createPerConfDir :: String -> OneRunConfig -> IO String
-createPerConfDir logd conf = do
-  let descr = intercalate "_" $ map paramPlainText conf
-      loop n = do
-        let suffix = if n==0 then "" else "_"++show n
-	    path = logd </> descr ++ suffix
-	b <- doesFileExist path
-	if b then loop (n+1)
-	     else return path
-  loop 0 >>= makeHomePathPortable
 
 -- Emit something descriptive for the option settings.
 -- paramPlainText (p,v) = fn p ++ filter (not . isSpace) v
@@ -646,8 +701,15 @@ main = do
   putStrLn$ "    "++startpath
 
   if isgit then do
-    putStrLn$ "Finding root of .git repository:"
-    gitloc <- findGitRoot
+    gitloc <- case filter isGitRepo settings of 
+               [] -> do putStrLn$ "No explicit GitRepo specified.  Using working directory."
+                        putStrLn$ "  Finding root of .git working copy containing ./ ..."
+--		     FullGitLoc url0 branch0 workingdir <- findGitRoot
+		        findGitRoot
+	             
+               [GitRepo url branch wd] -> do putStrLn$ "Using git repo/branch: "++ show (url,branch)
+                                             return (FullGitLoc url branch wd)
+	       ls  -> error$ "More than one GitRepo specified!"++show ls
     putStrLn$ "    "++show gitloc
 
     -- Grab idle machines as a stream of workers:
