@@ -632,8 +632,6 @@ runOne br@(BenchRun { threads=numthreads
   -- flushtmp rtstmp
   check keepgoing code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
 
-  liftIO$ putStrLn$ "OUTPUT FROM NTIMES_MINMEDMAX : "++ str
-
   let (ts,prods) = 
        case code of
 	ExitSuccess     -> 
