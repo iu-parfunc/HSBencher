@@ -461,7 +461,7 @@ launchConfigs settings idles (gitroot,gitoffset) startpath = do
 		           ++" of "++show (length allconfs)++": " ++ show conf
 
 		    -- Create the output directory locally on this machine:
-		    confdir <- createConfDir logd conf 
+		    confdir <- createPerConfDir logd conf 
 		    -- .log file is at the same level as the conf-specific directory:
 		    let logfile = dropTrailingPathSeparator confdir <.> "log"
 			workingDir = confdir </> "working_copy"
