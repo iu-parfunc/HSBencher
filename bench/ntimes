@@ -35,7 +35,9 @@ function mytempfile {
   #index=$(($index+1))
   index=$1
   file=./runs/"$date"_"$base"_"$NUMTHREADS"_"$secs"_"$index".log
-  touch $file
+# [2012.03.05] Got a "cannot touch" error here... it's not NFS problems either.  I wonder what?
+#  touch $file
+# Or wait, maybe ./runs isn't getting created properly?
   echo $file
 }
 
