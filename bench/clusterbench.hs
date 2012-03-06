@@ -56,7 +56,12 @@ import Text.PrettyPrint.HughesPJ (nest)
 data Flag = Git
           | MachineList [String]
           | ListIdle 
---	  | ConfigFile String
+          -- Inclusive lower and upper bounds on which configurations to execute:
+--          | ConfigRangeLowerBound Int
+--          | ConfigRangeUpperBound Int
+
+          -- Redo the run in directory run_N, replenishing whatever is not complete.
+          | RedoRun Int 
  deriving (Show, Eq, Read)
 
 
@@ -132,6 +137,9 @@ isCommand (Command _) = True
 isCommand           _ = False
 isGitRepo (GitRepo _ _ _) = True
 isGitRepo           _ = False
+isRedoRun (RedoRun _) = True
+isRedoRun _           = False
+
 getCommand :: [BenchmarkSetting] -> String
 getCommand settings = 
   case filter isCommand settings of 
@@ -149,6 +157,17 @@ cli_options =
      , Option ['m'] ["machines"] 
           (ReqArg (MachineList . words) "HOSTS")
           "list of machines to use for running benchmarks"
+
+     -- Not implemented yet.  This is only useful if you KNOW that you
+     -- haven't missed anything up to N:
+     -- , Option [] ["skipto"] 
+     --      (ReqArg (ConfigRangeLowerBound . read) "NUM")
+     --      "skip ahead to start at NUM configuration"
+
+     , Option [] ["retry"]
+          (ReqArg (RedoRun . read) "NUM")
+          "redo run_NUM replinishing configurations that did not complete successfully"
+
      , Option ['l'] ["listidle"] 
           (NoArg ListIdle)
           "don't run anything, just list idle machines."
@@ -472,28 +491,28 @@ mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "
 
 -- | Job management.  Consume a stream of Idle Executors to schedule
 --   jobs remotely.
-launchConfigs :: [BenchmarkSetting] -> MVar Executor -> FullGitLoc -> String -> IO ()
-launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startpath = do
+launchConfigs :: Int -> [BenchmarkSetting] -> MVar Executor -> FullGitLoc -> String -> IO ()
+launchConfigs run_N settings idles 
+	      gitloc@(FullGitLoc gitroot branch gitoffset) 
+	      startpath = do
+  -- Create our big list of configs.  This enumerates our total work to do:
   let allconfs = listConfigs settings
   -- If a configuration run fails, it fails on another thread so we
   -- need a mutable structure to keep track of them.
-  --
-  -- This atomically modified state tracks the confs and outstanding/working
+  state <- newIORef (allconfs, M.empty)
+  -- ^^^ This atomically modified state tracks the confs and outstanding/working
   -- threads (each of which is modeled by an mvar that will be written
   -- at completion.).
-  state <- newIORef (allconfs, M.empty)
-  logd  <- makeLogDir  settings  -- The .log destination directory.
+
+  -- The .log destination directory.  Preexisting or fresh:
+  logd  <- makeLogDir run_N
+  createDirectoryIfMissing True logd
+
   -- We use the same "run_N" structure inside the temp directory.
   -- This is the location to do a git clone and do the work:
   let tmpd = tmp_location </> basename logd
 
-  -- Unlike the logd, we don't tiptoe around stuff in the tmp dir.  If
-  -- it's in our way, we blast it.
---   b <- doesDirectoryExist tmpd
---   when b $ removeDirectory tmpd
---   createDirectoryIfMissing True tmpd
-
-  -- The main job scheduling loop:
+  -- The main job-scheduling loop:
   let finalcommand = getCommand settings
       loop = do
          peek <- readIORef state 
@@ -532,66 +551,78 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
 		mytid <- myThreadId;
 		myCompletion <- newEmptyMVar;
 
-                -- Try to grab a configuration for this thread to work on:
-                -- Grabbing the configuration and adding ourselves to
-                -- the list must happen together, atomically:
-		mconf <- atomicModifyIORef state (\ st -> 
-			  case st of 
-			    ([],_)            -> (st,Nothing)
-			    (conf:rest, tids) -> ((rest, M.insert mytid myCompletion tids),
-						  Just conf));
+                -- Loop to find a viable configuration for the current worker:
+                let grabConf = do {
+		   -- Try to grab a configuration for this thread to work on:
+		   -- Grabbing the configuration and adding ourselves to
+		   -- the list must happen together, atomically:
+		   mconf <- atomicModifyIORef state (\ st -> 
+			     case st of 
+			       ([],_)            -> (st,Nothing)
+			       (conf:rest, tids) -> ((rest, M.insert mytid myCompletion tids),
+						     Just conf));
+		   (case mconf of 
+		     Nothing   -> return ()
+		     Just conf@(OneRunConfig conf_tries confls) -> do
+		       let Just confindex = elemIndex confls (map binds allconfs)
+		       putStrLn$ " ** Selected configuration "++ show (confindex+1)
+			      ++" of "++show (length allconfs)++": " ++ show conf
 
-		(case mconf of 
-		  Nothing   -> return ()
-		  Just conf@(OneRunConfig conf_tries confls) -> do
-                    let Just confindex = elemIndex confls (map binds allconfs)
-		    putStrLn$ " ** Selected configuration "++ show (confindex+1)
-		           ++" of "++show (length allconfs)++": " ++ show conf
+                       let perconfD = perConfDirName conf
+                           conf_outdir  = logd </> perconfD 
+                           conf_workdir = tmpd </> perconfD 
+		           -- .log file is at the same level as the conf-specific directory:
+		           logfile = dropTrailingPathSeparator conf_outdir <.> "log"
 
-		    -- Create the output directory locally on this machine:
-		    -- This is tricky because we want both 
-		    conf_outdir  <- createPerConfDir logd conf 
-		    conf_workdir <- createPerConfDir tmpd conf 
+                       b <- doesFileExist logfile
+                       
+                       if b then do 
+                          putStrLn$ "  *!* CONFIGURATION ALREADY FINISHED: "++perconfD
+                          putStrLn$ "    Proceeding to next configuration..."
+                          grabConf
+                        else do 
+			 -- Create the output directory locally on this machine:
+                         createDirectoryIfMissing True logd
 
-		    -- .log file is at the same level as the conf-specific directory:
-		    let logfile = dropTrailingPathSeparator conf_outdir <.> "log"
+			 -- Create the working directory and perform the git clone:
+			 stillgood <- setupRemoteWorkingDirectory exec gitloc conf_workdir
+                         -- At this point the above remote command has completed, and things are setup to run.
+ 
+			 -- This is it.  Here we run the remote benchmark suite:
+			 cmdoutput <- if stillgood then 
+					runcmd (buildTheCommand finalcommand conf gitloc conf_workdir conf_outdir)
+				      else 
+					return Nothing
 
-		    -- Perform the git clone:
-		    stillgood <- setupRemoteWorkingDirectory exec gitloc conf_workdir
+			 putStrLn$ "  * Remote command finished for config "++show (confindex+1)
+			 -- Now we're done with all remote operations and can unlock:
+			 unlockRemote
 
-                    -- This is it.  Here we run the remote benchmark suite:
-		    cmdoutput <- if stillgood then 
-                                   runcmd (buildTheCommand finalcommand conf gitloc conf_workdir conf_outdir)
-                                 else 
-                                   return Nothing
-		    
-                    putStrLn$ "  * Remote command finished for config "++show (confindex+1)
-                    -- Now we're done with all remote operations and can unlock:
-		    unlockRemote
-
-		    case cmdoutput of 
-		      Nothing -> do putStrLn$ "  ! Config failed. "
-				    -- Delete the directory with erroneous output:
-				    putStrLn$ "  ! Deleting output directory: "++conf_outdir
-				    b <- doesDirectoryExist  conf_outdir 
-                                    when b $ removeDirectory conf_outdir 
-				    b <- doesDirectoryExist  conf_workdir
-                                    when b $ removeDirectory conf_workdir
-                                    if conf_tries+1 >= max_config_tries then do
-				      putStrLn$ "  ! Conf failed the maximum number of times! ("++show max_config_tries++")"
-                                      atomicModifyIORef_ state  
-				        (\ (confs,tids) -> (confs, M.delete mytid tids))
-				     else do 
-				      putStrLn$ "  ! Retrying config.  Try # "++ show (conf_tries + 2)
-                                      -- We put the config back and 
-   	 			      atomicModifyIORef_ state  
-				        (\ (confs,tids) -> (OneRunConfig (conf_tries+1) confls:confs, 
-							    M.delete mytid tids))
-                      -- Normal completion, we leave ourselves in the thread list for our MVar to be blocked on.
-                      -- We could also do a delete here, but there's no need.
-		      Just bs -> do writeToLog logfile bs 
-				    return ()
-		);
+			 case cmdoutput of 
+			   Nothing -> do putStrLn$ "  ! Config failed. "
+					 -- Delete the directory with erroneous output:
+					 putStrLn$ "  ! Deleting output directory: "++conf_outdir
+					 b <- doesDirectoryExist  conf_outdir 
+					 when b $ removeDirectory conf_outdir 
+					 b <- doesDirectoryExist  conf_workdir
+					 when b $ removeDirectory conf_workdir
+					 if conf_tries+1 >= max_config_tries then do
+					   putStrLn$ "  ! Conf failed the maximum number of times! ("++show max_config_tries++")"
+					   atomicModifyIORef_ state  
+					     (\ (confs,tids) -> (confs, M.delete mytid tids))
+					  else do 
+					   putStrLn$ "  ! Retrying config.  Try # "++ show (conf_tries + 2)
+					   -- We put the config back and 
+					   atomicModifyIORef_ state  
+					     (\ (confs,tids) -> (OneRunConfig (conf_tries+1) confls:confs, 
+								 M.delete mytid tids))
+			   -- Normal completion, we leave ourselves in the thread list for our MVar to be blocked on.
+			   -- We could also do a delete here, but there's no need.
+			   Just bs -> do writeToLog logfile bs 
+					 return ()
+		      );
+                    } -- End grabConf
+                    in grabConf;
 
 		putStrLn$ "  - Forked thread with ID " ++ show mytid ++ " completed.";
 		putMVar myCompletion ();
@@ -651,33 +682,36 @@ setupRemoteWorkingDirectory (Executor{runcmd}) (FullGitLoc gitroot branch gitoff
 
 --------------------------------------------------------------------------------
 
--- Create and return a directory for storing logs during this run.
+-- Create and return a NEW, UNUSED directory for storing logs during this run.
 -- This is hardcoded to be inside $HOME/clusterbench/run_N : 
 --   Returns a directory name.
-makeLogDir :: [BenchmarkSetting] -> IO String 
-makeLogDir settings = do
+findUnusedLogDir :: [BenchmarkSetting] -> IO Int
+findUnusedLogDir settings = do
+  -- Here is an inefficient system to find out what the next run should be:
+  let loop n = do dir <- makeLogDir n 
+                  b   <- doesDirectoryExist dir
+		  if b then loop (n+1)
+		       else return n
+--  nextdir <- loop 1 
+--  createDirectoryIfMissing True nextdir 
+--  return nextdir
+  loop 1 
+
+-- Make a run_N log directory in the standardized place:
+makeLogDir :: Int -> IO String 
+makeLogDir n = do
   home <- getEnv "HOME"
   let root   = home </> "clusterbench"
       prefix = "run_"
       suffix = ""  -- TODO: add more interesting description based on what is *varied* in settings.
---  existing :: [String] <- run$ "ls "++root </> prefix++"*"
---  let numexisting = length existing 
-  -- Here is an inefficient system to find out what the next run should be:
-  let loop n = do let dir = root </> prefix ++ show n ++ suffix
-                  b <- doesDirectoryExist dir
-		  if b then loop (n+1)
-		       else return dir
-  nextdir <- loop 1 
-  createDirectoryIfMissing True nextdir 
-  return nextdir
-
+  return (root </> prefix ++ show n ++ suffix)
 
 -- | Create a descriptive (and unused) directory based on a
 -- configuration.  It will be a child of the logdir (i.e. the run_N
 -- directory). This will be the destination for output results.
 createPerConfDir :: String -> OneRunConfig -> IO String
-createPerConfDir parentdir (OneRunConfig _ conf) = do
-  let descr = intercalate "_" $ map paramPlainText conf
+createPerConfDir parentdir conf = do
+  let descr = perConfDirName conf
       loop n = do
         let suffix = if n==0 then "" else "_"++show n
 	    path = parentdir </> descr ++ suffix
@@ -685,6 +719,11 @@ createPerConfDir parentdir (OneRunConfig _ conf) = do
 	if b then loop (n+1)
 	     else return path
   loop 0 >>= makeHomePathPortable
+
+perConfDirName :: OneRunConfig -> String
+perConfDirName (OneRunConfig _ conf) =
+  intercalate "_" $ map paramPlainText conf
+
 
 -- | Write out log file.
 -- writeToLog :: String -> OneRunConfig -> B.ByteString -> IO String
@@ -781,7 +820,13 @@ main = do
     -- Grab idle machines as a stream of workers:
     idleMachines <- idleExecutors machines    
 
-    launchConfigs settings idleMachines gitloc startpath
+    -- Find where our output run should go (e.g. clusterbench/run_N folder):
+    run_N <- case filter isRedoRun options of 
+              [] -> findUnusedLogDir settings 
+	      [RedoRun n] -> return n 
+	      ls -> error$ "More than one --retry flag given!"
+
+    launchConfigs run_N settings idleMachines gitloc startpath
     return ()
 
    else do 
