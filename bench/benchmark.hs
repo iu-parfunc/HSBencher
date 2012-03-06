@@ -536,6 +536,7 @@ compileOne br@(BenchRun { threads=numthreads
      mf <- lift$ doesFileExist$     containingdir </> "Makefile"
      if e then do 
 	 log "Compiling with a single GHC command: "
+         -- HACK for pinning to threads: (TODO - should probably make this for NUMA)
          pinObjExists <- lift $ doesFileExist "../dist/build/cbits/pin.o"
 	 let cmd = unwords [ ghc, "--make"
                            , if pinObjExists then "../dist/build/cbits/pin.o" else ""

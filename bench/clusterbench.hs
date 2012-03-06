@@ -64,8 +64,9 @@ data BenchmarkSetting =
    -- Set parameter across all runs:
  | Set ParamType String
  | Command String 
--- | GitRepo { url :: String, branch :: String }
- | GitRepo { url :: String, branch :: String, dir :: String }
+-- | GitRepo { url :: String, branch :: String, dir :: String }
+ -- Url, Branch, WorkingDir
+ | GitRepo String String String
  deriving (Show, Eq, Read, Typeable)
 
 instance Pretty BenchmarkSetting where
@@ -524,6 +525,8 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
 				    putStrLn$ "  ! Deleting output directory: "++conf_outdir
 				    b <- doesDirectoryExist  conf_outdir 
                                     when b $ removeDirectory conf_outdir 
+				    b <- doesDirectoryExist  conf_workdir
+                                    when b $ removeDirectory conf_workdir
 				    atomicModifyIORef_ state  
 				       (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
 		      Just bs -> do writeToLog logfile bs 
