@@ -37,6 +37,8 @@ function mytempfile {
   file=./runs/"$date"_"$base"_"$NUMTHREADS"_"$secs"_"$index".log
 # [2012.03.05] Got a "cannot touch" error here... it's not NFS problems either.  I wonder what?
 #  touch $file
+  mkdir -p ./runs/
+  echo > $file
 # Or wait, maybe ./runs isn't getting created properly?
   echo $file
 }
