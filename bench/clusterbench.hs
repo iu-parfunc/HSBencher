@@ -38,7 +38,7 @@ import qualified Data.Map as M
 import System.Console.GetOpt
 import System.Environment (getEnv, getArgs)
 import System.Exit
-import System.Process
+import System.Process   (readProcessWithExitCode)
 import System.IO        (hPutStrLn, stderr, stdout)
 import System.Random    (randomIO)
 import System.Directory (doesDirectoryExist, getCurrentDirectory, canonicalizePath,
@@ -67,9 +67,11 @@ data BenchmarkSetting =
    -- Set parameter across all runs:
  | Set ParamType String
  | Command String 
--- | GitRepo { url :: String, branch :: String, dir :: String }
- -- Url, Branch, WorkingDir
- | GitRepo String String String
+
+
+ -- The semantics of GitRepo are that it refers to the current head of a specific branch.
+ -- | GitRepo { url :: String, branch :: String, dir :: String }
+ | GitRepo String String String  -- Url, Branch, WorkingDir
  deriving (Show, Eq, Read, Typeable)
 
 instance Pretty BenchmarkSetting where
@@ -102,9 +104,8 @@ data Executor = Executor
     unlockRemote :: IO ()
   }
 
--- A bit redundant with the above, same contents as "GitRepo", but
--- outside the sum type:
-data FullGitLoc = FullGitLoc String String String
+-- This contains a specific hash to checkout.
+data FullGitLoc = FullGitLoc { url :: String, hash  :: String, dir :: String }
   deriving (Show,Eq)
 
 -- The worker nodes do their work in a temporary location, but can
@@ -230,8 +231,25 @@ machineIdle host = do
       user = case remoteUser of 
                 Nothing -> localUser
 		Just s  -> s 
+#if 0
+  -- I suspect this is the culprit that is creating zombie ssh
+  -- processes... need to debug these HSH issues if it is going to be
+  -- usable:
   who :: String <- run $ mkSSHCmd host ["who"] -|- grepV user
   return (null who)
+#else
+--  who :: String <- run $ mkSSHCmd host ["who"] -|- grepV user
+  res <- strongSSH host ["who"]
+  case res of 
+    -- We don't stop execution over a polling ssh failing:
+    Nothing -> return False
+    Just output -> 
+       let lns = map B.unpack $ B.lines output
+           pruned = filter (not . isInfixOf user) $ 
+                    filter (not . null) lns
+       in return (null pruned)
+#endif
+
 
 
 -- Exceptions that walk up the fork tree of threads:
@@ -415,6 +433,7 @@ pollIdles hosts =  fmap catMaybes $
 strongSSH :: String -> [String] -> IO (Maybe B.ByteString)
 strongSSH host cmds = do
 #if 0 
+-- HAVING PROBLEMS:
   (output, checkResults) <- run (mkSSHCmd host cmds)
   (descr,code) <- checkResults
   case code of
@@ -426,6 +445,7 @@ strongSSH host cmds = do
    (code,out,err) <- readProcessWithExitCode "ssh" [host, concat (intersperse " && " cmds)] ""
    -- TODO: Dropping down to createProcess would allow using ByteStrings:
    case code of 
+     -- When it succeeds we echo its errors anyway so that we can see errors that arise:
      ExitSuccess -> do forkWithExceptions forkIO "asynchronous print" $ putStr err  
 		       return (Just$ B.pack out)
      ExitFailure _ -> do hPutStrLn stdout "------------------------------------------------------------"
@@ -438,12 +458,14 @@ strongSSH host cmds = do
 #endif
 
 
+#if 0
 -- | Construct a command string that will ssh into another machine and
 --   run a series of commands.
 mkSSHCmd :: String -> [String] -> String
   -- With no arguments it just makes sure that we can login:
 mkSSHCmd host []    = "ssh "++host++" ' ' "
 mkSSHCmd host cmds  = "ssh "++host++" '"++ concat (intersperse " && " cmds) ++ "'"
+#endif
 
 
 --------------------------------------------------------------------------------
