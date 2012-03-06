@@ -16,6 +16,8 @@
 
 --  * Record all output from remote commands in a local per-worker logfile 
 
+--  * Record a list of failed configurations and print them at the end.
+
 --------------------------------------------------------------------------------
 
 import HSH
