@@ -18,7 +18,9 @@ function mytempfile {
   #index=$(($index+1))
   index=$1
   file=./runs/"$date"_"$base"_"$NUMTHREADS"_"$secs"_"$index".log
-  touch $file
+#  touch $file
+  mkdir -p ./runs/
+  echo > $file
   echo $file
 }
 
