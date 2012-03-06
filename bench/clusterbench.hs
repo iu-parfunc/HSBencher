@@ -27,7 +27,7 @@ import HSH
 import HSH.ShellEquivs
 import Control.Monad 
 import Control.Concurrent
-import Control.Exception (catch, SomeException)
+import Control.Exception (catch, SomeException, fromException, AsyncException(ThreadKilled))
 import Data.Maybe
 import Data.Char (isSpace, isAlphaNum, isNumber)
 import Data.List
@@ -280,9 +280,12 @@ forkWithExceptions forkit descr action = do
    parent <- myThreadId
    forkit $ 
       Control.Exception.catch action
-	 (\ e -> do
-	  B.hPutStrLn stderr $ B.pack $ "Exception inside child thread "++show descr++": "++show e
-	  throwTo parent (e::SomeException)
+	 (\ e -> 
+           case fromException e of 
+             Just ThreadKilled -> B.hPutStrLn stderr $ B.pack $ 
+                                    "ThreadKilled exception inside child thread (not propagating!) "++show descr
+	     Nothing -> do B.hPutStrLn stderr $ B.pack $ "Exception inside child thread "++show descr++": "++show e
+	                   throwTo parent (e::SomeException)
 	 )
 
 ------------------------------------------------------------
@@ -470,12 +473,12 @@ strongSSH host cmds = do
      -- When it succeeds we echo its errors anyway so that we can see errors that arise:
      ExitSuccess -> do forkWithExceptions forkIO "asynchronous print" $ putStr err  
 		       return (Just$ B.pack out)
-     ExitFailure _ -> do hPutStrLn stdout "------------------------------------------------------------"
-                         hPutStrLn stdout " !!! strongSSH: Remote Command FAILURE: "
-                         hPutStrLn stdout "------------------------------------------------------------"
-                         hPutStrLn stdout out
+     ExitFailure _ -> do hPutStrLn stderr "------------------------------------------------------------"
+                         hPutStrLn stderr " !!! strongSSH: Remote Command FAILURE: "
+                         hPutStrLn stderr "------------------------------------------------------------"
+                         hPutStrLn stderr out
 			 hPutStrLn stderr err
-                         hPutStrLn stdout "------------------------------------------------------------"
+                         hPutStrLn stderr "------------------------------------------------------------"
                          return Nothing
 #endif
 
