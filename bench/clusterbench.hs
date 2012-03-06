@@ -18,6 +18,9 @@
 
 --  * Record a list of failed configurations and print them at the end.
 
+--  * Finish "GitRepo" -- Make it possible to check out a stable revision from the server
+--    We don't want it to change mid-run!!
+
 --------------------------------------------------------------------------------
 
 import HSH
@@ -692,9 +695,6 @@ findUnusedLogDir settings = do
                   b   <- doesDirectoryExist dir
 		  if b then loop (n+1)
 		       else return n
---  nextdir <- loop 1 
---  createDirectoryIfMissing True nextdir 
---  return nextdir
   loop 1 
 
 -- Make a run_N log directory in the standardized place:
@@ -706,20 +706,10 @@ makeLogDir n = do
       suffix = ""  -- TODO: add more interesting description based on what is *varied* in settings.
   return (root </> prefix ++ show n ++ suffix)
 
--- | Create a descriptive (and unused) directory based on a
+
+-- | Create a descriptive directory based on a
 -- configuration.  It will be a child of the logdir (i.e. the run_N
 -- directory). This will be the destination for output results.
-createPerConfDir :: String -> OneRunConfig -> IO String
-createPerConfDir parentdir conf = do
-  let descr = perConfDirName conf
-      loop n = do
-        let suffix = if n==0 then "" else "_"++show n
-	    path = parentdir </> descr ++ suffix
-	b <- doesFileExist path
-	if b then loop (n+1)
-	     else return path
-  loop 0 >>= makeHomePathPortable
-
 perConfDirName :: OneRunConfig -> String
 perConfDirName (OneRunConfig _ conf) =
   intercalate "_" $ map paramPlainText conf
@@ -737,12 +727,6 @@ writeToLog path bytes = do
 
 
 -- Emit something descriptive for the option settings.
--- paramPlainText (p,v) = fn p ++ filter (not . isSpace) v
---  where 
---   fn (RTS s)     = s
---   fn (Compile s) = s
---   fn (EnvVar  s) = s
-
 paramPlainText (RTS   "-s",_) = ""
 paramPlainText (RTS     s,v) = clean s ++ clean v
 paramPlainText (Compile s,v) = clean s ++ clean v
