@@ -21,6 +21,8 @@
 import HSH
 import HSH.ShellEquivs
 import Control.Monad 
+import Control.Concurrent
+import Control.Exception (catch, SomeException)
 import Data.Maybe
 import Data.Char (isSpace, isAlphaNum, isNumber)
 import Data.List
@@ -31,7 +33,6 @@ import Data.Typeable (Typeable, typeOf)
 import qualified Data.ByteString.Lazy.Char8 as B
 import qualified Data.Set as S
 import qualified Data.Map as M
-import Control.Concurrent
 import System.Console.GetOpt
 import System.Environment (getEnv, getArgs)
 import System.Exit
@@ -81,7 +82,12 @@ data ParamType = RTS     String   -- e.g. "-A"
 
 
 -- | The full configuration (list of parameter settings) for a single run.
-type OneRunConfig = [(ParamType,String)]
+data OneRunConfig = OneRunConfig { failcount :: Int, 
+				   binds ::[(ParamType,String)] }
+  deriving (Show,Eq)
+
+-- How many times do we try a single config before giving up on it.
+max_config_tries = 3
 
 
 -- | An abstract executor for remote commands.
@@ -174,7 +180,8 @@ countConfigs settings =
 
 -- | List out all combinations explicitly.
 listConfigs :: [BenchmarkSetting] -> [OneRunConfig]
-listConfigs settings = loop constant varies  
+listConfigs settings = map (OneRunConfig 0) $
+		       loop constant varies  
  where 
   constant = map (\ (Set x y) -> (x,y)) $ 
              filter isSet settings
@@ -197,11 +204,12 @@ forkCmds :: TimeOut -> [IO a] -> IO [a]
 forkCmds (Seconds s) comps  = do
   chan <- newChan 
   let wrap = (>>= (writeChan chan . Just))
-  ids <- mapM (forkIO . wrap) comps
+  ids <- mapM (forkWithExceptions forkIO "forked child command" . wrap) comps
   -- And a timeout thread:
-  forkIO $ do threadDelay (floor$ s * 1000 * 1000)
-              mapM_ killThread ids
-              writeChan chan Nothing
+  forkWithExceptions forkIO "timeout thread" $ 
+     do threadDelay (floor$ s * 1000 * 1000)
+        mapM_ killThread ids
+        writeChan chan Nothing
   ls <- getChanContents chan 
   return (map fromJust $ 
 	  takeWhile isJust $ 
@@ -223,6 +231,17 @@ machineIdle host = do
   who :: String <- run $ mkSSHCmd host ["who"] -|- grepV user
   return (null who)
 
+
+-- Exceptions that walk up the fork tree of threads:
+forkWithExceptions :: (IO () -> IO ThreadId) -> String -> IO () -> IO ThreadId
+forkWithExceptions forkit descr action = do 
+   parent <- myThreadId
+   forkit $ 
+      Control.Exception.catch action
+	 (\ e -> do
+	  B.hPutStrLn stderr $ B.pack $ "Exception inside child thread "++show descr++": "++show e
+	  throwTo parent (e::SomeException)
+	 )
 
 ------------------------------------------------------------
 -- Directory and Path helpers
@@ -347,7 +366,7 @@ idleExecutors hosts = do
 		threadDelay (10 * 1000 * 1000)
 		loop
 
-  forkIO $ loop 
+  forkWithExceptions forkIO "idleExecutors loop" $ loop 
   return strm
  where 
   locker activehosts host = do 
@@ -405,7 +424,7 @@ strongSSH host cmds = do
    (code,out,err) <- readProcessWithExitCode "ssh" [host, concat (intersperse " && " cmds)] ""
    -- TODO: Dropping down to createProcess would allow using ByteStrings:
    case code of 
-     ExitSuccess -> do forkIO $ putStr err  
+     ExitSuccess -> do forkWithExceptions forkIO "asynchronous print" $ putStr err  
 		       return (Just$ B.pack out)
      ExitFailure _ -> do hPutStrLn stdout "------------------------------------------------------------"
                          hPutStrLn stdout " !!! strongSSH: Remote Command FAILURE: "
@@ -435,7 +454,7 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
   -- If a configuration run fails, it fails on another thread so we
   -- need a mutable structure to keep track of them.
   --
-  -- This atomically modified state tracks the confs and outstanding
+  -- This atomically modified state tracks the confs and outstanding/working
   -- threads (each of which is modeled by an mvar that will be written
   -- at completion.).
   state <- newIORef (allconfs, M.empty)
@@ -446,28 +465,32 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
 
   -- Unlike the logd, we don't tiptoe around stuff in the tmp dir.  If
   -- it's in our way, we blast it.
-  b <- doesDirectoryExist tmpd
-  when b $ removeDirectory tmpd
-  createDirectoryIfMissing True tmpd
+--   b <- doesDirectoryExist tmpd
+--   when b $ removeDirectory tmpd
+--   createDirectoryIfMissing True tmpd
 
   -- The main job scheduling loop:
   let finalcommand = getCommand settings
       loop = do
          peek <- readIORef state 
          case peek of 
+           -- If there are no configurations left and no outstanding threads:
      	   ([],m) | M.null m -> putStrLn$ "Done with all configurations.  All jobs finished." 
+           -- If there are no configurations BUT threads are still working:
      	   ([],m) -> do -- Here we atomically discharge the obligation to wait for outstanding workers.
 		        mvs <- atomicModifyIORef state 
 			        (\ (confs,mp) -> 
 				  case confs of 
 				   []  -> (([], M.empty), M.elems mp)
+                                   -- If confs reappeared someone failed, forget it and loop:
 				   _   -> ((confs, mp), []))
 			putStrLn$ "  - launchConfigs: All launched, waiting for "++
 				  show (length mvs)++" outstanding jobs to complete or fail."
 			mapM_ readMVar mvs
 			loop
-           _  -> do 
+           (confs,_)  -> do 
 
+            putStrLn$ " * "++ show (length confs) ++" configurations left to process, waiting for next executor..."
 	    -- We do the blocking operation INSIDE 'loop' to hold it back:
 	    exec @ (Executor{host,runcmd,lockRemote,unlockRemote}) <- takeMVar idles  -- BLOCKING!
 
@@ -481,10 +504,13 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
 	      putStrLn$ "\n  * Running config on idle machine: "++host;
 
 	      -- FIXME: Awkward: We fork before we know if we really need to.
-	      forkIO $ do { 
+	      forkWithExceptions forkIO "configuration runner" $ do { 
 		mytid <- myThreadId;
 		myCompletion <- newEmptyMVar;
 
+                -- Try to grab a configuration for this thread to work on:
+                -- Grabbing the configuration and adding ourselves to
+                -- the list must happen together, atomically:
 		mconf <- atomicModifyIORef state (\ st -> 
 			  case st of 
 			    ([],_)            -> (st,Nothing)
@@ -493,9 +519,9 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
 
 		(case mconf of 
 		  Nothing   -> return ()
-		  Just conf -> do
-                    let confindex = show (1 + (fromJust$ elemIndex conf allconfs))
-		    putStrLn$ " ** Selected configuration "++confindex
+		  Just conf@(OneRunConfig conf_tries confls) -> do
+                    let Just confindex = elemIndex confls (map binds allconfs)
+		    putStrLn$ " ** Selected configuration "++ show (confindex+1)
 		           ++" of "++show (length allconfs)++": " ++ show conf
 
 		    -- Create the output directory locally on this machine:
@@ -515,20 +541,30 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
                                  else 
                                    return Nothing
 		    
-                    putStrLn$ "  * Remote command finished for config "++confindex
+                    putStrLn$ "  * Remote command finished for config "++show (confindex+1)
                     -- Now we're done with all remote operations and can unlock:
 		    unlockRemote
 
 		    case cmdoutput of 
-		      Nothing -> do putStrLn$ "  ! Config failed.  Retrying..."
+		      Nothing -> do putStrLn$ "  ! Config failed. "
 				    -- Delete the directory with erroneous output:
 				    putStrLn$ "  ! Deleting output directory: "++conf_outdir
 				    b <- doesDirectoryExist  conf_outdir 
                                     when b $ removeDirectory conf_outdir 
 				    b <- doesDirectoryExist  conf_workdir
                                     when b $ removeDirectory conf_workdir
-				    atomicModifyIORef_ state  
-				       (\ (confs,tids) -> (conf:confs, M.delete mytid tids))
+                                    if conf_tries+1 >= max_config_tries then do
+				      putStrLn$ "  ! Conf failed the maximum number of times! ("++show max_config_tries++")"
+                                      atomicModifyIORef_ state  
+				        (\ (confs,tids) -> (confs, M.delete mytid tids))
+				     else do 
+				      putStrLn$ "  ! Retrying config.  Try # "++ show (conf_tries + 2)
+                                      -- We put the config back and 
+   	 			      atomicModifyIORef_ state  
+				        (\ (confs,tids) -> (OneRunConfig (conf_tries+1) confls:confs, 
+							    M.delete mytid tids))
+                      -- Normal completion, we leave ourselves in the thread list for our MVar to be blocked on.
+                      -- We could also do a delete here, but there's no need.
 		      Just bs -> do writeToLog logfile bs 
 				    return ()
 		);
@@ -548,7 +584,9 @@ launchConfigs settings idles gitloc@(FullGitLoc gitroot branch gitoffset) startp
 -- FIXME
 -- | Build the main command that runs the benchmarks.
 buildTheCommand :: String -> OneRunConfig -> FullGitLoc -> String -> String -> [String]
-buildTheCommand finalcmd conf (FullGitLoc gitroot branch gitoffset) remoteWorkingDir remoteOutputDir = 
+buildTheCommand finalcmd (OneRunConfig _ conf) 
+		         (FullGitLoc gitroot branch gitoffset)
+			 remoteWorkingDir remoteOutputDir = 
   ["cd " ++ remoteWorkingDir </> gitoffset] ++
   map exportCmd (filter (isEnvVar  . fst) conf) ++
   [rtsOpts    (filter (isRTS     . fst) conf)] ++ 
@@ -573,8 +611,9 @@ buildTheCommand finalcmd conf (FullGitLoc gitroot branch gitoffset) remoteWorkin
 setupRemoteWorkingDirectory (Executor{runcmd}) (FullGitLoc gitroot branch gitoffset) workingDir = do
   wd <- makeHomePathPortable workingDir
   -- Create the directory locally first:
-  runIO$ "mkdir -p "++wd -- Use HSH to handle ~/ path.
-  x <- runcmd ["mkdir -p "++wd, 
+--  runIO$ "mkdir -p "++wd -- Use HSH to handle ~/ path.
+  x <- runcmd ["rm -rf "++wd,
+               "mkdir -p "++wd, 
 	       "git clone "++gitroot++" "++wd,
 	       "cd "++wd,
 	       "git checkout "++ branch,
@@ -583,7 +622,7 @@ setupRemoteWorkingDirectory (Executor{runcmd}) (FullGitLoc gitroot branch gitoff
   case x of 
     Nothing -> do hPutStrLn stderr " ! Failed to setup git repo on remote worker node!"
 		  return False
-    Just _  -> do putStrLn$ "  - Done cloning remote working copy:" ++ wd
+    Just _  -> do putStrLn$ "  - Done cloning remote working copy: " ++ wd
 		  return True
 
 --------------------------------------------------------------------------------
@@ -613,7 +652,7 @@ makeLogDir settings = do
 -- configuration.  It will be a child of the logdir (i.e. the run_N
 -- directory). This will be the destination for output results.
 createPerConfDir :: String -> OneRunConfig -> IO String
-createPerConfDir parentdir conf = do
+createPerConfDir parentdir (OneRunConfig _ conf) = do
   let descr = intercalate "_" $ map paramPlainText conf
       loop n = do
         let suffix = if n==0 then "" else "_"++show n
@@ -623,7 +662,7 @@ createPerConfDir parentdir conf = do
 	     else return path
   loop 0 >>= makeHomePathPortable
 
--- | Write out log file and return the file name used.
+-- | Write out log file.
 -- writeToLog :: String -> OneRunConfig -> B.ByteString -> IO String
 -- writeToLog logd conf bytes = do
 --  file <- confToFileName logd conf

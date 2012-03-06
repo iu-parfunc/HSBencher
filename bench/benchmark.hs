@@ -243,8 +243,8 @@ expandMode "NUMA"     = [NUMA]
 expandMode s = error$ "Unknown Scheduler or mode: " ++s
 
 -- Omitting ContFree, as it takes way too long for most trials
--- ivarScheds = [Trace, Direct, SMP, NUMA] 
-ivarScheds = [Trace, Direct]
+ivarScheds = [Trace, Direct, SMP, NUMA] 
+-- ivarScheds = [Trace, Direct]
 
 schedToModule s = 
   case s of 
