@@ -698,7 +698,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
   revision <- runIgnoreErr "git rev-parse HEAD"
   -- Note that this will NOT be newline-terminated:
   hashes   <- runIgnoreErr "git log --pretty=format:'%H'"
-  mapM_ HSH.runIO $ 
+  mapM_ HSH.runIO $ concat $ 
    [
      e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
    , e$ "#    "        
@@ -729,7 +729,11 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
    , e$ "#  ENV ENVS=      $ENVS"
    ]
  where 
-    e s = ("echo \""++s++"\"") -|- HSH.tee ["/dev/stdout", logFile] -|- HSH.appendTo resultsFile
+   -- This regressed [2012.03.07] it is no longer writing to the logFile:
+--    e s = ("echo \""++s++"\"") -|- HSH.tee ["/dev/stdout", logFile] -|- HSH.appendTo resultsFile
+   e s = [("echo \""++s++"\"") -|- HSH.appendTo "/dev/stdout", 
+	  ("echo \""++s++"\"") -|- HSH.appendTo logFile, 
+	  ("echo \""++s++"\"") -|- HSH.appendTo resultsFile]
 
 
 ----------------------------------------------------------------------------------------------------
