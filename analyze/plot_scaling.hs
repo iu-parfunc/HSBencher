@@ -74,7 +74,8 @@ instance Pretty Entry where
 
 -- | Very sloppy parsing of lines-of-words data entries.
 parse :: [String] -> Maybe Entry
--- parse [name,args,sched,thrds,t1,t2,t3,p1,p2,p3] = Just $
+-- Example data line:
+-- sorting/mergesort                   cpu_24_8192          SMP     28   4.459116 4.459116 4.459116   68.062 68.062 68.062
 parse orig@(name:args:sched:thrds:t1:t2:t3:prods) = 
    case prods of
     []         -> Just$ defaultRec 
@@ -96,13 +97,23 @@ parse orig@(name:args:sched:thrds:t1:t2:t3:prods) =
 	    productivities = Nothing,
 	    normfactor = 1.0
 	  }
-
+-- Some older data entries look like this:
+-- "queens Trace 4 3.71 3.76 3.78"
+parse [name, sched, thrds, t1, t2, t3] = Just$ 
+    Entry { name     = name, 
+	    variant  = "_",
+	    sched    = sched,
+	    threads  = read thrds,
+	    tmin     = read t1,
+	    tmed     = read t2,
+	    tmax     = read t3,
+	    productivities = Nothing,
+	    normfactor = 1.0
+	  }
 parse other = 
     trace ("WARNING: Cannot parse data line, too few fields: "++ show (unwords other)) $ 
     Nothing
 
--- Example data line:
--- sorting/mergesort                   cpu_24_8192          SMP     28   4.459116 4.459116 4.459116   68.062 68.062 68.062
 
    
 --------------------------------------------------------------------------------
