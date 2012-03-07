@@ -96,6 +96,11 @@ parse orig@(name:args:sched:thrds:t1:t2:t3:prods) =
 	    productivities = Nothing,
 	    normfactor = 1.0
 	  }
+
+parse other = 
+    trace ("WARNING: Cannot parse data line, too few fields: "++ show (unwords other)) $ 
+    Nothing
+
 -- Example data line:
 -- sorting/mergesort                   cpu_24_8192          SMP     28   4.459116 4.459116 4.459116   68.062 68.062 68.062
 

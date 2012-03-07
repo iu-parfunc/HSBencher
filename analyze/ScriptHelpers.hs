@@ -60,6 +60,7 @@ inDirectory dir action = do
   setCurrentDirectory d1
   return x
 
+-- | Both run a command and echo it before runnning.
 runEcho cmd = do putStrLn$ "  Running: "++ cmd
 		 runIO $ cmd -|- indent
 
