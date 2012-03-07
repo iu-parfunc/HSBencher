@@ -704,6 +704,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
    , e$ "#    "        
    , e$ "# `date`"
    , e$ "# `uname -a`" 
+   , e$ "# Ran by: `whoami` " 
    , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
    , e$ "# `"++ghc++" -V`" 
    , e$ "# "                                                                
