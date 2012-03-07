@@ -261,6 +261,7 @@ schedToModule s =
 
 --------------------------------------------------------------------------------
 -- Misc Small Helpers
+--------------------------------------------------------------------------------
 
 -- These int list arguments are provided in a space-separated form:
 parseIntList :: String -> [Int]
@@ -289,6 +290,10 @@ strBool ""  = False
 strBool "0" = False
 strBool "1" = True
 strBool  x  = error$ "Invalid boolean setting for environment variable: "++x
+
+fst3 (a,b,c) = a
+snd3 (a,b,c) = b
+thd3 (a,b,c) = c
 
 -- Compute a cut-down version of a benchmark's args list that will do
 -- a short (quick) run.  The way this works is that benchmarks are
@@ -323,6 +328,7 @@ uniqueSuffix BenchRun{threads,sched,bench} =
    if threads == 0 then "_serial"
                    else "_threaded"
 
+----------------------------------------------------------------------------------------------------
 
 -- Fork a thread but ALSO set up an error handler.
 forkIOH :: String -> Maybe (Buffer String, t, t1) -> IO () -> IO ThreadId
@@ -345,6 +351,7 @@ forkIOH who maybhndls action =
            action
 
 
+--------------------------------------------------------------------------------
 -- | Parallel for loops.
 -- 
 -- The idea is to keep perform a sliding window of work and to execute
@@ -396,49 +403,6 @@ parForMTwoPhaseAsync ls action =
 			      killThread lastTid
        return (lazyListIO, killem)
 
-
-------------------------------------------------------------
--- Chan's don't quite do the trick.  Here's something simpler.  It
--- keeps a buffer of elemnts and an MVar to signal "end of stream".
--- This it separates blocking behavior from data access.
-
-data Buffer a = Buf (MVar ()) (IORef [a])
-
-newBuffer :: IO (Buffer a)
-newBuffer = do
-  mv  <- newEmptyMVar
-  ref <- newIORef []
-  return (Buf mv ref)
-
-writeBuffer :: Buffer a -> a -> IO ()
-writeBuffer (Buf mv ref) x = do
-  b <- isEmptyMVar mv
-  if b
-     then atomicModifyIORef ref (\ ls -> (x:ls,()))
-   else error "writeBuffer: cannot write to closed Buffer"
-
--- | Signal completion. 
-closeBuffer :: Buffer a -> IO ()
-closeBuffer (Buf mv _) = putMVar mv ()
-
-peekBuffer :: Buffer a -> IO [a]
-peekBuffer (Buf _ ref) = liftM reverse $ readIORef ref 
-
--- Returns a lazy list, just like getChanContents:
-getBufferContents :: Buffer a -> IO [a]
-getBufferContents buf@(Buf mv ref) = do
-  chan <- newChan 
-  let loop = do 
-	 grabbed <- atomicModifyIORef ref (\ ls -> ([], reverse ls))
-	 mapM_ (writeChan chan . Just) grabbed
-	 mayb <- tryTakeMVar mv -- Check if we're done.
-	 case mayb of 
-	   Nothing -> threadDelay 10000 >> loop
-	   Just () -> writeChan chan Nothing
-  forkIO loop
-  ls <- getChanContents chan
-  return (map fromJust $ 
-	  takeWhile isJust ls)
 
 
 --------------------------------------------------------------------------------
@@ -832,13 +796,7 @@ main = do
         -- Parallel version:
             lift$ putStrLn$ "[!!!] Compiling in Parallel..."
 
-            -- Version 1: This forks ALL compiles in parallel:
--- 	    outputs <- forM (zip [1..] pruned) $ \ (confnum,bench) -> 
--- 	       forkWithBufferedLogs$ 
--- --               withBufferedLogs$
--- 		   compileOne bench (confnum,length pruned)
--- 	    flushBuffered outputs 
-
+            -- Version 1: This forks ALL compiles in parallel [REMOVED, CHECK VCS]
             -- Version 2: This uses P worker threads.
             (outputs,killem) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
 		 -- Inside each action, we force the complete evaluation:
@@ -882,6 +840,56 @@ main = do
 
 -- type ChanPack = (Chan (Maybe String), Chan (Maybe String), Chan (Maybe String))
 
+--------------------------------------------------------------------------------
+-- Limited Chan Replacement
+--------------------------------------------------------------------------------
+
+-- Chan's don't quite do the trick.  Here's something simpler.  It
+-- keeps a buffer of elemnts and an MVar to signal "end of stream".
+-- This it separates blocking behavior from data access.
+
+data Buffer a = Buf (MVar ()) (IORef [a])
+
+newBuffer :: IO (Buffer a)
+newBuffer = do
+  mv  <- newEmptyMVar
+  ref <- newIORef []
+  return (Buf mv ref)
+
+writeBuffer :: Buffer a -> a -> IO ()
+writeBuffer (Buf mv ref) x = do
+  b <- isEmptyMVar mv
+  if b
+     then atomicModifyIORef ref (\ ls -> (x:ls,()))
+   else error "writeBuffer: cannot write to closed Buffer"
+
+-- | Signal completion. 
+closeBuffer :: Buffer a -> IO ()
+closeBuffer (Buf mv _) = putMVar mv ()
+
+peekBuffer :: Buffer a -> IO [a]
+peekBuffer (Buf _ ref) = liftM reverse $ readIORef ref 
+
+-- Returns a lazy list, just like getChanContents:
+getBufferContents :: Buffer a -> IO [a]
+getBufferContents buf@(Buf mv ref) = do
+  chan <- newChan 
+  let loop = do 
+	 grabbed <- atomicModifyIORef ref (\ ls -> ([], reverse ls))
+	 mapM_ (writeChan chan . Just) grabbed
+	 mayb <- tryTakeMVar mv -- Check if we're done.
+	 case mayb of 
+	   Nothing -> threadDelay 10000 >> loop
+	   Just () -> writeChan chan Nothing
+  forkIO loop
+  ls <- getChanContents chan
+  return (map fromJust $ 
+	  takeWhile isJust ls)
+
+----------------------------------------------------------------------------------------------------
+-- Treatment of buffered logging using Buffer:
+----------------------------------------------------------------------------------------------------
+
 -- | Capture logging output in memory.  Don't write directly to log files.
 withBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
 withBufferedLogs action = do
@@ -889,22 +897,23 @@ withBufferedLogs action = do
   lift io -- Run it immediately.
   return hnd
 
-makeBufferedAction :: ReaderT Config IO a-> ReaderT Config IO ((String, String, String), IO())
-makeBufferedAction action = do
-    (chans,io) <- helper action
-    lss <- convertBufs chans
-    return$ (lss, io) 
+ where 
+  makeBufferedAction :: ReaderT Config IO a-> ReaderT Config IO ((String, String, String), IO())
+  makeBufferedAction action = do
+      (chans,io) <- helper action
+      lss <- convertBufs chans
+      return$ (lss, io) 
 
 -- | Forking, asynchronous version.
 forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
 forkWithBufferedLogs action = do 
---  (hnd,io) <- makeBufferedAction action
 --  Config{outHandles} <- ask
   (chans,io) <- helper action
   lift$ forkIOH "log buffering" (Just chans) io -- Run it asynchronously.
   convertBufs chans
 
--- Helper function for above.
+
+-- Helper function shared by the above.
 helper action = 
  do conf <- ask 
     [buf1,buf2,buf3] <- lift$ sequence [newBuffer,newBuffer,newBuffer]
@@ -919,17 +928,15 @@ helper action =
 		closeBuffer buf3 
     return$ ((buf1,buf2,buf3), io) 
 
+
+-- Shared by the routines above.  Convert between buffers and lists with implicit lazyIO.
 convertBufs (buf1,buf2,buf3) = do 
   ls1 <- lift$ getBufferContents buf1
   ls2 <- lift$ getBufferContents buf2
   ls3 <- lift$ getBufferContents buf3
   return$ (unlines ls1, unlines ls2, unlines ls3)
 
-
-fst3 (a,b,c) = a
-snd3 (a,b,c) = b
-thd3 (a,b,c) = c
-
+-- Make sure that we complete the lazy IO by reading all the way to the end:
 forceBuffered :: (String,String,String) -> IO ()
 forceBuffered (logs,results,stdouts) = do
   evaluate (length logs)
@@ -952,3 +959,5 @@ flushBuffered outputs = do
         lift$ appendFile resultsFile (concat resultOuts)
         -- * All forked tasks will be finished by this point.
         return ()
+
+----------------------------------------------------------------------------------------------------
