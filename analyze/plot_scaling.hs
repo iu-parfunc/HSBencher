@@ -7,7 +7,7 @@
 
 module Main where
 
-import Text.PrettyPrint.HughesPJClass
+-- import Text.PrettyPrint.HughesPJClass
 import Text.Regex
 import Data.List
 import Data.Maybe (mapMaybe)
@@ -18,102 +18,27 @@ import System.IO
 import System.FilePath 
 import System.Exit
 import System.Environment
-import System.Console.GetOpt
+import System.Console.GetOpt (getOpt, ArgOrder(Permute), 
+			      OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
 
 import HSH
 import Data.Array (listArray)
 import Data.Monoid (mappend)
-import Debug.Trace
+import Debug.Trace (trace)
 
 import ScriptHelpers
+import DatfileHelpers
 
 --------------------------------------------------------------------------------
 -- Settings
 
 linewidth = "5.0"
 
--- Schedulers that we don't care to graph right now.
--- This happens BEFORE rename
---scheduler_MASK = [5,6,99,10]
-scheduler_MASK = []
-
 -- Ok, gunplot line type 6 is YELLOW... that's not too smart:
 line_types = [0..5] ++ [7..]
 
 round_2digits :: Double -> Double
 round_2digits n = (fromIntegral $round (n * 100)) / 100
-
---x11 = terminal Terminal.X11.cons
---x11 = terminal cons
---x11 = terminal Graphics.Gnuplot.Terminal.X11.cons
---x11 = terminal X11.cons
-
---------------------------------------------------------------------------------
--- Data Types:
-
--- | Here's the schema for one data-point from my timing tests:
-data Entry = Entry { 
-  name     :: String,
-  variant  :: String,
-  sched    :: String,
-  threads  :: Int, 
-  tmin     :: Double,
-  tmed     :: Double,
-  tmax     :: Double,
-  -- These correspond to the tmin,tmed,tmax runs:
-  productivities :: Maybe (Double,Double,Double),
-  normfactor :: Double
-}
-  deriving Show
-
-instance Pretty Entry where
-  pPrint Entry { name, sched, variant, threads, tmin, tmed, tmax, normfactor } = 
-       pPrint ("ENTRY", name, sched, variant, threads, (tmin, tmed, tmax), normfactor )
-
---------------------------------------------------------------------------------
-
--- | Very sloppy parsing of lines-of-words data entries.
-parse :: [String] -> Maybe Entry
--- Example data line:
--- sorting/mergesort                   cpu_24_8192          SMP     28   4.459116 4.459116 4.459116   68.062 68.062 68.062
-parse orig@(name:args:sched:thrds:t1:t2:t3:prods) = 
-   case prods of
-    []         -> Just$ defaultRec 
-    [p1,p2,p3] -> Just$ defaultRec { productivities = Just (read p1, read p2, read p3) }
-    ls         -> 
-                  -- For now it's a warning rather an error if one data-point doesn't parse:
-                  trace ("WARNING: Cannot parse, wrong number of fields, "++ 
-			 show (length orig) ++" expected 7 or 10:\n  "++ show (unwords orig)) $ 
-		  Nothing
-  where 
-   defaultRec =
-    Entry { name     = name, 
-	    variant  = args,
-	    sched    = sched,
-	    threads  = read thrds,
-	    tmin     = read t1,
-	    tmed     = read t2,
-	    tmax     = read t3,
-	    productivities = Nothing,
-	    normfactor = 1.0
-	  }
--- Some older data entries look like this:
--- "queens Trace 4 3.71 3.76 3.78"
-parse [name, sched, thrds, t1, t2, t3] = Just$ 
-    Entry { name     = name, 
-	    variant  = "_",
-	    sched    = sched,
-	    threads  = read thrds,
-	    tmin     = read t1,
-	    tmed     = read t2,
-	    tmax     = read t3,
-	    productivities = Nothing,
-	    normfactor = 1.0
-	  }
-parse other = 
-    trace ("WARNING: Cannot parse data line, too few fields: "++ show (unwords other)) $ 
-    Nothing
-
 
    
 --------------------------------------------------------------------------------
@@ -176,9 +101,9 @@ data Best = Best (String, String, String,   Int, Double, Double)
      * Sched
 
 -}
-plot_benchmark2 :: String -> [[[Entry]]] -> IO Best
+plot_benchmark2 :: String -> [[[Entry]]] -> [String] -> IO Best
 
-plot_benchmark2 root entries = 
+plot_benchmark2 root entries ignored_scheds = 
     do action $ filter goodSched (concat entries)
        return$ Best (benchname, bestvariant, 
 		     bestsched, bestthreads, best, basetime / best)
@@ -187,7 +112,7 @@ plot_benchmark2 root entries =
   -- What was the best single-threaded execution time across variants/schedulers:
 
   goodSched [] = error "Empty block of data entries..."
-  goodSched (h:t) = not $ (sched h) `elem` scheduler_MASK
+  goodSched (h:t) = not $ (sched h) `elem` ignored_scheds 
   
   -- Knock down two levels of grouping leaving only Scheduler:
   cat = concat $ map concat entries
@@ -298,6 +223,7 @@ isMatch rg str = case matchRegex rg str of { Nothing -> False; _ -> True }
 
 -- | Datatype for command line flags.
 data Flag = SerialBasecase
+	  | IgnoreSched String
   deriving Eq
 
 -- | Command line options.
@@ -305,7 +231,11 @@ cli_options :: [OptDescr Flag]
 cli_options = 
      [ Option [] ["serial"] (NoArg SerialBasecase)
           "use THREADS=0 cases to further handicap parallel speedup based on overhead of compiling with -threaded."
+
+     , Option [] ["ignore"] (ReqArg IgnoreSched "SCHED")
+          "ignore all datapoints with scheduler SCHED"
      ]
+
 
 main = do 
  rawargs <- getArgs 
@@ -339,12 +269,16 @@ main = do
 -- print organized
 
  let root = "./" ++ dropExtension file ++ "_graphs/"
+     ignoredScheds = concatMap isched options 
+     isched (IgnoreSched name) = [name]
+     isched _ = []
+
  -- For hygiene, completely anhilate output directory:
  system$ "rm -rf "  ++root ++"/"
  system$ "mkdir -p "++root
  bests <- 
   forM organized    $ \ perbenchmark -> do 
-   best <- plot_benchmark2 root perbenchmark
+   best <- plot_benchmark2 root perbenchmark ignoredScheds
    forM_ perbenchmark $ \ pervariant -> 
     forM_ pervariant   $ \ persched -> 
       do let mins = map tmin persched
