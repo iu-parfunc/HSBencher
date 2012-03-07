@@ -246,6 +246,7 @@ expandMode s = error$ "Unknown Scheduler or mode: " ++s
 ivarScheds = [Trace, Direct, SMP, NUMA] 
 -- ivarScheds = [Trace, Direct]
 
+-- TODO -- we really need to factor this out into a configuration file.
 schedToModule s = 
   case s of 
 --   Trace    -> "Control.Monad.Par"
@@ -324,7 +325,7 @@ uniqueSuffix BenchRun{threads,sched,bench} =
 
 
 -- Fork a thread but ALSO set up an error handler.
---forkIOH :: String -> Maybe (Chan (Maybe String))
+forkIOH :: String -> Maybe (Buffer String, t, t1) -> IO () -> IO ThreadId
 forkIOH who maybhndls action = 
   forkIO $ handle (\ (e::SomeException) -> 
 		   do hPutStrLn stderr$ "ERROR: "++who++": Got exception inside forked thread: "++show e
@@ -351,14 +352,18 @@ forkIOH who maybhndls action =
 -- 
 -- This version takes a two-phase action that returns both a result, a
 --   completion-barrier action.
--- parForMTwoPhaseAsync :: [a] -> (a -> ReaderT s IO (b, IO ())) -> ReaderT s IO [b]
-parForMTwoPhaseAsync :: [a] -> (a -> ReaderT Config IO (b, IO ())) -> ReaderT Config IO [b]
+-- 
+-- The result is:
+--   (1) a lazy list with implicit blocking and IO.
+--   (2) a final barrier/kill action that 
+type TwoPhaseAction a b = (a -> ReaderT Config IO (b, IO ())) 
+parForMTwoPhaseAsync :: [a] -> TwoPhaseAction a b -> ReaderT Config IO ([b], IO ())
 parForMTwoPhaseAsync ls action = 
   do state@Config{maxthreads,outHandles} <- ask
      lift$ do 
        answers <- sequence$ replicate (length ls) newEmptyMVar
        workIn  <- newIORef (zip ls answers)
-       forM_ [1..numCapabilities] $ \ id -> 
+       tids <- forM [1..numCapabilities] $ \ id -> 
 --       forM_ [1..maxthreads] $ \ id -> 
            forkIOH "parFor worker" outHandles $ do 
              -- Pop work off the queue:
@@ -378,12 +383,18 @@ parForMTwoPhaseAsync ls action =
 
        -- Read out the answers in order:
        chan <- newChan
-       forkIOH "parFor reader thread" outHandles $ 
-                forM_ answers $ \ mv -> do
-		  x <- readMVar mv
-		  writeChan chan x 
+       lastTid <- forkIOH "parFor reader thread" outHandles $ 
+			  forM_ answers $ \ mv -> do
+			    x <- readMVar mv
+			    writeChan chan x 
        strm <- getChanContents chan
-       return (take (length ls) strm)
+       let lazyListIO = take (length ls) strm
+           -- This can either wait and then kill, or just kill.
+           -- Trying a waiting version:
+           killem = case length lazyListIO of 
+		      _ -> do mapM_ killThread tids
+			      killThread lastTid
+       return (lazyListIO, killem)
 
 
 ------------------------------------------------------------
@@ -829,24 +840,28 @@ main = do
 -- 	    flushBuffered outputs 
 
             -- Version 2: This uses P worker threads.
-            outputs <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
---               lift$ putStrLn$ "COMPILE CONFIG "++show confnum
-               -- Inside each action, we force the complete evaluation:
-               out <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
-	       return (out, forceBuffered out)
-               -- ALTERNATIVE: Simply output directly to stdout/stderr:
---               compileOne bench (confnum,length pruned)
---  	         return ((), return ())
+            (outputs,killem) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
+		 -- Inside each action, we force the complete evaluation:
+		 out <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
+		 return (out, forceBuffered out)
+		 -- ALTERNATIVE: Simply output directly to stdout/stderr.  MESSY:
+  --               compileOne bench (confnum,length pruned)
+  --  	         return ((), return ())
 
             flushBuffered outputs 
 
 	    if shortrun then do
                lift$ putStrLn$ "[!!!] Running in Parallel..."
-	       outputs <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
+	       (outputs,_) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
 		  out <- forkWithBufferedLogs$ runOne bench (confnum,total)
 		  return (out, forceBuffered out)
 	       flushBuffered outputs 
-	     else 
+	     else do 
+               -- We MUST ensure that all other threads are shut down
+               -- so that the benchmark.run process doesn't pollute
+               -- the benchmark run itself.
+               lift$ putStrLn$ "[!!!] BARRIER - waiting for jobs to complete / kill threads before starting real work..."
+               liftIO$ killem 
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 		    runOne bench (confnum,total)
 
