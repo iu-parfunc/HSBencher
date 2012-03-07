@@ -18,6 +18,8 @@ import Data.Char
 import Control.Monad
 import System.Directory
 
+--------------------------------------------------------------------------------
+
 -- | Remove comments from a list of lines.
 -- Assumes hash is the comment character.
 remComments :: [String] -> [String]
