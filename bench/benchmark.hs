@@ -66,7 +66,7 @@ import Control.Concurrent
 import Control.Concurrent.Chan
 import GHC.Conc (numCapabilities)
 import Control.Monad.Reader
-import Control.Exception (evaluate, handle, SomeException, throwTo)
+import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
 import Debug.Trace
 import Data.Char (isSpace)
 import Data.Maybe (isJust, fromJust)
@@ -334,19 +334,22 @@ uniqueSuffix BenchRun{threads,sched,bench} =
 forkIOH :: String -> Maybe (Buffer String, t, t1) -> IO () -> IO ThreadId
 forkIOH who maybhndls action = 
   forkIO $ handle (\ (e::SomeException) -> 
-		   do hPutStrLn stderr$ "ERROR: "++who++": Got exception inside forked thread: "++show e
-		      tid <- readIORef main_threadid
-		      case maybhndls of 
-		        Nothing -> return ()
-		        Just (logBuf,resBuf,stdoutBuf) -> 
-                           do 
-			      hPutStrLn stderr "=========================="
-			      hPutStrLn stderr "Buffered contents for log:"
-			      hPutStrLn stderr "=========================="
- 			      str <- peekBuffer logBuf
-			      hPutStrLn stderr (unlines str)
-                              return ()
-		      throwTo tid e
+                   case fromException e of
+                     Just ThreadKilled -> return ()
+                     Nothing -> do 
+		        hPutStrLn stderr$ "ERROR: "++who++": Got exception inside forked thread: "++show e
+			tid <- readIORef main_threadid
+			case maybhndls of 
+			  Nothing -> return ()
+			  Just (logBuf,resBuf,stdoutBuf) -> 
+			     do 
+				hPutStrLn stderr "=========================="
+				hPutStrLn stderr "Buffered contents for log:"
+				hPutStrLn stderr "=========================="
+				str <- peekBuffer logBuf
+				hPutStrLn stderr (unlines str)
+				return ()
+			throwTo tid e
 		  )
            action
 
@@ -357,13 +360,14 @@ forkIOH who maybhndls action =
 -- The idea is to keep perform a sliding window of work and to execute
 -- on numCapabilities threads, avoiding oversubscription.
 -- 
--- This version takes a two-phase action that returns both a result, a
---   completion-barrier action.
+-- This version takes:
+--   (1) a two-phase action that returns both a result, and a
+--       completion-barrier action.
 -- 
 -- The result is:
 --   (1) a lazy list with implicit blocking and IO.
 --   (2) a final barrier/kill action that 
-type TwoPhaseAction a b = (a -> ReaderT Config IO (b, IO ())) 
+type TwoPhaseAction a b = a -> ReaderT Config IO (b, IO ())
 parForMTwoPhaseAsync :: [a] -> TwoPhaseAction a b -> ReaderT Config IO ([b], IO ())
 parForMTwoPhaseAsync ls action = 
   do state@Config{maxthreads,outHandles} <- ask
@@ -800,28 +804,30 @@ main = do
             -- Version 2: This uses P worker threads.
             (outputs,killem) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
 		 -- Inside each action, we force the complete evaluation:
-		 out <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
-		 return (out, forceBuffered out)
+		 out@(BL _ lss) <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
+		 return (lss, forceBuffered out)
 		 -- ALTERNATIVE: Simply output directly to stdout/stderr.  MESSY:
   --               compileOne bench (confnum,length pruned)
   --  	         return ((), return ())
 
             flushBuffered outputs 
+	    -- We MUST ensure that all other threads are shut down
+	    -- so that the benchmark.run process doesn't pollute
+	    -- the benchmark run itself.
+	    lift$ putStrLn$ "[!!!] BARRIER - waiting for jobs to complete / kill threads before starting real work..."
+	    liftIO$ killem 
 
 	    if shortrun then do
                lift$ putStrLn$ "[!!!] Running in Parallel..."
 	       (outputs,_) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
-		  out <- forkWithBufferedLogs$ runOne bench (confnum,total)
-		  return (out, forceBuffered out)
+		  out@(BL _ ls3) <- forkWithBufferedLogs$ runOne bench (confnum,total)
+		  return (ls3, forceBuffered out)
 	       flushBuffered outputs 
+               return ()
 	     else do 
-               -- We MUST ensure that all other threads are shut down
-               -- so that the benchmark.run process doesn't pollute
-               -- the benchmark run itself.
-               lift$ putStrLn$ "[!!!] BARRIER - waiting for jobs to complete / kill threads before starting real work..."
-               liftIO$ killem 
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 		    runOne bench (confnum,total)
+               return ()
 
         else do
         --------------------------------------------------------------------------------
@@ -890,30 +896,37 @@ getBufferContents buf@(Buf mv ref) = do
 -- Treatment of buffered logging using Buffer:
 ----------------------------------------------------------------------------------------------------
 
+-- This stored the buffered 
+type TriString = (String, String, String)
+data BufferedLogs = BL ThreadId TriString
+
 -- | Capture logging output in memory.  Don't write directly to log files.
-withBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
+withBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO TriString
 withBufferedLogs action = do
   (hnd,io) <- makeBufferedAction action
   lift io -- Run it immediately.
   return hnd
 
  where 
-  makeBufferedAction :: ReaderT Config IO a-> ReaderT Config IO ((String, String, String), IO())
+  makeBufferedAction :: ReaderT Config IO a-> ReaderT Config IO (TriString, IO())
   makeBufferedAction action = do
       (chans,io) <- helper action
       lss <- convertBufs chans
       return$ (lss, io) 
 
 -- | Forking, asynchronous version.
-forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO (String, String, String) 
+forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO BufferedLogs
 forkWithBufferedLogs action = do 
 --  Config{outHandles} <- ask
   (chans,io) <- helper action
-  lift$ forkIOH "log buffering" (Just chans) io -- Run it asynchronously.
-  convertBufs chans
-
+  tid <- lift$ forkIOH "log buffering" (Just chans) io -- Run it asynchronously.
+  lss <- convertBufs chans 
+  return (BL tid lss)
 
 -- Helper function shared by the above.
+-- 
+-- Returns lazy output as well as a wrapped up action tha will perform the work item passed in.
+-- This action should close the buffers when it is done.
 helper action = 
  do conf <- ask 
     [buf1,buf2,buf3] <- lift$ sequence [newBuffer,newBuffer,newBuffer]
@@ -937,13 +950,15 @@ convertBufs (buf1,buf2,buf3) = do
   return$ (unlines ls1, unlines ls2, unlines ls3)
 
 -- Make sure that we complete the lazy IO by reading all the way to the end:
-forceBuffered :: (String,String,String) -> IO ()
-forceBuffered (logs,results,stdouts) = do
+forceBuffered :: BufferedLogs -> IO ()
+forceBuffered (BL tid (logs,results,stdouts)) = do
   evaluate (length logs)
   evaluate (length results)
   evaluate (length stdouts)
+  killThread tid 
   return ()
 
+flushBuffered :: [TriString] -> ReaderT Config IO ()
 flushBuffered outputs = do
         Config{logFile,resultsFile} <- ask
 
