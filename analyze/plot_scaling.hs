@@ -124,20 +124,6 @@ plot_benchmark2 basetimes root entries ignored_scheds =
   -- threads1 = filter ((== 1) . threads) cat
   map_normalized_time = map (\x -> tmed x / normfactor x)
 
-  -- -- The baseline case is either 0 threads (i.e. no "-threaded") or
-  -- -- -threaded with +RTS -N1:
-  -- times0 = map_normalized_time threads0
-  -- times1 = map_normalized_time threads1
-
-  -- What is the serial execution time against which we compare?
-  -- basetime = if    not$ null times0 
-  -- 	     then foldl1 min times0
-  -- 	     else if    not$ null times1 
-  -- 		  then foldl1 min times1
-  -- 		  else error$ "\nFor benchmark "++ show benchname ++ " could not find either 1-thread or 0-thread run.\n" ++
-  -- 		              --"ALL entries: "++ show (pPrint cat) ++"\n"
-  -- 		              "\nALL entries threads: "++ show (map threads cat)
-
   best = foldl1 min $ map_normalized_time cat
   -- Index into CONCATENATED version:
   Just best_index = elemIndex best $ map_normalized_time cat
@@ -155,9 +141,6 @@ plot_benchmark2 basetimes root entries ignored_scheds =
 
   scrub '_' = ' '
   scrub x = x
-  -- scrub [] = []
-  -- scrub ('_':t) = "\\_"++ scrub t
-  -- scrub (h:t)   = h : scrub t
 
   action lines = 
    do 
@@ -167,10 +150,14 @@ plot_benchmark2 basetimes root entries ignored_scheds =
       putStrLn$ "    NORM FACTORS "++ show norms
 
 
+      let str_basetimes = if 1 == length (nub basetimes) -- All the same
+	                  then show (round_2digits $ (head basetimes) * max_norm)
+			  else unwords$ map show $ nub basetimes
+
       runIO$ echo "set terminal postscript enhanced color\n"         -|- appendTo scriptfile
       runIO$ echo ("set output \""++filebase++".eps\"\n")            -|- appendTo scriptfile
       runIO$ echo ("set title \"Benchmark: "++ map scrub filebase ++
-		   ", speedup relative to serial time " ++ show (round_2digits $ (head basetimes) * max_norm) ++" seconds "++ 
+		   ", speedup relative to serial time " ++ str_basetimes ++" seconds "++ 
 --		   "for input size " ++ show (round_2digits max_norm)
 		   (if default_norms then "" else "for input size " ++ show (round max_norm))
 		   --if is_norm then "normalized to work unit"
@@ -281,25 +268,30 @@ main = do
    ------------------------------------------------------------
    -- The baseline case is either 0 threads (i.e. no "-threaded") or
    -- -threaded with +RTS -N1:
-   let 
-       benchname = name $ head $ head $ head perbenchmark
-       allrows = concat $ map concat perbenchmark
-       threads0 = filter ((== 0) . threads) allrows
-       threads1 = filter ((== 1) . threads) allrows
-       map_normalized_time = map (\x -> tmed x / normfactor x)
-       times0 = map_normalized_time threads0
-       times1 = map_normalized_time threads1
-       basetime = if    not$ null times0 
-		  then foldl1 min times0
-		  else if    not$ null times1 
-		       then foldl1 min times1
+   let allrows = concat $ map concat perbenchmark
+       threads0or1 = filter ((== 0) . threads) allrows ++
+                     filter ((== 1) . threads) allrows
+       calcbase pred onerow = 
+	let benchname = name $ head $ head $ head perbenchmark	    
+	    map_normalized_time = map (\x -> tmed x / normfactor x)
+	    times0or1 = map_normalized_time (filter (pred onerow) threads0or1)
+	    basetime = if    not$ null times0or1
+		       then foldl1 min times0or1
 		       else error$ "\nFor benchmark "++ show benchname ++ 
 				   " could not find either 1-thread or 0-thread run.\n" ++
 				   "\nALL entries threads: "++ show (map threads allrows)
+	in basetime
    ------------------------------------------------------------
+   let basetimes = 
+          if Relative `elem` options
+          -- In relative mode we create a separate per-scheduler serial baseline:
+	  then map (calcbase (\a b -> sched a == sched b)) allrows
+	  else replicate (length allrows)
+	                 (calcbase (\_ _ -> True) allrows)
+   ------------------------------------------------------------
+   putStrLn$ "SERIAL BASELINES: " ++ show basetimes
 
-   best <- plot_benchmark2 (replicate (length allrows) basetime)
-	                   root perbenchmark ignoredScheds
+   best <- plot_benchmark2 basetimes root perbenchmark ignoredScheds
    forM_ perbenchmark $ \ pervariant -> 
     forM_ pervariant   $ \ persched -> 
       do let mins = map tmin persched
