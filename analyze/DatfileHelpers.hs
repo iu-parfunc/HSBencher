@@ -3,10 +3,15 @@
 
 -- Dealing with .dat files.
 
-module DatfileHelpers where 
+module DatfileHelpers 
+--  readDataFile, remComments
+where 
 
 import Text.PrettyPrint.HughesPJClass
 import Debug.Trace (trace)
+import Data.Maybe (mapMaybe)
+import Text.Regex
+import Data.Char (isSpace)
 
 --------------------------------------------------------------------------------
 -- Data Types:
@@ -77,3 +82,42 @@ parse other =
     Nothing
 
 
+parseDatFile :: String -> IO [Entry]
+parseDatFile file = do 
+
+-- dat <- run$ catFrom [file] -|- remComments 
+ dat <- readDataFile file
+
+ -- Here we filter bad or incomplete data points:
+ let parsed0 = mapMaybe (parse . filter (not . (== "")) . splitRegex (mkRegex "[ \t]+")) 
+	          (filter (not . isMatch (mkRegex "ERR")) $
+		   filter (not . isMatch (mkRegex "TIMEOUT")) $
+		   filter (not . null) dat)
+ return parsed0
+
+--------------------------------------------------------------------------------
+
+-- | Remove comments from a list of lines.
+-- Assumes hash is the comment character.
+remComments :: [String] -> [String]
+remComments ls = filter (pred . stripLeadingWS) ls
+ where 
+  commentChars = "#"
+  pred str = not (take (length commentChars) str == commentChars) 
+  stripLeadingWS []                = [] 
+  stripLeadingWS (w:t) | isSpace w = stripLeadingWS t
+  stripLeadingWS ls                = ls
+
+-- Read our simple whitespace-separated data files:
+-- Return the result as a list of word-lists.
+-- readDataFile :: String -> IO [[String]]
+readDataFile :: String -> IO [String]
+readDataFile file = 
+  do str <- readFile file
+     return$ map unwords $ 
+	     filter (not . null) $ 
+             map words $
+	     remComments $ lines str  
+
+
+isMatch rg str = case matchRegex rg str of { Nothing -> False; _ -> True }

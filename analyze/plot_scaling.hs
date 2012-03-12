@@ -88,6 +88,8 @@ instance Show Mystr where
 data Best = Best (String, String, String,   Int, Double, Double)
 
 
+----------------------------------------------------------------------------------------------------
+
 {-
    I ended up giving up on using the gnuplot package on hackage.
 
@@ -101,9 +103,9 @@ data Best = Best (String, String, String,   Int, Double, Double)
      * Sched
 
 -}
-plot_benchmark2 :: String -> [[[Entry]]] -> [String] -> IO Best
+plot_benchmark2 :: Double -> String -> [[[Entry]]] -> [String] -> IO Best
 
-plot_benchmark2 root entries ignored_scheds = 
+plot_benchmark2 basetime root entries ignored_scheds = 
     do action $ filter goodSched (concat entries)
        return$ Best (benchname, bestvariant, 
 		     bestsched, bestthreads, best, basetime / best)
@@ -117,24 +119,23 @@ plot_benchmark2 root entries ignored_scheds =
   -- Knock down two levels of grouping leaving only Scheduler:
   cat = concat $ map concat entries
 
-  threads0 = filter ((== 0) . threads) cat
-  threads1 = filter ((== 1) . threads) cat
-
+  -- threads0 = filter ((== 0) . threads) cat
+  -- threads1 = filter ((== 1) . threads) cat
   map_normalized_time = map (\x -> tmed x / normfactor x)
 
-  -- The baseline case is either 0 threads (i.e. no "-threaded") or
-  -- -threaded with +RTS -N1:
-  times0 = map_normalized_time threads0
-  times1 = map_normalized_time threads1
+  -- -- The baseline case is either 0 threads (i.e. no "-threaded") or
+  -- -- -threaded with +RTS -N1:
+  -- times0 = map_normalized_time threads0
+  -- times1 = map_normalized_time threads1
 
   -- What is the serial execution time against which we compare?
-  basetime = if    not$ null times0 
-	     then foldl1 min times0
-	     else if    not$ null times1 
-		  then foldl1 min times1
-		  else error$ "\nFor benchmark "++ show benchname ++ " could not find either 1-thread or 0-thread run.\n" ++
-		              --"ALL entries: "++ show (pPrint cat) ++"\n"
-		              "\nALL entries threads: "++ show (map threads cat)
+  -- basetime = if    not$ null times0 
+  -- 	     then foldl1 min times0
+  -- 	     else if    not$ null times1 
+  -- 		  then foldl1 min times1
+  -- 		  else error$ "\nFor benchmark "++ show benchname ++ " could not find either 1-thread or 0-thread run.\n" ++
+  -- 		              --"ALL entries: "++ show (pPrint cat) ++"\n"
+  -- 		              "\nALL entries threads: "++ show (map threads cat)
 
   best = foldl1 min $ map_normalized_time cat
   Just best_index = elemIndex best $ map_normalized_time cat
@@ -181,7 +182,7 @@ plot_benchmark2 root entries ignored_scheds =
       runIO$ echo ("set key left top\n")                             -|- appendTo scriptfile
       runIO$ echo ("plot \\\n")                                      -|- appendTo scriptfile
 
-      -- In this loop lets do the errorbars:
+      -- In this loop does the errorbars:
       forM_ (zip [1..] lines) $ \(i,points) -> do 
           let datfile = root ++ filebase ++ show i ++".dat"
 	  runIO$ echo ("   \""++ basename datfile ++"\" using 1:2:3:4 with errorbars lt "++
@@ -214,9 +215,6 @@ plot_benchmark2 root entries ignored_scheds =
       --runIO$ "(cd "++root++"; ps2pdf "++ filebase ++".eps )"
 
 
-
-isMatch rg str = case matchRegex rg str of { Nothing -> False; _ -> True }
-
 --------------------------------------------------------------------------------
 --                              Main Script                                   --
 --------------------------------------------------------------------------------
@@ -224,6 +222,7 @@ isMatch rg str = case matchRegex rg str of { Nothing -> False; _ -> True }
 -- | Datatype for command line flags.
 data Flag = SerialBasecase
 	  | IgnoreSched String
+	  | Relative
   deriving Eq
 
 -- | Command line options.
@@ -234,6 +233,9 @@ cli_options =
 
      , Option [] ["ignore"] (ReqArg IgnoreSched "SCHED")
           "ignore all datapoints with scheduler SCHED"
+
+     , Option [] ["relative"] (NoArg Relative)
+          "do not normalize all schedulers to the same serial baseline"
      ]
 
 
@@ -251,16 +253,11 @@ main = do
 	   _   -> exitUsage
 
  -- Read in the .dat file, ignoring comments:
- dat <- run$ catFrom [file] -|- remComments 
-
- -- Here we filter bad or incomplete data points:
- let parsed0 = mapMaybe (parse . filter (not . (== "")) . splitRegex (mkRegex "[ \t]+")) 
-	          (filter (not . isMatch (mkRegex "ERR")) $
-		   filter (not . isMatch (mkRegex "TIMEOUT")) $
-		   filter (not . null) dat)
-     parsed = if SerialBasecase `elem` options
+ parsed0 <- parseDatFile file
+ let parsed = if SerialBasecase `elem` options
               then parsed0
 	      else filter (\ Entry{threads} -> threads /= 0) parsed0
+
 -- mapM_ print parsed
  let organized = organize_data parsed
 
@@ -278,7 +275,28 @@ main = do
  system$ "mkdir -p "++root
  bests <- 
   forM organized    $ \ perbenchmark -> do 
-   best <- plot_benchmark2 root perbenchmark ignoredScheds
+
+   ------------------------------------------------------------
+   -- The baseline case is either 0 threads (i.e. no "-threaded") or
+   -- -threaded with +RTS -N1:
+   let 
+       benchname = name $ head $ head $ head perbenchmark
+       cat = concat $ map concat perbenchmark
+       threads0 = filter ((== 0) . threads) cat
+       threads1 = filter ((== 1) . threads) cat
+       map_normalized_time = map (\x -> tmed x / normfactor x)
+       times0 = map_normalized_time threads0
+       times1 = map_normalized_time threads1
+       basetime = if    not$ null times0 
+		  then foldl1 min times0
+		  else if    not$ null times1 
+		       then foldl1 min times1
+		       else error$ "\nFor benchmark "++ show benchname ++ 
+				   " could not find either 1-thread or 0-thread run.\n" ++
+				   "\nALL entries threads: "++ show (map threads cat)
+   ------------------------------------------------------------
+
+   best <- plot_benchmark2 basetime root perbenchmark ignoredScheds
    forM_ perbenchmark $ \ pervariant -> 
     forM_ pervariant   $ \ persched -> 
       do let mins = map tmin persched

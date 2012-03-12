@@ -4,12 +4,10 @@
 
 module ScriptHelpers
  ( trim
- , remComments
  , unlessM 
  , indent
  , runEcho
  , inDirectory
- , readDataFile
  ) 
 where
 
@@ -19,25 +17,6 @@ import Control.Monad
 import System.Directory
 
 --------------------------------------------------------------------------------
-
--- | Remove comments from a list of lines.
--- Assumes hash is the comment character.
-remComments :: [String] -> [String]
-remComments ls = filter (pred . stripLeadingWS) ls
- where 
-  commentChars = "#"
-  pred str = not (take (length commentChars) str == commentChars) 
-  stripLeadingWS []                = [] 
-  stripLeadingWS (w:t) | isSpace w = stripLeadingWS t
-  stripLeadingWS ls                = ls
-
--- Read our simple whitespace-separated data files:
-readDataFile :: String -> IO [[String]]
-readDataFile file = 
-  do str <- readFile file
-     return$ filter (not . null) $ 
-             map words $
-	     remComments $ lines str  
 
 -- remComments :: String -> [String] -> [String]
 -- remComments commentchars ls = filter (pred . stripLeadingWhitespace) ls
