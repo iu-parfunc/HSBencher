@@ -104,7 +104,8 @@ data Best = Best (String, String, String,   Int, Double, Double)
 plot_benchmark2 :: String -> [[[Entry]]] -> [String] -> IO Best
 
 plot_benchmark2 root entries ignored_scheds = 
-    do action $ filter goodSched (concat entries)
+    do dump_gnuplot (root,filebase,norms,basetime,max_norm,default_norms) $ 
+                    filter goodSched (concat entries)
        return$ Best (benchname, bestvariant, 
 		     bestsched, bestthreads, best, basetime / best)
  where 
@@ -112,7 +113,7 @@ plot_benchmark2 root entries ignored_scheds =
   -- What was the best single-threaded execution time across variants/schedulers:
 
   goodSched [] = error "Empty block of data entries..."
-  goodSched (h:t) = not $ (sched h) `elem` ignored_scheds 
+  goodSched (h:_) = not $ (sched h) `elem` ignored_scheds 
   
   -- Knock down two levels of grouping leaving only Scheduler:
   cat = concat $ map concat entries
@@ -150,15 +151,15 @@ plot_benchmark2 root entries ignored_scheds =
   default_norms = all (== 1.0) $ norms
   max_norm = foldl1 max norms
 
-  scrub '_' = ' '
-  scrub x = x
-  -- scrub [] = []
-  -- scrub ('_':t) = "\\_"++ scrub t
-  -- scrub (h:t)   = h : scrub t
 
-  action lines = 
+
+dump_gnuplot :: Show a => (String, String, a, Double, Double, Bool) -> [[Entry]] -> IO ()
+dump_gnuplot (root,filebase,norms,basetime,max_norm,default_norms) lines = 
    do 
       let scriptfile = root ++ filebase ++ ".gp"
+          scrub '_' = ' '
+          scrub x = x
+
       putStrLn$ "  Dumping gnuplot script to: "++ scriptfile
 
       putStrLn$ "    NORM FACTORS "++ show norms
