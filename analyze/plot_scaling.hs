@@ -87,6 +87,11 @@ instance Show Mystr where
 --               Name, Variant, Scheduler,        Threads, BestTime, Speedup
 data Best = Best (String, String, String,   Int, Double, Double)
 
+matchShape :: [[a]] -> [b] -> [[b]]
+matchShape [] [] = []
+matchShape [] _  = error "matchShape: not the same number of elements"
+matchShape (h:tl) ls = take (length h) ls : 
+		       matchShape tl (drop (length h) ls)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -106,7 +111,9 @@ data Best = Best (String, String, String,   Int, Double, Double)
 plot_benchmark2 :: [Double] -> String -> [[[Entry]]] -> [String] -> IO Best
 
 plot_benchmark2 basetimes root entries ignored_scheds = 
-    do action $ filter goodSched (concat entries)
+    do let lineplots = filter goodSched (concat entries) 
+       action lineplots (map head$ matchShape lineplots basetimes)
+       putStrLn$ " PLOTTING BENCHMAKR "++ show benchname ++ " best index "++ show best_index ++ " of "++ show (length basetimes)
        return$ Best (benchname, bestvariant, 
 		     bestsched, bestthreads, best, 
 		     (basetimes !! best_index) / best)
@@ -142,13 +149,11 @@ plot_benchmark2 basetimes root entries ignored_scheds =
   scrub '_' = ' '
   scrub x = x
 
-  action lines = 
+  action lines basetimes = 
    do 
       let scriptfile = root ++ filebase ++ ".gp"
-      putStrLn$ "  Dumping gnuplot script to: "++ scriptfile
-
+      putStrLn$ "  Drawing "++show(length lines)++" lines. Dumping gnuplot script to: "++ scriptfile
       putStrLn$ "    NORM FACTORS "++ show norms
-
 
       let str_basetimes = if 1 == length (nub basetimes) -- All the same
 	                  then show (round_2digits $ (head basetimes) * max_norm)
@@ -165,9 +170,7 @@ plot_benchmark2 basetimes root entries ignored_scheds =
 		   ++"\"\n") -|- appendTo scriptfile
       runIO$ echo ("set xlabel \"Number of Threads\"\n")             -|- appendTo scriptfile
       runIO$ echo ("set ylabel \"Parallel Speedup\"\n")              -|- appendTo scriptfile
-
-
-      runIO$ echo ("set xrange [1:]\n")                             -|- appendTo scriptfile
+      runIO$ echo ("set xrange [1:]\n")                              -|- appendTo scriptfile
       runIO$ echo ("set key left top\n")                             -|- appendTo scriptfile
       runIO$ echo ("plot \\\n")                                      -|- appendTo scriptfile
 
@@ -185,13 +188,17 @@ plot_benchmark2 basetimes root entries ignored_scheds =
 	  let var  = variant$ head points  -- should be the same across all point
 	  let nickname = var ++"/"++ schd
 	  runIO$ echo ("# Data for variant "++ nickname ++"\n") -|- appendTo datfile
+
+          let lines_basetimes = basetimes!!(i-1)
+
+          putStrLn$ "   "++show(i-1)++": Normalizing Sched "++ show schd++ " to serial baseline "++show (basetimes!!(i-1))
           forM_ points $ \x -> do 
 
               -- Here we print a line of output:
 	      runIO$ echo (show (fromIntegral (threads x)) ++" "++
-			   show (basetimes!!i / (tmed x / normfactor x))        ++" "++
-                           show (basetimes!!i / (tmax x / normfactor x))        ++" "++ 
-			   show (basetimes!!i / (tmin x / normfactor x))        ++" \n") -|- appendTo datfile
+			   show (lines_basetimes / (tmed x / normfactor x))        ++" "++
+                           show (lines_basetimes / (tmax x / normfactor x))        ++" "++ 
+			   show (lines_basetimes / (tmin x / normfactor x))        ++" \n") -|- appendTo datfile
 
 	  let comma = if i == length lines then "" else ",\\"
 	  runIO$ echo ("   \""++ basename datfile ++
