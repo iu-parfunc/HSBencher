@@ -254,9 +254,19 @@ schedToModule s =
    Direct   -> "Control.Monad.Par.Scheds.Direct"
    ContFree -> "Control.Monad.Par.Scheds.ContFree"
    Sparks   -> "Control.Monad.Par.Scheds.Sparks"
-   SMP      -> "Control.Monad.Par.Meta.SharedMemoryOnly"
+   SMP      -> "Control.Monad.Par.Meta.SMP"
    NUMA     -> "Control.Monad.Par.Meta.NUMAOnly"
    None     -> "qualified Control.Monad.Par as NotUsed"
+
+schedToCabalFlag s =
+  case s of
+    Trace -> "-ftrace"
+    Direct -> "-fdirect"
+    ContFree -> "-fcontfree"
+    Sparks -> "-fsparks"
+    SMP -> "-fmeta-smp"
+    NUMA -> "-fmeta-numa"
+    None -> ""
   
 
 --------------------------------------------------------------------------------
@@ -479,6 +489,27 @@ backupResults Config{resultsFile, logFile} = do
 -- Compiling Benchmarks
 --------------------------------------------------------------------------------
 
+-- | Invoke cabal for all of the schedulers in the current config
+invokeCabal :: ReaderT Config IO Bool
+invokeCabal = do
+  Config{ghc, ghc_flags, shortrun, scheds} <- ask  
+  bs <- forM (S.toList scheds) $ \sched -> lift $ do
+          let schedflag = schedToCabalFlag sched
+              cmd = unwords [ "cabal install"
+                            , "--with-ghc=" ++ ghc
+                            , "--ghc-options='" ++ ghc_flags ++ "'"
+                            , schedflag
+                            , "--prefix=`pwd`"
+                            , "--symlink-bindir="
+                            , "--disable-documentation"
+                            , "--program-suffix='_" ++ show sched ++ "_threaded.exe'"
+--                            , "&& cabal build"
+                            ]
+          HSH.run cmd
+  return $ all id bs
+
+
+
 compileOne :: BenchRun -> (Int,Int) -> ReaderT Config IO Bool
 compileOne br@(BenchRun { threads=numthreads
                         , sched
@@ -585,7 +616,7 @@ runOne br@(BenchRun { threads=numthreads
             case numthreads of
 	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
 	     _ -> ghc_RTS  ++" -N"++show numthreads
-      exefile = "./" ++ test ++ uniqueSuffix br ++ ".exe"
+      exefile = "./bin/" ++ test ++ uniqueSuffix br ++ ".exe"
   ----------------------------------------
   -- Now Execute:
   ----------------------------------------
@@ -673,10 +704,10 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
   -- There has got to be a simpler way!
   -- branch   <- runIgnoreErr "git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/'"
   -- branch <- "git symbolic-ref HEAD"
-  branch   <- runIgnoreErr "git name-rev --name-only HEAD"
-  revision <- runIgnoreErr "git rev-parse HEAD"
+  branch   <- HSH.run "git name-rev --name-only HEAD"
+  revision <- HSH.run "git rev-parse HEAD"
   -- Note that this will NOT be newline-terminated:
-  hashes   <- runIgnoreErr "git log --pretty=format:'%H'"
+  hashes   <- HSH.run "git log --pretty=format:'%H'"
   mapM_ HSH.runIO $ concat $ 
    [
      e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
@@ -721,7 +752,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
 ----------------------------------------------------------------------------------------------------
 
 -- | Command line flags.
-data Flag = ParBench
+data Flag = ParBench | NoRecomp
   deriving Eq
 
 -- | Command line options.
@@ -729,6 +760,8 @@ cli_options :: [OptDescr Flag]
 cli_options = 
      [ Option [] ["par"] (NoArg ParBench) 
        "Build benchmarks in parallel."
+     , Option [] ["no-recomp"] (NoArg NoRecomp)
+       "Skip recompilation of benchmark executables."
      ]
 
 -- | Global variable holding the main thread id.
@@ -759,15 +792,17 @@ main = do
         lift$ backupResults conf
 	log "Writing header for result data file:"
 	lift$ resultsHeader conf 
-
-	log "Before testing, first 'make clean' for hygiene."
-	-- Hah, make.out seems to be a special name of some sort, this actually fails:
-	--	code <- lift$ system$ "make clean &> make.out"
-	code <- lift$ system$ "make clean &> make_output.tmp"
-	check False code "ERROR: 'make clean' failed."
-	log " -> Succeeded."
-	liftIO$ removeFile "make_output.tmp"
-
+        let recomp = not $ NoRecomp `elem` options
+        when recomp $ do 
+  	  log "Before testing, first 'rm -rf bin && ./generate_cabal.sh && cabal clean' for hygiene."
+	  -- Hah, make.out seems to be a special name of some sort, this actually fails:
+          --	code <- lift$ system$ "make clean &> make.out"
+	  code <- lift$ system$ 
+            "rm -rf bin && ./generate_cabal.sh && cabal clean &> make_output.tmp"
+	  check False code "ERROR: cleaning failed."
+	  log " -> Succeeded."
+	  liftIO$ removeFile "make_output.tmp"
+        unless recomp $ log "[!!!] Skipping benchmark recompilation!"
         let listConfigs threadsettings = 
                       [ BenchRun { threads=t, sched=s, bench=b, env=e } | 
 			b@(Benchmark {compatScheds}) <- benchlist, 
@@ -832,8 +867,9 @@ main = do
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
-	    forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
-		compileOne bench (confnum,length pruned)
+--	    forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
+--		compileOne bench (confnum,length pruned)
+            unless (NoRecomp `elem` options) (void invokeCabal)
 	    forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 	        runOne bench (confnum,total)
 
