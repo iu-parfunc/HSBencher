@@ -5,12 +5,21 @@
 -- 
 -- benchmark.hs: HSH/Command.hs:(289,14)-(295,45): Missing field in record construction System.Process.Internals.create_group
 
-{- 
-   Runs benchmarks.  (Note Simon Marlow has his another setup, but this
-   one is self contained.)
+{- |
 
-   ---------------------------------------------------------------------------
-   Usage: [set env vars] ./benchmark.hs
+   Runs benchmarks.  
+
+---------------------------------------------------------------------------   
+            ASSUMPTIONS -- about directory and file organization
+---------------------------------------------------------------------------   
+
+
+
+---------------------------------------------------------------------------
+                                 USAGE
+---------------------------------------------------------------------------
+
+  Usage: [set env vars] ./benchmark.hs
 
    Call it with the following environment variables...
 
@@ -38,20 +47,19 @@
    environment variables $GHC_FLAGS and $GHC_RTS.  It will also use
    $GHC, if available, to select the $GHC executable.
 
+   
+---------------------------------------------------------------------------
+                                << TODO >>
    ---------------------------------------------------------------------------
 
-      ----
-   << TODO >>
-      ====
-
-   * Factor out compilation from execution so that compilation can be parallelized.
-     * Further enable packing up a benchmark set to run on a machine
-       without GHC (as with Haskell Cnc)
    * Replace environment variable argument passing with proper flags/getopt.
 
-   * Handle testing with multiple GHC versions and multiple flag-configs.
-
-   * Consider -outputdir to keep separate compiles fully separate.
+   <Things that worked at one time but need to be cleaned up:>
+     
+     * Further enable packing up a benchmark set to run on a machine
+       without GHC (as with Haskell Cnc)
+     
+     * Clusterbench -- adding an additional layer of parameter variation.
 
 -}
 
@@ -105,7 +113,6 @@ data Config = Config
  , logFile        :: String -- Where to put more verbose testing output.
  -- Logging can be dynamically redirected away from the filenames
  -- (logFile, resultsFile) and towards specific Handles:
- -- A Nothing on one of these chans means "end-of-stream":
  , outHandles     :: Maybe (Buffer String, 
 			    Buffer String,
 			    Buffer String)
@@ -142,6 +149,7 @@ data Benchmark = Benchmark
 --
 -- CONTRACT FOR NTIMES:
 --   * Return ONLY a series of three times (min/med/max) on a single line of stdout
+--   * Optionally return matching productivities after the min/med/max times on the same line.
 --   * Return the original output of the program, or any additional
 --     output, on stderr.
 ntimes = "./ntimes_minmedmax"
@@ -493,23 +501,24 @@ backupResults Config{resultsFile, logFile} = do
 invokeCabal :: ReaderT Config IO Bool
 invokeCabal = do
   Config{ghc, ghc_flags, shortrun, scheds} <- ask  
-  bs <- forM (S.toList scheds) $ \sched -> lift $ do
+  bs <- forM (S.toList scheds) $ \sched -> do
           let schedflag = schedToCabalFlag sched
               cmd = unwords [ "cabal install"
                             , "--with-ghc=" ++ ghc
                             , "--ghc-options='" ++ ghc_flags ++ "'"
                             , schedflag
                             , "--prefix=`pwd`"
-                            , "--symlink-bindir="
+--                            , "--symlink-bindir=" -- Causes problems on linux [2012.05.02] -RRN
                             , "--disable-documentation"
                             , "--program-suffix='_" ++ show sched ++ "_threaded.exe'"
 --                            , "&& cabal build"
                             ]
-          HSH.run cmd
+          log$ "Running cabal: "++cmd
+          lift$ HSH.run cmd
   return $ all id bs
 
 
-
+-- | Build a single benchmark in a single configuration WITHOUT cabal.
 compileOne :: BenchRun -> (Int,Int) -> ReaderT Config IO Bool
 compileOne br@(BenchRun { threads=numthreads
                         , sched
@@ -603,7 +612,7 @@ runOne br@(BenchRun { threads=numthreads
   pwd <- lift$ getCurrentDirectory
   log$ "(In directory "++ pwd ++")"
 
-  log$ "Next run who, reporting users other than the current user.  This may help with detectivework."
+  log$ "Next run 'who', reporting users other than the current user.  This may help with detectivework."
 --  whos <- lift$ run "who | awk '{ print $1 }' | grep -v $USER"
   whos <- lift$ HSH.run$ "who" -|- map (head . words)
   user <- lift$ getEnv "USER"
@@ -786,6 +795,11 @@ main = do
 
   conf@Config{..} <- getConfig    
 
+
+  hasMakefile <- doesFileExist "Makefile"
+  cabalFile <- HSH.runSL "ls *.cabal"
+  let hasCabalFile = cabalFile /= ""
+
   runReaderT 
     (do         
 
@@ -793,15 +807,17 @@ main = do
 	log "Writing header for result data file:"
 	lift$ resultsHeader conf 
         let recomp = not $ NoRecomp `elem` options
-        when recomp $ do 
-  	  log "Before testing, first 'rm -rf bin && ./generate_cabal.sh && cabal clean' for hygiene."
-	  -- Hah, make.out seems to be a special name of some sort, this actually fails:
-          --	code <- lift$ system$ "make clean &> make.out"
-	  code <- lift$ system$ 
-            "rm -rf bin && ./generate_cabal.sh && cabal clean &> make_output.tmp"
-	  check False code "ERROR: cleaning failed."
-	  log " -> Succeeded."
-	  liftIO$ removeFile "make_output.tmp"
+        when recomp $ 
+          let cleanit cmd = do
+                log$ "Before testing, first '"++ cmd ++"' for hygiene."
+                code <- lift$ system$ cmd++" &> clean_output.tmp"
+                check False code "ERROR: cleaning failed."
+	        log " -> Succeeded."
+                liftIO$ removeFile "clean_output.tmp"
+          in      if hasMakefile  then cleanit "make clean"
+             else if hasCabalFile then cleanit "cabal clean"
+             else    return ()
+
         unless recomp $ log "[!!!] Skipping benchmark recompilation!"
         let listConfigs threadsettings = 
                       [ BenchRun { threads=t, sched=s, bench=b, env=e } | 
@@ -860,6 +876,7 @@ main = do
 	       flushBuffered outputs 
                return ()
 	     else do 
+               -- Non-shortrun's NEVER run multiple benchmarks at once:
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 		    runOne bench (confnum,total)
                return ()
@@ -867,11 +884,16 @@ main = do
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
---	    forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
---		compileOne bench (confnum,length pruned)
-            unless (NoRecomp `elem` options) (void invokeCabal)
-	    forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-	        runOne bench (confnum,total)
+          if hasCabalFile then do
+             log$ "Found cabal file in top-level benchmark dir.  Using it to build all benchmarks: "++cabalFile
+             unless (NoRecomp `elem` options) (void invokeCabal)
+           else do 
+             log$ "!! .cabal file not found in current directory.  Attempting to build the old fashioned way."
+             forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
+                 compileOne bench (confnum,length pruned)
+
+          forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+              runOne bench (confnum,total)
 
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
@@ -915,6 +937,7 @@ peekBuffer (Buf _ ref) = liftM reverse $ readIORef ref
 -- Returns a lazy list, just like getChanContents:
 getBufferContents :: Buffer a -> IO [a]
 getBufferContents buf@(Buf mv ref) = do
+  -- A Nothing on this chan means "end-of-stream":
   chan <- newChan 
   let loop = do 
 	 grabbed <- atomicModifyIORef ref (\ ls -> ([], reverse ls))
