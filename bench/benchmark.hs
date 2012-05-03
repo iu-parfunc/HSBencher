@@ -93,8 +93,9 @@ import System.Posix.Env (setEnv)
 import System.Random (randomIO)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
-import System.Process (system, createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
-import System.IO (Handle, hPutStrLn, stderr)
+import System.Process (system, waitForProcess, getProcessExitCode, 
+                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
+import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, IOMode(..))
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 ----------------------------------------------------------------------------------------------------
@@ -444,11 +445,13 @@ invokeCabal = do
                             , "--program-suffix='_" ++ show sched ++ "_threaded.exe'"
 --                            , "&& cabal build"
                             ]
-          log$ "Running cabal: "++cmd
-          tmpfile <- mktmpfile
-          code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
-          flushtmp tmpfile 
-          check False code "ERROR, benchmark.hs: cabal-based compilation failed."
+          log$ "\nRunning cabal... "
+          log$ "============================================================"
+          (_,code) <- runCmdWithEnv [] cmd
+          -- tmpfile <- mktmpfile
+          -- code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
+          -- flushtmp tmpfile 
+          check False code "ERROR, benchmark.hs: cabal-based compilation failed."          
   
   return $ all id bs
 
@@ -611,11 +614,11 @@ mktmpfile = do
 -- Flush the temporary file to the log file, returning its contents
 -- and deleting it in the process:
 flushtmp tmpfile = 
-           do Config{shortrun} <- ask
-              output <- lift$ readFile tmpfile
-	      let dests = if shortrun then [LogFile] else [LogFile,StdOut]
-	      mapM_ (logOn dests) (indent$ lines output) 
-	      lift$ removeFile tmpfile
+  do Config{shortrun} <- ask
+     output <- lift$ readFile tmpfile
+     mapM_ (logOn [LogFile,StdOut]) (indent$ lines output) 
+     lift$ removeFile tmpfile
+     return output
 -- Indent for prettier output
 indent = map ("    "++)
 ------------------------------------------------------------
@@ -623,46 +626,61 @@ indent = map ("    "++)
 
 -- Helper for launching processes with logging and error checking
 -----------------------------------------------------------------
-runCmdWithEnv env cmd = do 
-  log$ "Executing " ++ cmd
-  tmpfile <- mktmpfile
-  (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (cmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
-  (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
-  flushtmp tmpfile  
-  Config{keepgoing} <- ask
-  check keepgoing code ("ERROR, benchmark.hs: test command \""++cmd++"\" failed with code "++ show code)
-  return (str,code)
+-- runCmdWithEnv env cmd = do 
+--   log$ "Executing " ++ cmd
+--   tmpfile <- mktmpfile
+--   (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (cmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
+--   (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
+--   flushtmp tmpfile  
+--   Config{keepgoing} <- ask
+--   check keepgoing code ("ERROR, benchmark.hs: command \""++cmd++"\" failed with code "++ show code)
+--   return (str,code)
 
 -- [2012.05.03] HSH has been causing no end of problems in this department.
-{-
+-- Here we instead use the underlying createProcess library function:
 runCmdWithEnv env cmd = do 
-  Config{outHandles,logFile,resultsFile} <- ask
-  case outHandles of 
-    Nothing -> return ()
-    Just _ -> error "runCmdWithEnv doesn't yet work with 'outHandles' redirection"
-  
-  hnd1 <- openFile logFile AppendMode
-  
-  createProcess CreateProcess {
-    cmdspec = undefined -- :: CmdSpec Executable & arguments, or shell command
-   -- cwd :: Maybe FilePath Optional path to the working directory for the new process
-   -- env :: Maybe [(String, String)] Optional environment (otherwise inherit from the current process)
-   -- std_in :: StdStream How to determine stdin
-   -- std_out :: StdStream How to determine stdout
-   -- std_err :: StdStream How to determine stderr
-   -- close_fds :: Bool - Close all file descriptors except stdin, stdout and stderr in the new process (on Windows, only works if std_in, std_out, and std_err are all Inherit)
-   --create_group :: Bool Create a new process group
-    }
-    
-  return undefined  
--}
-  -- log$ "Executing " ++ cmd
-  -- tmpfile <- mktmpfile
-  -- (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (cmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
-  -- (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
-  -- flushtmp tmpfile  
-  -- check keepgoing code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
+  -- This current design has the unfortunate disadvantage that it
+  -- produces no observable output until the subprocess is FINISHED.
+  log$ "Executing " ++ cmd
+  -- Config{outHandles,logFile,resultsFile} <- ask
+  -- case outHandles of 
+  --   Nothing -> return ()
+  --   Just _ -> error "runCmdWithEnv doesn't yet work with 'outHandles' redirection"
+--  tmpout <- mktmpfile  
+--  tmperr <- mktmpfile      
+--  hndlout <- lift$ openFile tmpout WriteMode
+--  hndlerr <- lift$ openFile tmperr WriteMode
 
+  (Nothing, Just outH, Just errH, ph) <- lift$ createProcess 
+     CreateProcess {
+       cmdspec = ShellCommand cmd,
+       env = Just env,
+       std_in  = Inherit,
+--       std_out = UseHandle hndlout,
+       std_out = CreatePipe,
+       -- [2012.05.03] Having problems with redirecting stderr for ntimes:
+       -- Inheriting WORKS: std_err = Inherit,
+       -- Redirecting to a file fails with several of these errors:
+       --    ./ntimes: line 69: /dev/stderr: Not a directory
+       -- How about CreatePipe?
+       std_err = CreatePipe,
+       cwd = Nothing,
+       close_fds = False,
+       create_group = False
+     }
+  -- lift$ hClose hndlout
+  -- lift$ hClose hndlerr 
+  -- str <- flushtmp tmpout
+  -- flushtmp tmperr    
+  lift$ waitForProcess ph  
+  Just code <- lift$ getProcessExitCode ph
+  outStr    <- lift$ hGetContents outH
+  errStr    <- lift$ hGetContents errH
+  log outStr
+  log errStr  
+  Config{keepgoing} <- ask
+  check keepgoing code ("ERROR, benchmark.hs: command \""++cmd++"\" failed with code "++ show code)
+  return (outStr, code)
 
 -----------------------------------------------------------------
 runIgnoreErr :: String -> IO String
