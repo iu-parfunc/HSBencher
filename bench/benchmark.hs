@@ -136,7 +136,7 @@ data BenchRun = BenchRun
  { threads :: Int
  , sched   :: Sched 
  , bench   :: Benchmark
- , env     :: [(String, String)]
+ , env     :: [(String, String)] -- ADDITIONAL bindings for the environment
  } deriving (Eq, Show, Ord)
 
 data Benchmark = Benchmark
@@ -627,11 +627,12 @@ indent = map ("    "++)
 runCmdWithEnv env cmd = do 
   -- This current design has the unfortunate disadvantage that it
   -- produces no observable output until the subprocess is FINISHED.
-  log$ "Executing: " ++ cmd
+  log$ "Executing: " ++ cmd      
+  baseEnv <- lift$ getEnvironment
   (Nothing, Just outH, Just errH, ph) <- lift$ createProcess 
      CreateProcess {
        cmdspec = ShellCommand cmd,
-       env = Just env,
+       env = Just$ baseEnv ++ env,
        std_in  = Inherit,
        std_out = CreatePipe,
        std_err = CreatePipe,
