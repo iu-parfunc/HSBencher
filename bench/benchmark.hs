@@ -105,6 +105,7 @@ data Config = Config
  , shortrun       :: Bool
  , keepgoing      :: Bool   -- keep going after error
  , ghc            :: String -- ghc compiler path
+ , ghc_pkg        :: String
  , ghc_flags      :: String
  , ghc_RTS        :: String -- +RTS flags
  , scheds         :: S.Set Sched -- subset of schedulers to test.
@@ -207,6 +208,7 @@ getConfig = do
       conf = Config 
            { hostname, logFile, scheds, shortrun    
 	   , ghc        =       get "GHC"       "ghc"
+           , ghc        =       get "GHC_PKG"   "ghc-pkg"
 	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
 	                  ++ " -rtsopts" -- Always turn on rts opts.
@@ -500,11 +502,12 @@ backupResults Config{resultsFile, logFile} = do
 -- | Invoke cabal for all of the schedulers in the current config
 invokeCabal :: ReaderT Config IO Bool
 invokeCabal = do
-  Config{ghc, ghc_flags, shortrun, scheds} <- ask  
-  bs <- forM (S.toList scheds) $ \sched -> do
+  Config{ghc, ghc_pkg, ghc_flags, shortrun, scheds} <- ask  
+  bs <- forM (S.toList scheds) $ \sched -> lift $ do
           let schedflag = schedToCabalFlag sched
               cmd = unwords [ "cabal install"
                             , "--with-ghc=" ++ ghc
+                            , "--with-ghc-pkg=" ++ ghc_pkg
                             , "--ghc-options='" ++ ghc_flags ++ "'"
                             , schedflag
                             , "--prefix=`pwd`"
