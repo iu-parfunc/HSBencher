@@ -1,5 +1,6 @@
 #!/usr/bin/env runhaskell
 {-# LANGUAGE BangPatterns, NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
+-- {-# OPTIONS_GHC -threaded #-} -- REMEMBER TO BUILD THREADED!!
 
 -- NOTE: Under 7.2 I'm running into this HSH problem:
 -- 
@@ -95,7 +96,7 @@ import System.Exit
 import System.FilePath (splitFileName, (</>))
 import System.Process (system, waitForProcess, getProcessExitCode, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
-import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, IOMode(..))
+import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine, IOMode(..))
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 ----------------------------------------------------------------------------------------------------
@@ -447,7 +448,7 @@ invokeCabal = do
                             ]
           log$ "\nRunning cabal... "
           log$ "============================================================"
-          (_,code) <- runCmdWithEnv [] cmd
+          (_,code) <- runCmdWithEnv True [] cmd
           check False code "ERROR, benchmark.hs: cabal-based compilation failed."          
   
   return $ all id bs
@@ -570,7 +571,7 @@ runOne br@(BenchRun { threads=numthreads
   -- One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.  
 
-  (str,code) <- runCmdWithEnv env ntimescmd
+  (str,code) <- runCmdWithEnv (not shortrun) env ntimescmd
 
   let (ts,prods) = 
        case code of
@@ -578,20 +579,18 @@ runOne br@(BenchRun { threads=numthreads
            case map words (lines str) of
 	      -- Here we expect a very specific output format from ntimes:
 	      ["REALTIME":ts, "PRODUCTIVITY":prods] -> (ts, prods)
-	      _ -> error "bad output from ntimes, expected two times"     
+	      _ -> error "bad output from ntimes, expected two timing numbers"     
 	ExitFailure 143 -> (["TIMEOUT","TIMEOUT","TIMEOUT"],[])
 	ExitFailure 15  -> (["TIMEOUT","TIMEOUT","TIMEOUT"],[])
 	-- TEMP ^^ : [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily ^
 	ExitFailure _   -> (["ERR","ERR","ERR"],[])
 
--- Adam's first format: tuples of (time,prod%):
---      format (t, prod) = printf "(%s,%s%%)" t prod
---      formatted = unwords (map format (zip ts prods))
--- This is more barebones and readable by gnuplot:
       pads n s = take (max 1 (n - length s)) $ repeat ' '
       padl n x = pads n x ++ x 
       padr n x = x ++ pads n x
-
+      
+      -- These are really (time,prod) tuples, but a flat list of
+      -- scalars is simpler and readable by gnuplot:
       formatted = (padl 15$ unwords ts) ++"   "++ unwords prods -- prods may be empty!
 
   log $ " >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
@@ -624,7 +623,7 @@ indent = map ("    "++)
 -- [2012.05.03] HSH has been causing no end of problems in the
 -- subprocess-management department.  Here we instead use the
 -- underlying createProcess library function:
-runCmdWithEnv env cmd = do 
+runCmdWithEnv echo env cmd = do 
   -- This current design has the unfortunate disadvantage that it
   -- produces no observable output until the subprocess is FINISHED.
   log$ "Executing: " ++ cmd      
@@ -644,12 +643,29 @@ runCmdWithEnv env cmd = do
        close_fds = False,
        create_group = False
      }
-  lift$ waitForProcess ph  
-  Just code <- lift$ getProcessExitCode ph
-  outStr    <- lift$ hGetContents outH
-  errStr    <- lift$ hGetContents errH
-  log outStr
-  log errStr  
+  
+  (outStr,code) <- if echo then do 
+                      mv1 <- echoThread outH
+                      mv2 <- echoThread errH
+                      lift$ waitForProcess ph  
+                      Just code <- lift$ getProcessExitCode ph  
+                      outStr <- lift$ takeMVar mv1
+                      _      <- lift$ takeMVar mv2
+                      return (outStr,code)
+                   else do                
+                      -- In this version we echo
+                      lift$ waitForProcess ph
+                      Just code <- lift$ getProcessExitCode ph  
+                      outStr    <- lift$ hGetContents outH
+                      errStr    <- lift$ hGetContents errH
+                      lift$ hClose outH
+                      lift$ hClose errH
+                      logOn [LogFile] outStr
+                      logOn [LogFile] errStr
+                      return (outStr, code)
+              
+  log$ "GOT OUTPUT BACK: \n   "++outStr++"\nEND"
+
   Config{keepgoing} <- ask
   check keepgoing code ("ERROR, benchmark.hs: command \""++cmd++"\" failed with code "++ show code)
   return (outStr, code)
@@ -662,6 +678,30 @@ runIgnoreErr cm =
      return str
 -----------------------------------------------------------------
 
+-- | Create a thread that echos the contents of a Handle as it becomes
+--   available.  Then return all text read through an MVar when the
+--   handle runs dry.
+echoThread :: Handle -> ReaderT Config IO (MVar String)
+echoThread hndl = do
+  mv   <- lift$ newEmptyMVar
+  conf <- ask
+  lift$ void$ forkIOH "echo thread" Nothing $ 
+    runReaderT (loop mv []) conf    
+  return mv  
+ where
+   loop mv acc = 
+     do b <- lift$ hIsEOF hndl 
+        if b then do lift$ hClose hndl
+                     lift$ putMVar mv (unlines$ reverse acc)
+         else do ln <- lift$ hGetLine hndl
+                 log ln 
+                 loop mv (ln:acc)
+
+-- Take a lazy string that performs blocking IO behind the scenes, echo it.
+-- echoLazyIO :: String -> ReaderT Config IO (MVar )
+-- echoLazyIO str = 
+--   forM_ (lines str) $ \ln -> do 
+--     return ""
 
 --------------------------------------------------------------------------------
 
