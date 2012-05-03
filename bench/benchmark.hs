@@ -1,13 +1,21 @@
 #!/usr/bin/env runhaskell
 {-# LANGUAGE BangPatterns, NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
--- {-# OPTIONS_GHC -threaded #-} -- REMEMBER TO BUILD THREADED!!
+--------------------------------------------------------------------------------
+-- NOTE: This is best when compiled with "ghc -threaded"
+-- However, ideally for real benchmarking runs we WANT the waitForProcess below block the whole process.
+-- However^2, currently [2012.05.03] when running without threads I get errors like this:
+--   benchmark.run: bench_hive.log: openFile: resource busy (file is locked)
 
 -- NOTE: Under 7.2 I'm running into this HSH problem:
 -- 
 -- benchmark.hs: HSH/Command.hs:(289,14)-(295,45): Missing field in record construction System.Process.Internals.create_group
+--------------------------------------------------------------------------------
+
 
 {- |
    
+benchmark.hs
+
 This program runs a set of benchmarks contained in the current
 directory.  It produces two files as output:
 
