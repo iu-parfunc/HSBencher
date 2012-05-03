@@ -6,8 +6,12 @@
 -- benchmark.hs: HSH/Command.hs:(289,14)-(295,45): Missing field in record construction System.Process.Internals.create_group
 
 {- |
+   
+This program runs a set of benchmarks contained in the current
+directory.  It produces two files as output:
 
-   Runs benchmarks.  
+    results_HOSTNAME.dat
+    bench_HOSTNAME.log
 
 ---------------------------------------------------------------------------   
             ASSUMPTIONS -- about directory and file organization
@@ -19,7 +23,7 @@
                                  USAGE
 ---------------------------------------------------------------------------
 
-  Usage: [set env vars] ./benchmark.hs
+  Usage: [set environment vars] ./benchmark.hs [--no-recomp, --par]
 
    Call it with the following environment variables...
 
@@ -34,7 +38,7 @@
      BENCHLIST=foo.txt to select the benchmarks and their arguments
 		       (uses benchlist.txt by default)
 
-     SCHEDS="Trace Direct Sparks ContFree" -- Restricts to a subset of schedulers.
+     SCHEDS="Trace Direct Sparks" -- Restricts to a subset of schedulers.
 
      GENERIC=1 to go through the generic (type class) monad par
                interface instead of using each scheduler directly
@@ -65,7 +69,6 @@
 
 module Main (main) where 
 
-
 import qualified HSH 
 import HSH ((-|-))
 import Prelude hiding (log)
@@ -90,10 +93,12 @@ import System.Posix.Env (setEnv)
 import System.Random (randomIO)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
-import System.Process (system)
+import System.Process (system, createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 import System.IO (Handle, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
+----------------------------------------------------------------------------------------------------
+
 
 -- The global configuration for benchmarking:
 data Config = Config 
@@ -112,8 +117,9 @@ data Config = Config
  , hostname       :: String 
  , resultsFile    :: String -- Where to put timing results.
  , logFile        :: String -- Where to put more verbose testing output.
- -- Logging can be dynamically redirected away from the filenames
- -- (logFile, resultsFile) and towards specific Handles:
+ 
+   -- outHandles: Logging can be dynamically redirected away from the
+   -- filenames (logFile, resultsFile) and towards specific Handles:
  , outHandles     :: Maybe (Buffer String, 
 			    Buffer String,
 			    Buffer String)
@@ -131,13 +137,6 @@ data BenchRun = BenchRun
  , bench   :: Benchmark
  , env     :: [(String, String)]
  } deriving (Eq, Show, Ord)
-
-data Sched 
-   = Trace | Direct | Sparks | ContFree | SMP | NUMA
-   | None
- deriving (Eq, Show, Read, Ord, Enum, Bounded)
-
-allScheds = S.fromList [minBound ..]
 
 data Benchmark = Benchmark
  { name :: String
@@ -180,7 +179,7 @@ getConfig = do
   -- because this script may not be running in threaded mode.
 
   let scheds = case get "SCHEDS" "" of 
-		"" -> allScheds
+		"" -> defaultSchedSet
 		s  -> S.fromList (map read (words s))
 
   case get "GENERIC" "" of 
@@ -208,7 +207,7 @@ getConfig = do
       conf = Config 
            { hostname, logFile, scheds, shortrun    
 	   , ghc        =       get "GHC"       "ghc"
-           , ghc        =       get "GHC_PKG"   "ghc-pkg"
+           , ghc_pkg    =       get "GHC_PKG"   "ghc-pkg"
 	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
 	                  ++ " -rtsopts" -- Always turn on rts opts.
@@ -232,6 +231,21 @@ getConfig = do
 -- | Remove RTS options that are specific to -threaded mode.
 pruneThreadedOpts :: [String] -> [String]
 pruneThreadedOpts = filter (`notElem` ["-qa", "-qb"])
+
+--------------------------------------------------------------------------------
+-- TODO -- all this Mode selection should be factored out to make this
+-- benchmark script a bit more generic.
+--------------------------------------------------------------------------------
+
+data Sched 
+   = Trace | Direct | Sparks | ContFree | SMP | NUMA
+   | None
+ deriving (Eq, Show, Read, Ord, Enum, Bounded)
+
+-- [2012.05.03] RRN: ContFree is not exposed, so removing it from the
+-- default set, though you can still ask for it explicitly:
+defaultSchedSet = S.difference (S.fromList [minBound ..])
+                               (S.fromList [ContFree, NUMA])
 
 -- | Expand the mode string into a list of specific schedulers to run:
 expandMode :: String -> [Sched]
@@ -335,99 +349,12 @@ isNumber s =
     [(n,"")] -> True
     _        -> False
 
-runIgnoreErr :: String -> IO String
-runIgnoreErr cm = 
-  do (str,force) <- HSH.run cm
-     (err::String, code::ExitCode) <- force
-     return str
-
 -- Based on a benchmark configuration, come up with a unique suffix to
 -- distinguish the executable.
 uniqueSuffix BenchRun{threads,sched,bench} =    
   "_" ++ show sched ++ 
    if threads == 0 then "_serial"
                    else "_threaded"
-
-----------------------------------------------------------------------------------------------------
-
--- Fork a thread but ALSO set up an error handler.
-forkIOH :: String -> Maybe (Buffer String, t, t1) -> IO () -> IO ThreadId
-forkIOH who maybhndls action = 
-  forkIO $ handle (\ (e::SomeException) -> 
-                   case fromException e of
-                     Just ThreadKilled -> return ()
-                     Nothing -> do 
-		        hPutStrLn stderr$ "ERROR: "++who++": Got exception inside forked thread: "++show e
-			tid <- readIORef main_threadid
-			case maybhndls of 
-			  Nothing -> return ()
-			  Just (logBuf,resBuf,stdoutBuf) -> 
-			     do 
-				hPutStrLn stderr "=========================="
-				hPutStrLn stderr "Buffered contents for log:"
-				hPutStrLn stderr "=========================="
-				str <- peekBuffer logBuf
-				hPutStrLn stderr (unlines str)
-				return ()
-			throwTo tid e
-		  )
-           action
-
-
---------------------------------------------------------------------------------
--- | Parallel for loops.
--- 
--- The idea is to keep perform a sliding window of work and to execute
--- on numCapabilities threads, avoiding oversubscription.
--- 
--- This version takes:
---   (1) a two-phase action that returns both a result, and a
---       completion-barrier action.
--- 
--- The result is:
---   (1) a lazy list with implicit blocking and IO.
---   (2) a final barrier/kill action that 
-type TwoPhaseAction a b = a -> ReaderT Config IO (b, IO ())
-parForMTwoPhaseAsync :: [a] -> TwoPhaseAction a b -> ReaderT Config IO ([b], IO ())
-parForMTwoPhaseAsync ls action = 
-  do state@Config{maxthreads,outHandles} <- ask
-     lift$ do 
-       answers <- sequence$ replicate (length ls) newEmptyMVar
-       workIn  <- newIORef (zip ls answers)
-       tids <- forM [1..numCapabilities] $ \ id -> 
---       forM_ [1..maxthreads] $ \ id -> 
-           forkIOH "parFor worker" outHandles $ do 
-             -- Pop work off the queue:
-             let loop = do -- putStrLn$ "Worker "++show id++" looping ..."
-                           x <- atomicModifyIORef workIn 
-						  (\ls -> if null ls 
-							  then ([], Nothing) 
-							  else (tail ls, Just (head ls)))
-                           case x of 
-			     Nothing -> return () -- putMVar finit ()
-			     Just (input,mv) -> 
-                               do (result,barrier) <- runReaderT (action input) state
-				  putMVar mv result
-				  barrier 
-                                  loop
-             loop     
-
-       -- Read out the answers in order:
-       chan <- newChan
-       lastTid <- forkIOH "parFor reader thread" outHandles $ 
-			  forM_ answers $ \ mv -> do
-			    x <- readMVar mv
-			    writeChan chan x 
-       strm <- getChanContents chan
-       let lazyListIO = take (length ls) strm
-           -- This can either wait and then kill, or just kill.
-           -- Trying a waiting version:
-           killem = case length lazyListIO of 
-		      _ -> do mapM_ killThread tids
-			      killThread lastTid
-       return (lazyListIO, killem)
-
-
 
 --------------------------------------------------------------------------------
 -- Error handling
@@ -455,15 +382,16 @@ check keepgoing (ExitFailure code) msg  = do
 -- Logging
 --------------------------------------------------------------------------------
 
+-- | There are three logging destinations we care about.  The .dat
+--   file, the .log file, and the user's screen (i.e. the user who
+--   launched the benchmarks).
 data LogDest = ResultsFile | LogFile | StdOut
 
--- Print a message both to stdout and logFile:
+-- | Print a message both to stdout and logFile:
 log :: String -> ReaderT Config IO ()
 log = logOn [LogFile,StdOut] -- The commonly used default. 
 
--- Log to a particular file and also echo to stdout.
--- logOn :: String -> String -> IO ()
---logOn :: LogDest -> String -> IO ()
+-- | Log to a particular file and also echo to stdout.
 logOn :: [LogDest] -> String -> ReaderT Config IO ()
 logOn modes s = do
   Config{outHandles,logFile,resultsFile} <- ask
@@ -473,7 +401,7 @@ logOn modes s = do
 	       StdOut      -> "/dev/stdout"
       capped = s++"\n"
   case outHandles of 
-    -- If these are note set, direct logging info directly to files:
+    -- If outHandles are not set, direct logging info directly to files:
     Nothing -> lift$ 
                  forM_ (map tofile modes) 
 		       (\ f -> HSH.appendTo f capped)
@@ -483,7 +411,6 @@ logOn modes s = do
 	ResultsFile -> lift$ writeBuffer resultBuffer s
 	LogFile     -> lift$ writeBuffer logBuffer    s
 	StdOut      -> lift$ writeBuffer stdoutBuffer s
-
 
 -- | Create a backup copy of existing results_HOST.dat files.
 backupResults Config{resultsFile, logFile} = do 
@@ -495,6 +422,7 @@ backupResults Config{resultsFile, logFile} = do
   when e2 $ do
     renameFile logFile     (logFile     ++"."++date++".bak")
 
+
 --------------------------------------------------------------------------------
 -- Compiling Benchmarks
 --------------------------------------------------------------------------------
@@ -503,7 +431,7 @@ backupResults Config{resultsFile, logFile} = do
 invokeCabal :: ReaderT Config IO Bool
 invokeCabal = do
   Config{ghc, ghc_pkg, ghc_flags, shortrun, scheds} <- ask  
-  bs <- forM (S.toList scheds) $ \sched -> lift $ do
+  bs <- forM (S.toList scheds) $ \sched -> do
           let schedflag = schedToCabalFlag sched
               cmd = unwords [ "cabal install"
                             , "--with-ghc=" ++ ghc
@@ -517,7 +445,11 @@ invokeCabal = do
 --                            , "&& cabal build"
                             ]
           log$ "Running cabal: "++cmd
-          lift$ HSH.run cmd
+          tmpfile <- mktmpfile
+          code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
+          flushtmp tmpfile 
+          check False code "ERROR, benchmark.hs: cabal-based compilation failed."
+  
   return $ all id bs
 
 
@@ -635,25 +567,11 @@ runOne br@(BenchRun { threads=numthreads
 --  rtstmp <- mktmpfile
   -- If we failed compilation we don't bother running either:
   let ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) rts
-  log$ "Executing " ++ ntimescmd
 
   -- One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.  
 
-  tmpfile <- mktmpfile
-
-  -- NOTE: With this form we don't get the error code.  Rather there will be an exception on error:
-  (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (ntimescmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
-  (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
-  flushtmp tmpfile
-  -- (rtsStats :: [(String, String)]) <- read <$> lift (readFile rtstmp)
-  -- let prod :: Float
-  --     !prod = 1 - (gcTime / totalTime)
-  --     Just gcTime  = read <$> lookup "GC_cpu_seconds" rtsStats
-  --     Just mutTime = read <$> lookup "mutator_cpu_seconds" rtsStats
-  --     totalTime    = mutTime + gcTime
-  -- flushtmp rtstmp
-  check keepgoing code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
+  (str,code) <- runCmdWithEnv env ntimescmd
 
   let (ts,prods) = 
        case code of
@@ -701,6 +619,58 @@ flushtmp tmpfile =
 -- Indent for prettier output
 indent = map ("    "++)
 ------------------------------------------------------------
+
+
+-- Helper for launching processes with logging and error checking
+-----------------------------------------------------------------
+runCmdWithEnv env cmd = do 
+  log$ "Executing " ++ cmd
+  tmpfile <- mktmpfile
+  (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (cmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
+  (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
+  flushtmp tmpfile  
+  Config{keepgoing} <- ask
+  check keepgoing code ("ERROR, benchmark.hs: test command \""++cmd++"\" failed with code "++ show code)
+  return (str,code)
+
+-- [2012.05.03] HSH has been causing no end of problems in this department.
+{-
+runCmdWithEnv env cmd = do 
+  Config{outHandles,logFile,resultsFile} <- ask
+  case outHandles of 
+    Nothing -> return ()
+    Just _ -> error "runCmdWithEnv doesn't yet work with 'outHandles' redirection"
+  
+  hnd1 <- openFile logFile AppendMode
+  
+  createProcess CreateProcess {
+    cmdspec = undefined -- :: CmdSpec Executable & arguments, or shell command
+   -- cwd :: Maybe FilePath Optional path to the working directory for the new process
+   -- env :: Maybe [(String, String)] Optional environment (otherwise inherit from the current process)
+   -- std_in :: StdStream How to determine stdin
+   -- std_out :: StdStream How to determine stdout
+   -- std_err :: StdStream How to determine stderr
+   -- close_fds :: Bool - Close all file descriptors except stdin, stdout and stderr in the new process (on Windows, only works if std_in, std_out, and std_err are all Inherit)
+   --create_group :: Bool Create a new process group
+    }
+    
+  return undefined  
+-}
+  -- log$ "Executing " ++ cmd
+  -- tmpfile <- mktmpfile
+  -- (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (cmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
+  -- (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
+  -- flushtmp tmpfile  
+  -- check keepgoing code ("ERROR, benchmark.hs: test command \""++ntimescmd++"\" failed with code "++ show code)
+
+
+-----------------------------------------------------------------
+runIgnoreErr :: String -> IO String
+runIgnoreErr cm = 
+  do (str,force) <- HSH.run cm
+     (err::String, code::ExitCode) <- force
+     return str
+-----------------------------------------------------------------
 
 
 --------------------------------------------------------------------------------
@@ -798,7 +768,6 @@ main = do
 
   conf@Config{..} <- getConfig    
 
-
   hasMakefile <- doesFileExist "Makefile"
   cabalFile <- HSH.runSL "ls *.cabal"
   let hasCabalFile = cabalFile /= ""
@@ -815,7 +784,7 @@ main = do
                 log$ "Before testing, first '"++ cmd ++"' for hygiene."
                 code <- lift$ system$ cmd++" &> clean_output.tmp"
                 check False code "ERROR: cleaning failed."
-	        log " -> Succeeded."
+	        log " -> Cleaning Succeeded."
                 liftIO$ removeFile "clean_output.tmp"
           in      if hasMakefile  then cleanit "make clean"
              else if hasCabalFile then cleanit "cabal clean"
@@ -846,7 +815,8 @@ main = do
 
         log$ "\n--------------------------------------------------------------------------------"
         log$ "Running all benchmarks for all thread settings in "++show threadsettings
-        log$ "Testing "++show total++" total configurations of "++ show (length benchlist) ++" benchmarks"
+        log$ "Running for all schedulers in: "++show (S.toList scheds)
+        log$ "Testing "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
 
         if ParBench `elem` options then do 
@@ -905,16 +875,100 @@ main = do
     )
     conf
 
--- type ChanPack = (Chan (Maybe String), Chan (Maybe String), Chan (Maybe String))
+
+
+----------------------------------------------------------------------------------------------------
+-- *                                 GENERIC HELPER ROUTINES                                      
+----------------------------------------------------------------------------------------------------
+
+-- | These should properly go in another module, but they live here to
+--   keep benchmark.hs self contained.
+
+
+-- | Fork a thread but ALSO set up an error handler.
+forkIOH :: String -> Maybe (Buffer String, t, t1) -> IO () -> IO ThreadId
+forkIOH who maybhndls action = 
+  forkIO $ handle (\ (e::SomeException) -> 
+                   case fromException e of
+                     Just ThreadKilled -> return ()
+                     Nothing -> do 
+		        hPutStrLn stderr$ "ERROR: "++who++": Got exception inside forked thread: "++show e
+			tid <- readIORef main_threadid
+			case maybhndls of 
+			  Nothing -> return ()
+			  Just (logBuf,resBuf,stdoutBuf) -> 
+			     do 
+				hPutStrLn stderr "=========================="
+				hPutStrLn stderr "Buffered contents for log:"
+				hPutStrLn stderr "=========================="
+				str <- peekBuffer logBuf
+				hPutStrLn stderr (unlines str)
+				return ()
+			throwTo tid e
+		  )
+           action
+
+
+-- | Parallel for loops.
+-- 
+-- The idea is to keep perform a sliding window of work and to execute
+-- on numCapabilities threads, avoiding oversubscription.
+-- 
+-- This version takes:
+--   (1) a two-phase action that returns both a result, and a
+--       completion-barrier action.
+-- 
+-- The result is:
+--   (1) a lazy list with implicit blocking and IO.
+--   (2) a final barrier/kill action that 
+type TwoPhaseAction a b = a -> ReaderT Config IO (b, IO ())
+parForMTwoPhaseAsync :: [a] -> TwoPhaseAction a b -> ReaderT Config IO ([b], IO ())
+parForMTwoPhaseAsync ls action = 
+  do state@Config{maxthreads,outHandles} <- ask
+     lift$ do 
+       answers <- sequence$ replicate (length ls) newEmptyMVar
+       workIn  <- newIORef (zip ls answers)
+       tids <- forM [1..numCapabilities] $ \ id -> 
+--       forM_ [1..maxthreads] $ \ id -> 
+           forkIOH "parFor worker" outHandles $ do 
+             -- Pop work off the queue:
+             let loop = do -- putStrLn$ "Worker "++show id++" looping ..."
+                           x <- atomicModifyIORef workIn 
+						  (\ls -> if null ls 
+							  then ([], Nothing) 
+							  else (tail ls, Just (head ls)))
+                           case x of 
+			     Nothing -> return () -- putMVar finit ()
+			     Just (input,mv) -> 
+                               do (result,barrier) <- runReaderT (action input) state
+				  putMVar mv result
+				  barrier 
+                                  loop
+             loop     
+
+       -- Read out the answers in order:
+       chan <- newChan
+       lastTid <- forkIOH "parFor reader thread" outHandles $ 
+			  forM_ answers $ \ mv -> do
+			    x <- readMVar mv
+			    writeChan chan x 
+       strm <- getChanContents chan
+       let lazyListIO = take (length ls) strm
+           -- This can either wait and then kill, or just kill.
+           -- Trying a waiting version:
+           killem = case length lazyListIO of 
+		      _ -> do mapM_ killThread tids
+			      killThread lastTid
+       return (lazyListIO, killem)
+
 
 --------------------------------------------------------------------------------
--- Limited Chan Replacement
+-- * "Buffer"s, A Limited Chan Replacement
 --------------------------------------------------------------------------------
 
--- Chan's don't quite do the trick.  Here's something simpler.  It
--- keeps a buffer of elemnts and an MVar to signal "end of stream".
--- This it separates blocking behavior from data access.
-
+-- | Chan's don't quite do the trick.  Here's something simpler.  It
+--   keeps a buffer of elemnts and an MVar to signal "end of stream".
+--   This it separates blocking behavior from data access.
 data Buffer a = Buf (MVar ()) (IORef [a])
 
 newBuffer :: IO (Buffer a)
@@ -937,7 +991,7 @@ closeBuffer (Buf mv _) = putMVar mv ()
 peekBuffer :: Buffer a -> IO [a]
 peekBuffer (Buf _ ref) = liftM reverse $ readIORef ref 
 
--- Returns a lazy list, just like getChanContents:
+-- | Returns a lazy list, just like getChanContents:
 getBufferContents :: Buffer a -> IO [a]
 getBufferContents buf@(Buf mv ref) = do
   -- A Nothing on this chan means "end-of-stream":
@@ -958,7 +1012,6 @@ getBufferContents buf@(Buf mv ref) = do
 -- Treatment of buffered logging using Buffer:
 ----------------------------------------------------------------------------------------------------
 
--- This stored the buffered 
 type TriString = (String, String, String)
 data BufferedLogs = BL ThreadId TriString
 
@@ -968,7 +1021,6 @@ withBufferedLogs action = do
   (hnd,io) <- makeBufferedAction action
   lift io -- Run it immediately.
   return hnd
-
  where 
   makeBufferedAction :: ReaderT Config IO a-> ReaderT Config IO (TriString, IO())
   makeBufferedAction action = do
@@ -1002,7 +1054,6 @@ helper action =
 		closeBuffer buf2 
 		closeBuffer buf3 
     return$ ((buf1,buf2,buf3), io) 
-
 
 -- Shared by the routines above.  Convert between buffers and lists with implicit lazyIO.
 convertBufs (buf1,buf2,buf3) = do 
