@@ -160,6 +160,7 @@ ntimes = "./ntimes_minmedmax"
 gc_stats_flag = " -s " 
 -- gc_stats_flag = " --machine-readable -t "
 
+exedir = "./bin"
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -458,7 +459,7 @@ invokeCabal = do
 compileOne :: BenchRun -> (Int,Int) -> ReaderT Config IO Bool
 compileOne br@(BenchRun { threads=numthreads
                         , sched
-                        , bench=(Benchmark test _ args_)
+                        , bench=(Benchmark testPath _ args_)
                         }) 
 	      (iterNum,totalIters) = 
   do Config{ghc, ghc_flags, shortrun} <- ask
@@ -467,45 +468,59 @@ compileOne br@(BenchRun { threads=numthreads
      let flags_ = case numthreads of
 		   0 -> ghc_flags
 		   _ -> ghc_flags++" -threaded"
-	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""
-
-	 (containingdir,_) = splitFileName test
-	 hsfile = test++".hs"
+	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
+	 (diroffset,testRoot) = splitFileName testPath
+         
+         -- TODO: make this command-line configurable.
+--       srcBase = "./src/"
+--       containingdir = srcBase </> diroffset
+--	 hsfile = srcBase </> testPath++".hs"
+         containingdir = diroffset
+         hsfile = testPath++".hs"
 	 suffix = uniqueSuffix br
-         outdir = "./build_"++test++suffix++"_"++show uid
-	 exefile = test++ suffix ++ ".exe"
+         outdir = "./build" </> testRoot++suffix++"_"++show uid
+	 exefile = exedir </> testRoot ++ suffix ++ ".exe"
          args = if shortrun then shortArgs args_ else args_
 
      log$ "\n--------------------------------------------------------------------------------"
      log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
-	  ": "++test++" (args \""++unwords args++"\") scheduler "++show sched ++ 
+	  ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched ++ 
            if numthreads==0 then " serial" else " threaded"
      log$ "--------------------------------------------------------------------------------\n"
 
-     log "First, creating a directory for intermediate compiler files."
-     code <- lift$ system$ "mkdir -p "++outdir
-     check False code "ERROR, benchmark.hs: making compiler temp dir failed."
+     log$"First, creating a directory for intermediate compiler files: "++outdir
+     code1 <- lift$ system$ "mkdir -p "++outdir
+     code2 <- lift$ system$ "mkdir -p "++exedir
+     check False code1 "ERROR, benchmark.hs: making compiler temp dir failed."
+     check False code2 "ERROR, benchmark.hs: making compiler temp dir failed."
+
+     log$"Next figure out what kind of benchmark this is by poking around the file system: "
+     log$"  Checking for: "++hsfile
+     log$"  Checking for: "++containingdir</>"Makefile"
 
      e  <- lift$ doesFileExist hsfile
      d  <- lift$ doesDirectoryExist containingdir
      mf <- lift$ doesFileExist$     containingdir </> "Makefile"
+
      if e then do 
 	 log "Compiling with a single GHC command: "
          -- HACK for pinning to threads: (TODO - should probably make this for NUMA)
          pinObjExists <- lift $ doesFileExist "../dist/build/cbits/pin.o"
 	 let cmd = unwords [ ghc, "--make"
                            , if pinObjExists then "../dist/build/cbits/pin.o" else ""
-                           , "-i../", "-i"++containingdir
+                           , "-i"++containingdir
                            , "-outputdir "++outdir
                            , flags, hsfile, "-o "++exefile]
+
 	 log$ "  "++cmd ++"\n"
          tmpfile <- mktmpfile
 	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
 	 code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
 	 flushtmp tmpfile 
+
 	 check False code "ERROR, benchmark.hs: compilation failed."
 
-     else if (d && mf && containingdir /= ".") then do 
+     else if (d && mf && diroffset /= ".") then do 
  	log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
         error "No makefile-based builds supported..."
 -- 	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
@@ -536,14 +551,15 @@ compileOne br@(BenchRun { threads=numthreads
 runOne :: BenchRun -> (Int,Int) -> ReaderT Config IO ()
 runOne br@(BenchRun { threads=numthreads
                     , sched
-                    , bench=(Benchmark test _ args_)
+                    , bench=(Benchmark testPath _ args_)
                     , env}) 
           (iterNum,totalIters) = do
   Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
+      (_,testRoot) = splitFileName testPath
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters++
-       ": "++test++" (args \""++unwords args++"\") scheduler "++show sched++"  threads "++show numthreads++" (Env="++show env++")"
+       ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++"  threads "++show numthreads++" (Env="++show env++")"
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
   log$ "(In directory "++ pwd ++")"
@@ -561,7 +577,7 @@ runOne br@(BenchRun { threads=numthreads
             case numthreads of
 	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
 	     _ -> ghc_RTS  ++" -N"++show numthreads
-      exefile = "./bin/" ++ test ++ uniqueSuffix br ++ ".exe"
+      exefile = exedir </> testRoot ++ uniqueSuffix br ++ ".exe"
   ----------------------------------------
   -- Now Execute:
   ----------------------------------------
@@ -595,7 +611,7 @@ runOne br@(BenchRun { threads=numthreads
 
   log $ " >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
   logOn [ResultsFile]$ 
-    printf "%s %s %s %s %s" (padr 35 test) (padr 20$ intercalate "_" args)
+    printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
 	                    (padr 7$ show sched) (padr 3$ show numthreads) formatted
 
   return ()
@@ -644,28 +660,13 @@ runCmdWithEnv echo env cmd = do
        create_group = False
      }
   
-  (outStr,code) <- if echo then do 
-                      mv1 <- echoThread outH
-                      mv2 <- echoThread errH
-                      lift$ waitForProcess ph  
-                      Just code <- lift$ getProcessExitCode ph  
-                      outStr <- lift$ takeMVar mv1
-                      _      <- lift$ takeMVar mv2
-                      return (outStr,code)
-                   else do                
-                      -- In this version we echo
-                      lift$ waitForProcess ph
-                      Just code <- lift$ getProcessExitCode ph  
-                      outStr    <- lift$ hGetContents outH
-                      errStr    <- lift$ hGetContents errH
-                      lift$ hClose outH
-                      lift$ hClose errH
-                      logOn [LogFile] outStr
-                      logOn [LogFile] errStr
-                      return (outStr, code)
-              
-  log$ "GOT OUTPUT BACK: \n   "++outStr++"\nEND"
-
+  mv1 <- echoThread echo outH
+  mv2 <- echoThread echo errH
+  lift$ waitForProcess ph  
+  Just code <- lift$ getProcessExitCode ph  
+  outStr <- lift$ takeMVar mv1
+  _      <- lift$ takeMVar mv2
+                
   Config{keepgoing} <- ask
   check keepgoing code ("ERROR, benchmark.hs: command \""++cmd++"\" failed with code "++ show code)
   return (outStr, code)
@@ -681,21 +682,21 @@ runIgnoreErr cm =
 -- | Create a thread that echos the contents of a Handle as it becomes
 --   available.  Then return all text read through an MVar when the
 --   handle runs dry.
-echoThread :: Handle -> ReaderT Config IO (MVar String)
-echoThread hndl = do
+echoThread :: Bool -> Handle -> ReaderT Config IO (MVar String)
+echoThread echoStdout hndl = do
   mv   <- lift$ newEmptyMVar
   conf <- ask
   lift$ void$ forkIOH "echo thread" Nothing $ 
-    runReaderT (loop mv []) conf    
+    runReaderT (echoloop mv []) conf    
   return mv  
  where
-   loop mv acc = 
+   echoloop mv acc = 
      do b <- lift$ hIsEOF hndl 
         if b then do lift$ hClose hndl
                      lift$ putMVar mv (unlines$ reverse acc)
          else do ln <- lift$ hGetLine hndl
-                 log ln 
-                 loop mv (ln:acc)
+                 logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) ln 
+                 echoloop mv (ln:acc)
 
 -- Take a lazy string that performs blocking IO behind the scenes, echo it.
 -- echoLazyIO :: String -> ReaderT Config IO (MVar )
@@ -764,7 +765,7 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
 ----------------------------------------------------------------------------------------------------
 
 -- | Command line flags.
-data Flag = ParBench | NoRecomp
+data Flag = ParBench | NoRecomp | NoCabal | NoClean
   deriving Eq
 
 -- | Command line options.
@@ -773,7 +774,11 @@ cli_options =
      [ Option [] ["par"] (NoArg ParBench) 
        "Build benchmarks in parallel."
      , Option [] ["no-recomp"] (NoArg NoRecomp)
-       "Skip recompilation of benchmark executables."
+       "Don't perform any compilation of benchmark executables.  Implies -no-clean."
+     , Option [] ["no-clean"] (NoArg NoClean)
+       "Do not clean pre-existing executables before beginning."
+     , Option [] ["no-cabal"] (NoArg NoCabal)
+       "Build directly through GHC even if .cabal file is present."
      ]
 
 -- | Global variable holding the main thread id.
@@ -799,8 +804,10 @@ main = do
   conf@Config{..} <- getConfig    
 
   hasMakefile <- doesFileExist "Makefile"
-  cabalFile <- HSH.runSL "ls *.cabal"
-  let hasCabalFile = cabalFile /= ""
+  (cabalFile,finish) <- HSH.run "ls *.cabal"
+  (_::String,_::ExitCode)   <- finish  
+  let hasCabalFile = (cabalFile /= "") &&
+                     not (NoCabal `elem` options)
 
   runReaderT 
     (do         
@@ -808,8 +815,9 @@ main = do
         lift$ backupResults conf
 	log "Writing header for result data file:"
 	lift$ resultsHeader conf 
-        let recomp = not $ NoRecomp `elem` options
-        when recomp $ 
+        let recomp  = not $ NoRecomp `elem` options
+            doclean = (not $ NoCabal `elem` options) && recomp
+        when doclean $ 
           let cleanit cmd = do
                 log$ "Before testing, first '"++ cmd ++"' for hygiene."
                 code <- lift$ system$ cmd++" &> clean_output.tmp"
@@ -854,6 +862,8 @@ main = do
         -- Parallel version:
             lift$ putStrLn$ "[!!!] Compiling in Parallel..."
 
+            when hasCabalFile (error "Currently, cabalized build does not support parallelism!")
+               
             -- Version 1: This forks ALL compiles in parallel [REMOVED, CHECK VCS]
             -- Version 2: This uses P worker threads.
             (outputs,killem) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
@@ -887,13 +897,14 @@ main = do
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
-          if hasCabalFile then do
-             log$ "Found cabal file in top-level benchmark dir.  Using it to build all benchmarks: "++cabalFile
-             unless (NoRecomp `elem` options) (void invokeCabal)
-           else do 
-             log$ "!! .cabal file not found in current directory.  Attempting to build the old fashioned way."
-             forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
-                 compileOne bench (confnum,length pruned)
+          when recomp 
+            (if hasCabalFile then do
+                log$ "Found cabal file in top-level benchmark dir.  Using it to build all benchmarks: "++cabalFile
+                void invokeCabal
+             else do              
+                log$ "Not using Cabal.  Attempting to build the old fashioned way."             
+                forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
+                   compileOne bench (confnum,length pruned))
 
           forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
               runOne bench (confnum,total)
@@ -962,7 +973,7 @@ parForMTwoPhaseAsync ls action =
 --       forM_ [1..maxthreads] $ \ id -> 
            forkIOH "parFor worker" outHandles $ do 
              -- Pop work off the queue:
-             let loop = do -- putStrLn$ "Worker "++show id++" looping ..."
+             let pfloop = do -- putStrLn$ "Worker "++show id++" looping ..."
                            x <- atomicModifyIORef workIn 
 						  (\ls -> if null ls 
 							  then ([], Nothing) 
@@ -973,8 +984,8 @@ parForMTwoPhaseAsync ls action =
                                do (result,barrier) <- runReaderT (action input) state
 				  putMVar mv result
 				  barrier 
-                                  loop
-             loop     
+                                  pfloop
+             pfloop     
 
        -- Read out the answers in order:
        chan <- newChan
@@ -1026,14 +1037,14 @@ getBufferContents :: Buffer a -> IO [a]
 getBufferContents buf@(Buf mv ref) = do
   -- A Nothing on this chan means "end-of-stream":
   chan <- newChan 
-  let loop = do 
+  let gbcloop = do 
 	 grabbed <- atomicModifyIORef ref (\ ls -> ([], reverse ls))
 	 mapM_ (writeChan chan . Just) grabbed
 	 mayb <- tryTakeMVar mv -- Check if we're done.
 	 case mayb of 
-	   Nothing -> threadDelay 10000 >> loop
+	   Nothing -> threadDelay 10000 >> gbcloop
 	   Just () -> writeChan chan Nothing
-  forkIO loop
+  forkIO gbcloop
   ls <- getChanContents chan
   return (map fromJust $ 
 	  takeWhile isJust ls)
