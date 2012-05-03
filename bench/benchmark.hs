@@ -448,9 +448,6 @@ invokeCabal = do
           log$ "\nRunning cabal... "
           log$ "============================================================"
           (_,code) <- runCmdWithEnv [] cmd
-          -- tmpfile <- mktmpfile
-          -- code <- lift$ system$ "bash -c "++show (cmd++" &> "++tmpfile)
-          -- flushtmp tmpfile 
           check False code "ERROR, benchmark.hs: cabal-based compilation failed."          
   
   return $ all id bs
@@ -499,7 +496,7 @@ compileOne br@(BenchRun { threads=numthreads
                            , if pinObjExists then "../dist/build/cbits/pin.o" else ""
                            , "-i../", "-i"++containingdir
                            , "-outputdir "++outdir
-                           , flags, hsfile, "-o "++exefile]		
+                           , flags, hsfile, "-o "++exefile]
 	 log$ "  "++cmd ++"\n"
          tmpfile <- mktmpfile
 	 -- Having trouble getting the &> redirection working.  Need to specify bash specifically:
@@ -567,7 +564,6 @@ runOne br@(BenchRun { threads=numthreads
   ----------------------------------------
   -- Now Execute:
   ----------------------------------------
---  rtstmp <- mktmpfile
   -- If we failed compilation we don't bother running either:
   let ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) rts
 
@@ -623,55 +619,30 @@ flushtmp tmpfile =
 indent = map ("    "++)
 ------------------------------------------------------------
 
-
 -- Helper for launching processes with logging and error checking
 -----------------------------------------------------------------
--- runCmdWithEnv env cmd = do 
---   log$ "Executing " ++ cmd
---   tmpfile <- mktmpfile
---   (str::String,finish) <- lift$ HSH.run $ HSH.setenv env $ (cmd ++" 2> "++ tmpfile) -- HSH can't capture stderr presently
---   (_  ::String,code)   <- lift$ finish                       -- Wait for child command to complete
---   flushtmp tmpfile  
---   Config{keepgoing} <- ask
---   check keepgoing code ("ERROR, benchmark.hs: command \""++cmd++"\" failed with code "++ show code)
---   return (str,code)
-
--- [2012.05.03] HSH has been causing no end of problems in this department.
--- Here we instead use the underlying createProcess library function:
+-- [2012.05.03] HSH has been causing no end of problems in the
+-- subprocess-management department.  Here we instead use the
+-- underlying createProcess library function:
 runCmdWithEnv env cmd = do 
   -- This current design has the unfortunate disadvantage that it
   -- produces no observable output until the subprocess is FINISHED.
-  log$ "Executing " ++ cmd
-  -- Config{outHandles,logFile,resultsFile} <- ask
-  -- case outHandles of 
-  --   Nothing -> return ()
-  --   Just _ -> error "runCmdWithEnv doesn't yet work with 'outHandles' redirection"
---  tmpout <- mktmpfile  
---  tmperr <- mktmpfile      
---  hndlout <- lift$ openFile tmpout WriteMode
---  hndlerr <- lift$ openFile tmperr WriteMode
-
+  log$ "Executing: " ++ cmd
   (Nothing, Just outH, Just errH, ph) <- lift$ createProcess 
      CreateProcess {
        cmdspec = ShellCommand cmd,
        env = Just env,
        std_in  = Inherit,
---       std_out = UseHandle hndlout,
        std_out = CreatePipe,
+       std_err = CreatePipe,
        -- [2012.05.03] Having problems with redirecting stderr for ntimes:
-       -- Inheriting WORKS: std_err = Inherit,
+       -- Inheriting WORKS, CreatePipe WORKS, UseHandle DOESN'T:
        -- Redirecting to a file fails with several of these errors:
        --    ./ntimes: line 69: /dev/stderr: Not a directory
-       -- How about CreatePipe?
-       std_err = CreatePipe,
        cwd = Nothing,
        close_fds = False,
        create_group = False
      }
-  -- lift$ hClose hndlout
-  -- lift$ hClose hndlerr 
-  -- str <- flushtmp tmpout
-  -- flushtmp tmperr    
   lift$ waitForProcess ph  
   Just code <- lift$ getProcessExitCode ph
   outStr    <- lift$ hGetContents outH
