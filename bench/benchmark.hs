@@ -163,7 +163,6 @@ data Benchmark = Benchmark
 --   * Return the original output of the program, or any additional
 --     output, on stderr.
 ntimes = "./ntimes_minmedmax"
--- ntimes = "./ntimes_binsearch.sh"
 
 gc_stats_flag = " -s " 
 -- gc_stats_flag = " --machine-readable -t "
@@ -436,6 +435,10 @@ backupResults Config{resultsFile, logFile} = do
     renameFile logFile     (logFile     ++"."++date++".bak")
 
 
+path :: [FilePath] -> FilePath
+path [] = ""
+path ls = foldl1 (</>) ls
+
 --------------------------------------------------------------------------------
 -- Compiling Benchmarks
 --------------------------------------------------------------------------------
@@ -488,7 +491,7 @@ compileOne br@(BenchRun { threads=numthreads
          containingdir = diroffset
          hsfile = testPath++".hs"
 	 suffix = uniqueSuffix br
-         outdir = "./build" </> testRoot++suffix++"_"++show uid
+         outdir = "build" </> testRoot++suffix++"_"++show uid
 	 exefile = exedir </> testRoot ++ suffix ++ ".exe"
          args = if shortrun then shortArgs args_ else args_
 
@@ -515,9 +518,10 @@ compileOne br@(BenchRun { threads=numthreads
      if e then do 
 	 log "Compiling with a single GHC command: "
          -- HACK for pinning to threads: (TODO - should probably make this for NUMA)
-         pinObjExists <- lift $ doesFileExist "../dist/build/cbits/pin.o"
+         let pinobj = path ["..","dist","build","cbits","pin.o"]
+         pinObjExists <- lift $ doesFileExist pinobj
 	 let cmd = unwords [ ghc, "--make"
-                           , if pinObjExists then "../dist/build/cbits/pin.o" else ""
+                           , if pinObjExists then pinobj else ""
                            , "-i"++containingdir
                            , "-outputdir "++outdir
                            , flags, hsfile, "-o "++exefile]
