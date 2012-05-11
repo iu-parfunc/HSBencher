@@ -1,4 +1,3 @@
-#!/usr/bin/env runhaskell
 {-# LANGUAGE BangPatterns, NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
 --------------------------------------------------------------------------------
 -- NOTE: This is best when compiled with "ghc -threaded"
