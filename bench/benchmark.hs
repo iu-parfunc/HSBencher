@@ -197,21 +197,8 @@ getConfig = do
     "" -> return ()
     s  -> error$ "GENERIC env variable not handled yet.  Set to: " ++ show s
 
-  ----------------------------------------
-  -- Determine the number of cores.
-  d <- doesDirectoryExist "/sys/devices/system/cpu/"
-  uname <- HSH.runSL "uname"
-  maxthreads :: String 
-       <- if d 
-	  then HSH.runSL$ "ls  /sys/devices/system/cpu/" -|- HSH.egrep "cpu[0123456789]*$" -|- HSH.wcL
-	  else if uname == "Darwin"
-	  then HSH.runSL$ "sysctl -n hw.ncpu"
-	  else error$ "Don't know how to determine the number of threads on platform: "++ show uname
-                -- TODO: Windows!
-  -- Note -- how do we find the # of threads ignoring hyperthreading?
-  ----------------------------------------
-
-  benchstr <- readFile bench
+  maxthreads <- getNumberOfCores
+  benchstr   <- readFile bench
   let ver = case filter (isInfixOf "ersion") (lines benchstr) of 
 	      (h:t) -> read $ head $ filter isNumber (words h)
 	      []    -> 0
@@ -225,8 +212,8 @@ getConfig = do
 	   , trials         = read$ get "TRIALS"    "1"
 	   , benchlist      = parseBenchList benchstr
 	   , benchversion   = (bench, ver)
-	   , maxthreads     = read maxthreads
-	   , threadsettings = parseIntList$ get "THREADS" maxthreads	   
+	   , maxthreads     = maxthreads
+	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
 	   , keepgoing      = strBool (get "KEEPGOING" "0")
 	   , resultsFile    = "results_" ++ hostname ++ ".dat"
 	   , outHandles     = Nothing
@@ -237,6 +224,21 @@ getConfig = do
 
   -- Here are the DEFAULT VALUES:
   return conf
+
+-- TODO: Windows!
+getNumberOfCores :: IO Int
+getNumberOfCores = do 
+  -- Determine the number of cores.
+  d <- doesDirectoryExist "/sys/devices/system/cpu/"
+  uname <- HSH.runSL "uname"
+  str :: String 
+       <- if d 
+	  then HSH.runSL$ "ls  /sys/devices/system/cpu/" -|- HSH.egrep "cpu[0123456789]*$" -|- HSH.wcL
+	  else if uname == "Darwin"
+	  then HSH.runSL$ "sysctl -n hw.ncpu"
+	  else error$ "Don't know how to determine the number of threads on platform: "++ show uname
+  -- Note -- how do we find the # of threads ignoring hyperthreading?
+  return (read str)
 
 
 -- | Remove RTS options that are specific to -threaded mode.
