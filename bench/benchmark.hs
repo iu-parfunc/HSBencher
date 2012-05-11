@@ -869,25 +869,27 @@ main = do
         --------------------------------------------------------------------------------
         -- Parallel version:
             lift$ putStrLn$ "[!!!] Compiling in Parallel..."
-
-            when hasCabalFile (error "Currently, cabalized build does not support parallelism!")
                
-            -- Version 1: This forks ALL compiles in parallel [REMOVED, CHECK VCS]
-            -- Version 2: This uses P worker threads.
-            (outputs,killem) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
-		 -- Inside each action, we force the complete evaluation:
-		 out@(BL _ lss) <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
-		 return (lss, forceBuffered out)
-		 -- ALTERNATIVE: Simply output directly to stdout/stderr.  MESSY:
-  --               compileOne bench (confnum,length pruned)
-  --  	         return ((), return ())
+            when recomp $ do 
+              
+              when hasCabalFile (error "Currently, cabalized build does not support parallelism!")
+                          
+              -- Version 1: This forks ALL compiles in parallel [REMOVED, CHECK VCS]
+              -- Version 2: This uses P worker threads.
+              (outputs,killem) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
+                   -- Inside each action, we force the complete evaluation:
+                   out@(BL _ lss) <- forkWithBufferedLogs$ compileOne bench (confnum,length pruned)
+                   return (lss, forceBuffered out)
+                   -- ALTERNATIVE: Simply output directly to stdout/stderr.  MESSY:
+    --               compileOne bench (confnum,length pruned)
+    --  	         return ((), return ())
 
-            flushBuffered outputs 
-	    -- We MUST ensure that all other threads are shut down
-	    -- so that the benchmark.run process doesn't pollute
-	    -- the benchmark run itself.
-	    lift$ putStrLn$ "[!!!] BARRIER - waiting for jobs to complete / kill threads before starting real work..."
-	    liftIO$ killem 
+              flushBuffered outputs 
+              -- We MUST ensure that all other threads are shut down
+              -- so that the benchmark.run process doesn't pollute
+              -- the benchmark run itself.
+              lift$ putStrLn$ "[!!!] BARRIER - waiting for jobs to complete / kill threads before starting real work..."
+              liftIO$ killem 
 
 	    if shortrun then do
                lift$ putStrLn$ "[!!!] Running in Parallel..."
