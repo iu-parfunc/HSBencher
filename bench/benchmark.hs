@@ -778,7 +778,9 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
 ----------------------------------------------------------------------------------------------------
 
 -- | Command line flags.
-data Flag = ParBench | NoRecomp | NoCabal | NoClean
+data Flag = ParBench 
+          | BinDir FilePath
+          | NoRecomp | NoCabal | NoClean
   deriving Eq
 
 -- | Command line options.
@@ -792,6 +794,9 @@ cli_options =
        "Do not clean pre-existing executables before beginning."
      , Option [] ["no-cabal"] (NoArg NoCabal)
        "Build directly through GHC even if .cabal file is present."
+     
+     -- , Option [] ["bindir"] (ReqArg BinDir)
+     --   "Place or expect built binaries to be in BINDIR"
      ]
 
 -- | Global variable holding the main thread id.
@@ -831,7 +836,7 @@ main = do
         let recomp  = not $ NoRecomp `elem` options
             doclean = (not $ NoCabal `elem` options) && recomp
         when doclean $ 
-          let cleanit cmd = do
+          let cleanit cmd = when (not $ NoClean `elem` options) $ do
                 log$ "Before testing, first '"++ cmd ++"' for hygiene."
                 code <- lift$ system$ cmd++" &> clean_output.tmp"
                 check False code "ERROR: cleaning failed."
