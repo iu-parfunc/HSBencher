@@ -26,39 +26,6 @@ directory.  It produces two files as output:
 ---------------------------------------------------------------------------   
 
 
-
----------------------------------------------------------------------------
-                                 USAGE
----------------------------------------------------------------------------
-
-  Usage: [set environment vars] ./benchmark.hs [--no-recomp, --par]
-
-   Call it with the following environment variables...
-
-     SHORTRUN=1 to get a shorter run for testing rather than benchmarking.
-
-     THREADS="1 2 4" to run with # threads = 1, 2, or 4.
-
-     KEEPGOING=1 to keep going after the first error.
-
-     TRIALS=N to control the number of times each benchmark is run.
-
-     BENCHLIST=foo.txt to select the benchmarks and their arguments
-		       (uses benchlist.txt by default)
-
-     SCHEDS="Trace Direct Sparks" -- Restricts to a subset of schedulers.
-
-     GENERIC=1 to go through the generic (type class) monad par
-               interface instead of using each scheduler directly
- 
-     ENVS='[[("KEY1", "VALUE1")], [("KEY1", "VALUE2")]]' to set different 
-     configurations of environment variables to be set *at runtime*. Useful 
-     for NUMA_TOPOLOGY, for example.
-
-   Additionally, this script will propagate any flags placed in the
-   environment variables $GHC_FLAGS and $GHC_RTS.  It will also use
-   $GHC, if available, to select the $GHC executable.
-
    
 ---------------------------------------------------------------------------
                                 << TODO >>
@@ -108,6 +75,43 @@ import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 ----------------------------------------------------------------------------------------------------
 
+
+-- | USAGE
+usageStr = unlines $
+ [
+--   "USAGE: [set environment vars] ./benchmark.hs [--no-recomp, --par]",
+--   "\nUSAGE: [set environment vars] ./benchmark.hs [CMDLN OPTIONS]",
+   "\n ENV VARS:",
+   "   These environment variables control the behavior of the benchmark script:",
+   "",
+   "     SHORTRUN=1 to get a shorter run for testing rather than benchmarking.",
+   "",
+   "     THREADS=\"1 2 4\" to run with # threads = 1, 2, or 4.",
+   "",
+   "     KEEPGOING=1 to keep going after the first error.",
+   "",
+   "     TRIALS=N to control the number of times each benchmark is run.",
+   "",
+   "     BENCHLIST=foo.txt to select the benchmarks and their arguments",
+   "               (uses benchlist.txt by default)",
+   "",
+   "     SCHEDS=\"Trace Direct Sparks\" -- Restricts to a subset of schedulers.",
+   "",
+   "     GENERIC=1 to go through the generic (type class) monad par",
+   "               interface instead of using each scheduler directly",
+   " ",
+   "     ENVS='[[(\"KEY1\", \"VALUE1\")], [(\"KEY1\", \"VALUE2\")]]' to set",
+   "     different configurations of environment variables to be set *at",
+   "     runtime*. Useful for NUMA_TOPOLOGY, for example.  Note that this",
+   "     can change multiple env variables in multiple distinct",
+   "     configurations, with each configuration tested separately.",
+   "",
+   "   Additionally, this script will propagate any flags placed in the",
+   "   environment variables $GHC_FLAGS and $GHC_RTS.  It will also use",
+   "   $GHC, if available, to select the $GHC executable."
+ ]
+
+----------------------------------------------------------------------------------------------------
 
 -- The global configuration for benchmarking:
 data Config = Config 
@@ -253,7 +257,7 @@ data Sched
    | None
  deriving (Eq, Show, Read, Ord, Enum, Bounded)
 
--- [2012.05.03] RRN: ContFree is not exposed, so removing it from the
+-- [2012.05.03] RRN: ContFree is not exposed, thus removing it from the
 -- default set, though you can still ask for it explicitly:
 defaultSchedSet = S.difference (S.fromList [minBound ..])
                                (S.fromList [ContFree, NUMA])
@@ -811,8 +815,10 @@ main = do
   let (options,args,errs) = getOpt Permute cli_options cli_args
   unless (null errs && null args) $ do
     putStrLn$ "Errors parsing command line options:" 
-    mapM_ (putStr . ("   "++)) errs
-    putStr$ usageInfo "\nUsage: [options]" cli_options
+    mapM_ (putStr . ("   "++)) errs       
+    putStrLn "\nUSAGE: [set ENV VARS] ./benchmark.hs [CMDLN OPTIONS]"    
+    putStr$ usageInfo "\n CMDLN OPTIONS:" cli_options
+    putStrLn$ usageStr    
     exitFailure
 
   -- HACK: with all the inter-machine syncing and different version
