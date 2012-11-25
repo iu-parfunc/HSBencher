@@ -5,9 +5,6 @@
 -- However^2, currently [2012.05.03] when running without threads I get errors like this:
 --   benchmark.run: bench_hive.log: openFile: resource busy (file is locked)
 
--- NOTE: Under 7.2 I'm running into this HSH problem:
--- 
--- benchmark.hs: HSH/Command.hs:(289,14)-(295,45): Missing field in record construction System.Process.Internals.create_group
 --------------------------------------------------------------------------------
 
 
@@ -42,10 +39,10 @@ directory.  It produces two files as output:
 
 -}
 
-module Main (main) where 
+module Main where 
 
-import qualified HSH 
-import HSH ((-|-))
+-- import qualified HSH 
+-- import HSH ((-|-))
 import Prelude hiding (log)
 import Control.Applicative    
 import Control.Concurrent
@@ -176,9 +173,11 @@ exedir = "./bin"
 -- Configuration
 --------------------------------------------------------------------------------
 
--- Retrieve the configuration from the environment.
+-- Retrieve the (default) configuration from the environment, it may
+-- subsequently be tinkered with.  This procedure should be idempotent.
+getConfig :: IO Config
 getConfig = do
-  hostname <- HSH.runSL$ "hostname -s"
+  hostname <- runSL$ "hostname -s"
   env      <- getEnvironment
 
   let get v x = case lookup v env of 
@@ -221,23 +220,20 @@ getConfig = do
 	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
 	   }
-
   runReaderT (log$ "Read list of benchmarks/parameters from: "++bench) conf
-
-  -- Here are the DEFAULT VALUES:
   return conf
 
--- TODO: Windows!
+-- TODO: Support Windows!
 getNumberOfCores :: IO Int
 getNumberOfCores = do 
   -- Determine the number of cores.
   d <- doesDirectoryExist "/sys/devices/system/cpu/"
-  uname <- HSH.runSL "uname"
+  uname <- runSL "uname"
   str :: String 
        <- if d 
-	  then HSH.runSL$ "ls  /sys/devices/system/cpu/" -|- HSH.egrep "cpu[0123456789]*$" -|- HSH.wcL
+	  then runSL$ "ls  /sys/devices/system/cpu/ | egrep \"cpu[0123456789]*$\" | wc -l" 
 	  else if uname == "Darwin"
-	  then HSH.runSL$ "sysctl -n hw.ncpu"
+	  then runSL$ "sysctl -n hw.ncpu"
 	  else error$ "Don't know how to determine the number of threads on platform: "++ show uname
   -- Note -- how do we find the # of threads ignoring hyperthreading?
   return (read str)
@@ -419,7 +415,7 @@ logOn modes s = do
     -- If outHandles are not set, direct logging info directly to files:
     Nothing -> lift$ 
                  forM_ (map tofile modes) 
-		       (\ f -> HSH.appendTo f capped)
+		       (\ f -> appendFile f capped)
     Just (logBuffer,resultBuffer,stdoutBuffer) -> 
      forM_ modes $ \ mode -> 
        case mode of 
@@ -430,7 +426,7 @@ logOn modes s = do
 -- | Create a backup copy of existing results_HOST.dat files.
 backupResults Config{resultsFile, logFile} = do 
   e    <- doesFileExist resultsFile
-  date <- HSH.runSL "date +%Y%m%d_%s"
+  date <- runSL "date +%Y%m%d_%s"
   when e $ do
     renameFile resultsFile (resultsFile ++"."++date++".bak")
   e2   <- doesFileExist logFile
@@ -537,7 +533,7 @@ compileOne br@(BenchRun { threads=numthreads
 
 	 check False code "ERROR, benchmark.hs: compilation failed."
 
-     else if (d && mf && diroffset /= ".") then do 
+     else if (d && mf && diroffset /= ".") then do
  	log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
         error "No makefile-based builds supported..."
 -- 	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
@@ -583,10 +579,10 @@ runOne br@(BenchRun { threads=numthreads
 
   log$ "Next run 'who', reporting users other than the current user.  This may help with detectivework."
 --  whos <- lift$ run "who | awk '{ print $1 }' | grep -v $USER"
-  whos <- lift$ HSH.run$ "who" -|- map (head . words)
+  whos <- lift$ runLines$ "who"
+  let whos' = map (head . words) whos
   user <- lift$ getEnv "USER"
-
-  log$ "Who_Output: "++ unwords (filter (/= user) whos)
+  log$ "Who_Output: "++ unwords (filter (/= user) whos')
 
   -- numthreads == 0 indicates a serial run:
   let 
@@ -656,6 +652,8 @@ indent = map ("    "++)
 -- [2012.05.03] HSH has been causing no end of problems in the
 -- subprocess-management department.  Here we instead use the
 -- underlying createProcess library function:
+runCmdWithEnv :: Bool -> [(String, String)] -> [Char]
+              -> ReaderT Config IO (String, ExitCode)
 runCmdWithEnv echo env cmd = do 
   -- This current design has the unfortunate disadvantage that it
   -- produces no observable output until the subprocess is FINISHED.
@@ -691,9 +689,8 @@ runCmdWithEnv echo env cmd = do
 -----------------------------------------------------------------
 runIgnoreErr :: String -> IO String
 runIgnoreErr cm = 
-  do (str,force) <- HSH.run cm
-     (err::String, code::ExitCode) <- force
-     return str
+  do lns <- runLines cm
+     return (unlines lns)
 -----------------------------------------------------------------
 
 -- | Create a thread that echos the contents of a Handle as it becomes
@@ -734,47 +731,48 @@ resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, l
   -- There has got to be a simpler way!
   -- branch   <- runIgnoreErr "git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/'"
   -- branch <- "git symbolic-ref HEAD"
-  branch   <- HSH.run "git name-rev --name-only HEAD"
-  revision <- HSH.run "git rev-parse HEAD"
+  branch   <- runSL  "git name-rev --name-only HEAD"
+  revision <- runSL  "git rev-parse HEAD"
   -- Note that this will NOT be newline-terminated:
-  hashes   <- HSH.run "git log --pretty=format:'%H'"
-  mapM_ HSH.runIO $ concat $ 
-   [
-     e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
-   , e$ "#    "        
-   , e$ "# `date`"
-   , e$ "# `uname -a`" 
-   , e$ "# Ran by: `whoami` " 
-   , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
-   , e$ "# `"++ghc++" -V`" 
-   , e$ "# "                                                                
-   , e$ "# Running each test for "++show trials++" trial(s)."
-   , e$ "#  ... with compiler options: " ++ ghc_flags
-   , e$ "#  ... with runtime options: " ++ ghc_RTS
-   , e$ "# Benchmarks_File: " ++ benchfile
-   , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
-   , e$ "# Benchmarks_Version: " ++ show ver
-   , e$ "# Git_Branch: " ++ trim branch
-   , e$ "# Git_Hash: "   ++ trim revision
-   , e$ "# Git_Depth: "  ++ show (length (lines hashes))
-   , e$ "# Using the following settings from environment variables:" 
-   , e$ "#  ENV BENCHLIST=$BENCHLIST"
-   , e$ "#  ENV THREADS=   $THREADS"
-   , e$ "#  ENV TRIALS=    $TRIALS"
-   , e$ "#  ENV SHORTRUN=  $SHORTRUN"
-   , e$ "#  ENV SCHEDS=    $SCHEDS"
-   , e$ "#  ENV KEEPGOING= $KEEPGOING"
-   , e$ "#  ENV GHC=       $GHC"
-   , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
-   , e$ "#  ENV GHC_RTS=   $GHC_RTS"
-   , e$ "#  ENV ENVS=      $ENVS"
-   ]
+  hashes   <- runLines "git log --pretty=format:'%H'"
+  let ls :: [[IO ExitCode]]
+      ls = [ e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
+           , e$ "#    "        
+           , e$ "# `date`"
+           , e$ "# `uname -a`" 
+           , e$ "# Ran by: `whoami` " 
+           , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
+           , e$ "# `"++ghc++" -V`" 
+           , e$ "# "                                                                
+           , e$ "# Running each test for "++show trials++" trial(s)."
+           , e$ "#  ... with compiler options: " ++ ghc_flags
+           , e$ "#  ... with runtime options: " ++ ghc_RTS
+           , e$ "# Benchmarks_File: " ++ benchfile
+           , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
+           , e$ "# Benchmarks_Version: " ++ show ver
+           , e$ "# Git_Branch: " ++ trim branch
+           , e$ "# Git_Hash: "   ++ trim revision
+           , e$ "# Git_Depth: "  ++ show (length hashes)
+           , e$ "# Using the following settings from environment variables:" 
+           , e$ "#  ENV BENCHLIST=$BENCHLIST"
+           , e$ "#  ENV THREADS=   $THREADS"
+           , e$ "#  ENV TRIALS=    $TRIALS"
+           , e$ "#  ENV SHORTRUN=  $SHORTRUN"
+           , e$ "#  ENV SCHEDS=    $SCHEDS"
+           , e$ "#  ENV KEEPGOING= $KEEPGOING"
+           , e$ "#  ENV GHC=       $GHC"
+           , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
+           , e$ "#  ENV GHC_RTS=   $GHC_RTS"
+           , e$ "#  ENV ENVS=      $ENVS"
+           ]
+  sequence $ concat ls
+  return ()
  where 
-   -- This regressed [2012.03.07] it is no longer writing to the logFile:
---    e s = ("echo \""++s++"\"") -|- HSH.tee ["/dev/stdout", logFile] -|- HSH.appendTo resultsFile
-   e s = [("echo \""++s++"\"") -|- HSH.appendTo "/dev/stdout", 
-	  ("echo \""++s++"\"") -|- HSH.appendTo logFile, 
-	  ("echo \""++s++"\"") -|- HSH.appendTo resultsFile]
+   -- This is a manual "tee" operation:
+   e :: String -> [IO ExitCode]
+   e s = [system ("echo \""++s++"\" >> /dev/stdout") , 
+	  system ("echo \""++s++"\" >> "++logFile),
+	  system ("echo \""++s++"\" >> "++resultsFile)]
 
 
 ----------------------------------------------------------------------------------------------------
@@ -828,8 +826,7 @@ main = do
   conf@Config{..} <- getConfig    
 
   hasMakefile <- doesFileExist "Makefile"
-  (cabalFile,finish) <- HSH.run "ls *.cabal"
-  (_::String,_::ExitCode)   <- finish  
+  cabalFile   <- runSL "ls *.cabal"
   let hasCabalFile = (cabalFile /= "") &&
                      not (NoCabal `elem` options)
 
@@ -1154,5 +1151,21 @@ flushBuffered outputs = do
         lift$ appendFile resultsFile (concat resultOuts)
         -- * All forked tasks will be finished by this point.
         return ()
+
+-- | Runs a command through the OS shell and returns stdout split into
+-- lines.
+runLines :: String -> IO [String]
+runLines cmd = do
+  conf <- getConfig
+  (str,_code) <- runReaderT (runCmdWithEnv False [] cmd) conf
+  return$ lines str
+
+
+-- | Runs a command through the OS shell and returns the first line of
+-- output.
+runSL :: String -> IO String
+runSL = fmap (head) .  runLines 
+
+
 
 ----------------------------------------------------------------------------------------------------
