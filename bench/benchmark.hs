@@ -136,6 +136,7 @@ data Config = Config
    -- A set of environment variable configurations to test
  , envs           :: [[(String, String)]]
  }
+ deriving Show
 
 
 -- Represents a configuration of an individual run.
@@ -686,6 +687,7 @@ runCmdWithEnv echo env cmd = do
   check keepgoing code ("ERROR, benchmark.hs: command \""++cmd++"\" failed with code "++ show code)
   return (outStr, code)
 
+
 -----------------------------------------------------------------
 runIgnoreErr :: String -> IO String
 runIgnoreErr cm = 
@@ -1035,6 +1037,9 @@ parForMTwoPhaseAsync ls action =
 --   This it separates blocking behavior from data access.
 data Buffer a = Buf (MVar ()) (IORef [a])
 
+instance Show (Buffer a) where
+  show _buf = "<Buffer>"
+
 newBuffer :: IO (Buffer a)
 newBuffer = do
   mv  <- newEmptyMVar
@@ -1156,9 +1161,22 @@ flushBuffered outputs = do
 -- lines.
 runLines :: String -> IO [String]
 runLines cmd = do
-  conf <- getConfig
-  (str,_code) <- runReaderT (runCmdWithEnv False [] cmd) conf
-  return$ lines str
+  putStrLn$ "   * Executing: " ++ cmd 
+  (Nothing, Just outH, Nothing, ph) <- createProcess 
+     CreateProcess {
+       cmdspec = ShellCommand cmd,
+       env = Nothing,
+       std_in  = Inherit,
+       std_out = CreatePipe,
+       std_err = Inherit,
+       cwd = Nothing,
+       close_fds = False,
+       create_group = False
+     }
+  waitForProcess ph  
+  Just _code <- getProcessExitCode ph  
+  str <- hGetContents outH
+  return (lines str)
 
 
 -- | Runs a command through the OS shell and returns the first line of
