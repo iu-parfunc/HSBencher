@@ -1152,7 +1152,7 @@ flushBuffered outputs = do
 -- lines.
 runLines :: String -> IO [String]
 runLines cmd = do
-  putStrLn$ "   * Executing: " ++ cmd 
+  putStr$ "   * Executing: " ++ cmd 
   (Nothing, Just outH, Nothing, ph) <- createProcess 
      CreateProcess {
        cmdspec = ShellCommand cmd,
@@ -1167,6 +1167,8 @@ runLines cmd = do
   waitForProcess ph  
   Just _code <- getProcessExitCode ph  
   str <- hGetContents outH
+  let lns = lines str
+  putStrLn$ " -->   "++show (length lns)++" line(s)"
   return (lines str)
 
 
