@@ -11,6 +11,7 @@
 {- |
    
 benchmark.hs
+------------
 
 This program runs a set of benchmarks contained in the current
 directory.  It produces two files as output:
@@ -18,9 +19,12 @@ directory.  It produces two files as output:
     results_HOSTNAME.dat
     bench_HOSTNAME.log
 
----------------------------------------------------------------------------   
+
             ASSUMPTIONS -- about directory and file organization
----------------------------------------------------------------------------   
+            ----------------------------------------------------
+
+This benchmark harness can run either cabalized benchmarks, or
+straight .hs files buildable by "ghc --make".
 
 
    
@@ -41,8 +45,6 @@ directory.  It produces two files as output:
 
 module Main where 
 
--- import qualified HSH 
--- import HSH ((-|-))
 import Prelude hiding (log)
 import Control.Applicative    
 import Control.Concurrent
@@ -202,7 +204,7 @@ getConfig = do
   maxthreads <- getNumberOfCores
   benchstr   <- readFile bench
   let ver = case filter (isInfixOf "ersion") (lines benchstr) of 
-	      (h:t) -> read $ head $ filter isNumber (words h)
+	      (h:t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
 	      []    -> 0
       conf = Config 
            { hostname, logFile, scheds, shortrun    
@@ -267,6 +269,10 @@ expandMode "none"    = [None]
 expandMode "futures" = [Sparks] ++ ivarScheds
 expandMode "ivars"   = ivarScheds 
 expandMode "chans"   = [] -- Not working yet!
+
+-- [future] Schedulers in which nested execution WORKS!
+expandMode "nested"      = [Sparks,Direct] -- [2012.11.26]
+expandMode "nested+ivar" = [Direct]        -- [2012.11.26]
 
 -- Also allowing the specification of a specific scheduler:
 expandMode "Trace"    = [Trace]
@@ -534,24 +540,9 @@ compileOne br@(BenchRun { threads=numthreads
 
 	 check False code "ERROR, benchmark.hs: compilation failed."
 
-     else if (d && mf && diroffset /= ".") then do
- 	log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
-        error "No makefile-based builds supported..."
--- 	log " ** Benchmark appears in a subdirectory with Makefile.  Using it."
--- 	log " ** WARNING: Can't be sure to control compiler options for this benchmark!"
--- 	log " **          (Hopefully it will obey the GHC_FLAGS env var.)"
--- 	log$ " **          (Setting GHC_FLAGS="++ flags++")"
-
--- 	-- First we make clean because we can't trust the makefile to rebuild when flags change:
--- 	code1 <- lift$ run$  "(cd "++containingdir++" && make clean)" 
--- 	check code1 "ERROR, benchmark.hs: Benchmark's 'make clean' failed"
-
--- 	-- !!! TODO: Need to redirect output to log here:
-
--- 	code2 <- lift$ run$ setenv [("GHC_FLAGS",flags),("UNIQUE_SUFFIX",uniqueSuffix br)]
--- 		       ("(cd "++containingdir++" && make)")
--- 	check code2 "ERROR, benchmark.hs: Compilation via benchmark Makefile failed:"
-
+     -- else if (d && mf && diroffset /= ".") then do
+     --    log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
+     --    error "No makefile-based builds supported..."
      else do 
 	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
 	lift$ exitFailure
@@ -581,7 +572,7 @@ runOne br@(BenchRun { threads=numthreads
   log$ "Next run 'who', reporting users other than the current user.  This may help with detectivework."
 --  whos <- lift$ run "who | awk '{ print $1 }' | grep -v $USER"
   whos <- lift$ runLines$ "who"
-  let whos' = map (head . words) whos
+  let whos' = map ((\ (h:_)->h) . words) whos
   user <- lift$ getEnv "USER"
   log$ "Who_Output: "++ unwords (filter (/= user) whos')
 
@@ -828,8 +819,8 @@ main = do
   conf@Config{..} <- getConfig    
 
   hasMakefile <- doesFileExist "Makefile"
-  cabalFile   <- runSL "ls *.cabal"
-  let hasCabalFile = (cabalFile /= "") &&
+  cabalFile   <- runLines "ls *.cabal"
+  let hasCabalFile = (cabalFile /= []) &&
                      not (NoCabal `elem` options)
 
   runReaderT 
@@ -883,7 +874,7 @@ main = do
         if ParBench `elem` options then do 
         --------------------------------------------------------------------------------
         -- Parallel version:
-            lift$ putStrLn$ "[!!!] Compiling in Parallel..."
+            lift$ putStrLn$ "[!!!] Compiling in Parallel, numCapabilities="++show numCapabilities++" ... "
                
             when recomp $ do 
               
@@ -924,7 +915,7 @@ main = do
         -- Serial version:
           when recomp 
             (if hasCabalFile then do
-                log$ "Found cabal file in top-level benchmark dir.  Using it to build all benchmarks: "++cabalFile
+                log$ "Found cabal file in top-level benchmark dir.  Using it to build all benchmarks: "++(head cabalFile)
                 void invokeCabal
              else do              
                 log$ "Not using Cabal.  Attempting to build the old fashioned way."             
@@ -1002,7 +993,7 @@ parForMTwoPhaseAsync ls action =
                            x <- atomicModifyIORef workIn 
 						  (\ls -> if null ls 
 							  then ([], Nothing) 
-							  else (tail ls, Just (head ls)))
+							  else (tail ls, Just ((\ (h:_)->h) ls)))
                            case x of 
 			     Nothing -> return () -- putMVar finit ()
 			     Just (input,mv) -> 
@@ -1182,7 +1173,11 @@ runLines cmd = do
 -- | Runs a command through the OS shell and returns the first line of
 -- output.
 runSL :: String -> IO String
-runSL = fmap (head) .  runLines 
+runSL cmd = do
+  lns <- runLines cmd
+  case lns of
+    h:_ -> return h
+    []  -> error$ "runSL: expected at least one line of output for command "++cmd
 
 
 
