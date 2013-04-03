@@ -259,7 +259,8 @@ data Sched
 -- [2012.05.03] RRN: ContFree is not exposed, thus removing it from the
 -- default set, though you can still ask for it explicitly:
 defaultSchedSet = S.difference (S.fromList [minBound ..])
-                               (S.fromList [ContFree, NUMA])
+                               (S.fromList [ContFree, NUMA, SMP])
+
 
 -- | Expand the mode string into a list of specific schedulers to run:
 expandMode :: String -> [Sched]
@@ -965,6 +966,7 @@ forkIOH who maybhndls action =
 		  )
            action
 
+type TwoPhaseAction a b = a -> ReaderT Config IO (b, IO ())
 
 -- | Parallel for loops.
 -- 
@@ -978,7 +980,6 @@ forkIOH who maybhndls action =
 -- The result is:
 --   (1) a lazy list with implicit blocking and IO.
 --   (2) a final barrier/kill action that 
-type TwoPhaseAction a b = a -> ReaderT Config IO (b, IO ())
 parForMTwoPhaseAsync :: [a] -> TwoPhaseAction a b -> ReaderT Config IO ([b], IO ())
 parForMTwoPhaseAsync ls action = 
   do state@Config{maxthreads,outHandles} <- ask
@@ -1025,7 +1026,7 @@ parForMTwoPhaseAsync ls action =
 
 -- | Chan's don't quite do the trick.  Here's something simpler.  It
 --   keeps a buffer of elemnts and an MVar to signal "end of stream".
---   This it separates blocking behavior from data access.
+--   Thus it separates blocking behavior from data access.
 data Buffer a = Buf (MVar ()) (IORef [a])
 
 instance Show (Buffer a) where
