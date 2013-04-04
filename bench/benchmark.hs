@@ -77,7 +77,8 @@ import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
 import qualified Data.ByteString.Char8 as B
 
-import UI.HydraPrint (hydraPrint, parForM)
+import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydraConf, hydraPrintStatic)
+import Scripting.Parallel.ThreadPool (parForM)
 
 import Text.Printf
 ----------------------------------------------------------------------------------------------------
@@ -550,10 +551,9 @@ compileOne br@(BenchRun { threads=numthreads
            errS   <- Strm.lines =<< Strm.handleToInputStream stderrH
            merged <- Strm.concurrentMerge [inS,errS]
   --       (out1,out2) <- Strm.tee merged
-
-           -- logOn works fine, but this connect is having problems...
---           Strm.connect merged stdOut -- Feed interleaved LINES to stdout.
+           -- Need to TEE to send to both stdout and log....
            -- Send out2 to logFile...
+           Strm.supply merged stdOut -- Feed interleaved LINES to stdout.
            waitForProcess pid
 
 	 check False code "ERROR, benchmark.hs: compilation failed."
@@ -882,8 +882,12 @@ main = do
             lift$ putStrLn$ "[!!!] Compiling in Parallel, numCapabilities="++show numCapabilities++" ... "
                
             when recomp $ liftIO$ do 
-              when hasCabalFile (error "Currently, cabalized build does not support parallelism!")                          
-              -- Version 2: This uses P worker threads.
+              when hasCabalFile (error "Currently, cabalized build does not support parallelism!")
+
+
+              -- This uses numCapabilities worker threads:
+            
+              -- This uses numCapabilities worker threads:
               (strms,barrier) <- parForM numCapabilities (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                  -- let outStrm' = outStrm
                  outStrm' <- Strm.unlines outStrm
@@ -894,9 +898,13 @@ main = do
                  runReaderT (compileOne bench (confnum,length pruned)) conf'
                  Strm.write (Just$ B.pack "[strm] FINISHED with that compileOne...") outStrm'
                  return ()
-#if 1
+
+                 
+#if 0
               srcs <- Strm.fromList (zip (map show [1..]) strms)
-              hydraPrint srcs
+              hydraPrint defaultHydraConf{deleteWhen=Never} srcs
+#elif 1
+              hydraPrintStatic defaultHydraConf (zip (map show [1..]) strms)
 #elif 0
               strms2 <- mapM Strm.lines strms
               interleaved <- Strm.concurrentMerge strms2
