@@ -445,6 +445,7 @@ logOn modes s = do
   liftIO$ mapM_ go modes
 
 -- | Create a backup copy of existing results_HOST.dat files.
+backupResults :: Config -> IO ()
 backupResults Config{resultsFile, logFile} = do 
   e    <- doesFileExist resultsFile
   date <- runSL "date +%Y%m%d_%s"
@@ -466,7 +467,7 @@ path ls = foldl1 (</>) ls
 -- | Invoke cabal for all of the schedulers in the current config
 invokeCabal :: ReaderT Config IO Bool
 invokeCabal = do
-  Config{ghc, ghc_pkg, ghc_flags, shortrun, scheds} <- ask  
+  Config{ghc, ghc_pkg, ghc_flags, scheds} <- ask  
   bs <- forM (Set.toList scheds) $ \sched -> do
           let schedflag = schedToCabalFlag sched
               cmd = unwords [ "cabal install"
@@ -549,7 +550,9 @@ compileOne br@(BenchRun { threads=numthreads
            errS   <- Strm.lines =<< Strm.handleToInputStream stderrH
            merged <- Strm.concurrentMerge [inS,errS]
   --       (out1,out2) <- Strm.tee merged
-           Strm.connect merged stdOut
+
+           -- logOn works fine, but this connect is having problems...
+--           Strm.connect merged stdOut -- Feed interleaved LINES to stdout.
            -- Send out2 to logFile...
            waitForProcess pid
 
@@ -883,15 +886,32 @@ main = do
               -- Version 2: This uses P worker threads.
               (strms,barrier) <- parForM numCapabilities (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                  let outStrm' = outStrm -- outStrm' <- Strm.unlines outStrm
-                 Strm.write (Just$ B.pack "CALLING compileOne...") outStrm'
-                 let conf' = conf { stdOut = outStrm' }
+                 Strm.write (Just$ B.pack "[strm] CALLING compileOne...") outStrm'
+--                 devnull <- Strm.handleToOutputStream =<< openFile "/dev/null" AppendMode
+--                 let conf' = conf { stdOut = devnull }
+                 let conf' = conf { stdOut = outStrm' } 
                  runReaderT (compileOne bench (confnum,length pruned)) conf'
-              
---              srcs <- Strm.fromList (zip (map show [1..]) strms)
---              hydraPrint srcs
+                 Strm.write (Just$ B.pack "[strm] FINISHED with that compileOne...") outStrm'
+--                 printf "[printf] FINISHED with that compileOne... \n"
+                 return ()
+
+              -- printf ("Got this many input streams: "++show (length strms)++"\n")
+#if 0
+              srcs <- Strm.fromList (zip (map show [1..]) strms)
+              hydraPrint srcs
+#elif 1
               interleaved <- Strm.concurrentMerge strms
-              Strm.connect interleaved stdOut 
-              _ <- barrier
+              Strm.connect interleaved stdOut
+--              Strm.toList interleaved
+#else                            
+              -- This version serializes the output one worker at a time:
+              merged <- Strm.concatInputStreams strms
+              -- Strm.connect (head strms) stdOut
+              Strm.connect merged stdOut
+#endif
+--              printf ("ALL input streams finished \n")
+              res <- barrier
+--              printf "Results ready, barrier passed : %s \n" (show res)
               return ()
               
 {-
