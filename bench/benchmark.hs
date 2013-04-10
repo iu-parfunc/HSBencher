@@ -929,21 +929,22 @@ main = do
 #endif
               res <- barrier
               return ()
-              
-{-
+
+            Config{shortrun} <- ask
 	    if shortrun then do
                lift$ putStrLn$ "[!!!] Running in Parallel..."
-	       (outputs,_) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
-		  out@(BL _ ls3) <- forkWithBufferedLogs$ runOne bench (confnum,total)
-		  return (ls3, forceBuffered out)
-	       flushBuffered outputs 
+               error "benchmark.hs !!!Restore this part of the code"
+	       -- (outputs,_) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
+	       --    out@(BL _ ls3) <- forkWithBufferedLogs$ runOne bench (confnum,total)
+	       --    return (ls3, forceBuffered out)
+	       -- flushBuffered outputs 
                return ()
 	     else do 
                -- Non-shortrun's NEVER run multiple benchmarks at once:
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 		    runOne bench (confnum,total)
                return ()
--}
+
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
