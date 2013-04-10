@@ -62,12 +62,12 @@ import Data.List (intercalate)
 import qualified Data.Set as Set
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(NoArg), usageInfo)
-import System.Environment (getArgs, getEnv, getEnvironment)
+import System.Environment (getArgs, getEnv, getEnvironment, getExecutablePath)
 import System.Directory
 import System.Posix.Env (setEnv)
 import System.Random (randomIO)
 import System.Exit
-import System.FilePath (splitFileName, (</>))
+import System.FilePath (splitFileName, (</>), takeDirectory)
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine, IOMode(..))
@@ -182,7 +182,7 @@ data Benchmark = Benchmark
 --   * Optionally return matching productivities after the min/med/max times on the same line.
 --   * Return the original output of the program, or any additional
 --     output, on stderr.
-ntimes = "./ntimes_minmedmax"
+ntimes = takeDirectory (unsafePerformIO getExecutablePath) </> "ntimes_minmedmax"
 
 gc_stats_flag = " -s " 
 -- gc_stats_flag = " --machine-readable -t "
@@ -698,7 +698,7 @@ echoThread :: Bool -> Handle -> ReaderT Config IO (MVar String)
 echoThread echoStdout hndl = do
   mv   <- lift$ newEmptyMVar
   conf <- ask
-  lift$ void$ forkIOH "echo thread" Nothing $ 
+  lift$ void$ forkIOH "echo thread"  $ 
     runReaderT (echoloop mv []) conf    
   return mv  
  where
@@ -787,7 +787,7 @@ data Flag = ParBench
 cli_options :: [OptDescr Flag]
 cli_options = 
      [ Option [] ["par"] (NoArg ParBench) 
-       "Build benchmarks in parallel."
+       "Build benchmarks in parallel (run in parallel too if SHORTRUN=1)."
      , Option [] ["no-recomp"] (NoArg NoRecomp)
        "Don't perform any compilation of benchmark executables.  Implies -no-clean."
      , Option [] ["no-clean"] (NoArg NoClean)
@@ -910,7 +910,7 @@ main = do
               interleaved <- Strm.concurrentMerge strms2
               Strm.connect interleaved stdOut
 --              Strm.toList interleaved
-#else                            
+#else
               -- This version serializes the output one worker at a time:
               merged <- Strm.concatInputStreams strms
               -- Strm.connect (head strms) stdOut
@@ -966,8 +966,8 @@ main = do
 
 
 -- | Fork a thread but ALSO set up an error handler.
-forkIOH :: String -> Maybe (Buffer String, t, t1) -> IO () -> IO ThreadId
-forkIOH who maybhndls action = 
+forkIOH :: String -> IO () -> IO ThreadId
+forkIOH who action = 
   forkIO $ handle (\ (e::SomeException) -> 
                    case fromException e of
                      Just ThreadKilled -> return ()
@@ -988,190 +988,6 @@ forkIOH who maybhndls action =
 		  )
            action
 
-type TwoPhaseAction a b = a -> ReaderT Config IO (b, IO ())
-
--- | Parallel for loops.
--- 
--- The idea is to keep perform a sliding window of work and to execute
--- on numCapabilities threads, avoiding oversubscription.
--- 
--- This version takes:
---   (1) a two-phase action that returns both a result, and a
---       completion-barrier action.
--- 
--- The result is:
---   (1) a lazy list with implicit blocking and IO.
---   (2) a final barrier/kill action that 
-parForMTwoPhaseAsync :: [a] -> TwoPhaseAction a b -> ReaderT Config IO ([b], IO ())
-parForMTwoPhaseAsync ls action = 
-  do state@Config{maxthreads} <- ask
-     lift$ do 
-       answers <- sequence$ replicate (length ls) newEmptyMVar
-       workIn  <- newIORef (zip ls answers)
-       tids <- forM [1..numCapabilities] $ \ id -> 
---       forM_ [1..maxthreads] $ \ id -> 
-           forkIOH "parFor worker" Nothing $ do 
-             -- Pop work off the queue:
-             let pfloop = do -- putStrLn$ "Worker "++show id++" looping ..."
-                           x <- atomicModifyIORef workIn 
-						  (\ls -> if null ls 
-							  then ([], Nothing) 
-							  else (tail ls, Just ((\ (h:_)->h) ls)))
-                           case x of 
-			     Nothing -> return () -- putMVar finit ()
-			     Just (input,mv) -> 
-                               do (result,barrier) <- runReaderT (action input) state
-				  putMVar mv result
-				  barrier 
-                                  pfloop
-             pfloop     
-
-       -- Read out the answers in order:
-       chan <- newChan
-       lastTid <- forkIOH "parFor reader thread" Nothing $ 
-			  forM_ answers $ \ mv -> do
-			    x <- readMVar mv
-			    writeChan chan x 
-       strm <- getChanContents chan
-       let lazyListIO = take (length ls) strm
-           -- This can either wait and then kill, or just kill.
-           -- Trying a waiting version:
-           killem = case length lazyListIO of 
-		      _ -> do mapM_ killThread tids
-			      killThread lastTid
-       return (lazyListIO, killem)
-
-
---------------------------------------------------------------------------------
--- * "Buffer"s, A Limited Chan Replacement
---------------------------------------------------------------------------------
-
--- | Chan's don't quite do the trick.  Here's something simpler.  It
---   keeps a buffer of elemnts and an MVar to signal "end of stream".
---   Thus it separates blocking behavior from data access.
-data Buffer a = Buf (MVar ()) (IORef [a])
-
-instance Show (Buffer a) where
-  show _buf = "<Buffer>"
-
-newBuffer :: IO (Buffer a)
-newBuffer = do
-  mv  <- newEmptyMVar
-  ref <- newIORef []
-  return (Buf mv ref)
-
-writeBuffer :: Buffer a -> a -> IO ()
-writeBuffer (Buf mv ref) x = do
-  b <- isEmptyMVar mv
-  if b
-     then atomicModifyIORef ref (\ ls -> (x:ls,()))
-   else error "writeBuffer: cannot write to closed Buffer"
-
--- | Signal completion. 
-closeBuffer :: Buffer a -> IO ()
-closeBuffer (Buf mv _) = putMVar mv ()
-
-peekBuffer :: Buffer a -> IO [a]
-peekBuffer (Buf _ ref) = liftM reverse $ readIORef ref 
-
--- | Returns a lazy list, just like getChanContents:
-getBufferContents :: Buffer a -> IO [a]
-getBufferContents buf@(Buf mv ref) = do
-  -- A Nothing on this chan means "end-of-stream":
-  chan <- newChan 
-  let gbcloop = do 
-	 grabbed <- atomicModifyIORef ref (\ ls -> ([], reverse ls))
-	 mapM_ (writeChan chan . Just) grabbed
-	 mayb <- tryTakeMVar mv -- Check if we're done.
-	 case mayb of 
-	   Nothing -> threadDelay 10000 >> gbcloop
-	   Just () -> writeChan chan Nothing
-  forkIO gbcloop
-  ls <- getChanContents chan
-  return (map fromJust $ 
-	  takeWhile isJust ls)
-
-----------------------------------------------------------------------------------------------------
--- Treatment of buffered logging using Buffer:
-----------------------------------------------------------------------------------------------------
-
-type TriString = (String, String, String)
-data BufferedLogs = BL ThreadId TriString
-
--- | Capture logging output in memory.  Don't write directly to log files.
-withBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO TriString
-withBufferedLogs action = do
-  (hnd,io) <- makeBufferedAction action
-  lift io -- Run it immediately.
-  return hnd
- where 
-  makeBufferedAction :: ReaderT Config IO a-> ReaderT Config IO (TriString, IO())
-  makeBufferedAction action = do
-      (chans,io) <- helper action
-      lss <- convertBufs chans
-      return$ (lss, io) 
-
--- | Forking, asynchronous version.
-forkWithBufferedLogs :: ReaderT Config IO a-> ReaderT Config IO BufferedLogs
-forkWithBufferedLogs action = do 
---  Config{outHandles} <- ask
-  (chans,io) <- helper action
-  tid <- lift$ forkIOH "log buffering" (Just chans) io -- Run it asynchronously.
-  lss <- convertBufs chans 
-  return (BL tid lss)
-
--- Helper function shared by the above.
--- 
--- Returns lazy output as well as a wrapped up action tha will perform the work item passed in.
--- This action should close the buffers when it is done.
-helper :: ReaderT Config IO a-> ReaderT Config IO
-            ((Buffer String, Buffer String, Buffer String),IO ())
-helper action = 
- do conf <- ask 
-    [buf1,buf2,buf3] <- lift$ sequence [newBuffer,newBuffer,newBuffer]
-    -- Run in a separate thread:
-    let io = do runReaderT action 
-			   -- (return ())
-			   conf{ -- outHandles = Just (buf1,buf2,buf3), 
-				logFile    = error "shouldn't use logFile presently", 
-				resultsFile= error "shouldn't use resultsFile presently"}
-		closeBuffer buf1 
-		closeBuffer buf2 
-		closeBuffer buf3 
-    return$ ((buf1,buf2,buf3), io) 
-
--- Shared by the routines above.  Convert between buffers and lists with implicit lazyIO.
-convertBufs (buf1,buf2,buf3) = do 
-  ls1 <- lift$ getBufferContents buf1
-  ls2 <- lift$ getBufferContents buf2
-  ls3 <- lift$ getBufferContents buf3
-  return$ (unlines ls1, unlines ls2, unlines ls3)
-
--- Make sure that we complete the lazy IO by reading all the way to the end:
-forceBuffered :: BufferedLogs -> IO ()
-forceBuffered (BL tid (logs,results,stdouts)) = do
-  evaluate (length logs)
-  evaluate (length results)
-  evaluate (length stdouts)
-  killThread tid 
-  return ()
-
-flushBuffered :: [TriString] -> ReaderT Config IO ()
-flushBuffered outputs = do
-        Config{logFile,resultsFile} <- ask
-
-        -- Here we want to print output as though the processes were
-        -- run in serial.  Interleaved output is very ugly.
-        let logOuts    = map fst3 outputs
-	    resultOuts = map snd3 outputs
-	    stdOuts    = map thd3 outputs
-
-        -- This is the join.  Send all output where it is meant to go:
-        lift$ mapM_ putStrLn stdOuts
-        lift$ appendFile logFile     (concat logOuts)
-        lift$ appendFile resultsFile (concat resultOuts)
-        -- * All forked tasks will be finished by this point.
-        return ()
 
 -- | Runs a command through the OS shell and returns stdout split into
 -- lines.
