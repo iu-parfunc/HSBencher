@@ -1,0 +1,5 @@
+# This is an example benchmark list.
+
+# Name, Scheduler, Command inputs
+example  none  . 
+example  none  *.hi *.hs
