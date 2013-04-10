@@ -69,8 +69,9 @@ import System.Random (randomIO)
 import System.Exit
 import System.FilePath (splitFileName, (</>), takeDirectory)
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
-                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
-import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine, IOMode(..))
+                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
+import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
+                  IOMode(..), BufferMode(..), hSetBuffering)
 import System.IO.Unsafe (unsafePerformIO)
 
 import qualified System.IO.Streams as Strm
@@ -139,12 +140,6 @@ data Config = Config
  , resultsFile    :: String -- Where to put timing results.
  , logFile        :: String -- Where to put more verbose testing output.
  
-   -- outHandles: Logging can be dynamically redirected away from the
-   -- filenames (logFile, resultsFile, stdout) and towards specific Handles:
- -- , outHandles     :: Maybe (Buffer String, 
- --        		    Buffer String,
- --        		    Buffer String)
-
  -- These are all LINES-streams (implicit newlines).
  , logOut         :: Strm.OutputStream B.ByteString
  , resultsOut     :: Strm.OutputStream B.ByteString
@@ -222,8 +217,14 @@ getConfig = do
   maxthreads <- getNumberOfCores
   benchstr   <- readFile bench
 
+  backupResults resultsFile logFile
+
   rhnd <- openFile resultsFile WriteMode 
   lhnd <- openFile logFile     WriteMode
+
+  hSetBuffering rhnd NoBuffering
+  hSetBuffering lhnd NoBuffering  
+  
   resultsOut <- Strm.unlines =<< Strm.handleToOutputStream rhnd
   logOut     <- Strm.unlines =<< Strm.handleToOutputStream lhnd
   stdOut     <- Strm.unlines Strm.stdout
@@ -429,7 +430,7 @@ check keepgoing (ExitFailure code) msg  = do
 -- | There are three logging destinations we care about.  The .dat
 --   file, the .log file, and the user's screen (i.e. the user who
 --   launched the benchmarks).
-data LogDest = ResultsFile | LogFile | StdOut
+data LogDest = ResultsFile | LogFile | StdOut deriving Show
 
 -- | Print a message (line) both to stdout and logFile:
 log :: String -> ReaderT Config IO ()
@@ -442,12 +443,12 @@ logOn modes s = do
   Config{logOut, resultsOut, stdOut} <- ask
   let go ResultsFile = Strm.write (Just bstr) resultsOut 
       go LogFile     = Strm.write (Just bstr) logOut     
-      go StdOut      = Strm.write (Just bstr) stdOut     
+      go StdOut      = Strm.write (Just bstr) stdOut
   liftIO$ mapM_ go modes
 
 -- | Create a backup copy of existing results_HOST.dat files.
-backupResults :: Config -> IO ()
-backupResults Config{resultsFile, logFile} = do 
+backupResults :: String -> String -> IO ()
+backupResults resultsFile logFile = do 
   e    <- doesFileExist resultsFile
   date <- runSL "date +%Y%m%d_%s"
   when e $ do
@@ -564,6 +565,8 @@ compileOne br@(BenchRun { threads=numthreads
      else do 
 	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
 	lift$ exitFailure
+
+
 
 --------------------------------------------------------------------------------
 -- Running Benchmarks
@@ -723,54 +726,63 @@ whichVariant "benchlist_server.txt" = "server"
 whichVariant "benchlist_laptop.txt" = "laptop"
 whichVariant _                      = "unknown"
 
-resultsHeader :: Config -> IO ()
-resultsHeader Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, resultsFile, logFile, benchversion, shortrun } = do
-  let (benchfile, ver) = benchversion
-  -- There has got to be a simpler way!
-  -- branch   <- runIgnoreErr "git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/'"
-  -- branch <- "git symbolic-ref HEAD"
-  branch   <- runSL  "git name-rev --name-only HEAD"
-  revision <- runSL  "git rev-parse HEAD"
-  -- Note that this will NOT be newline-terminated:
-  hashes   <- runLines "git log --pretty=format:'%H'"
-  let ls :: [[IO ExitCode]]
-      ls = [ e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
-           , e$ "#    "        
-           , e$ "# `date`"
-           , e$ "# `uname -a`" 
-           , e$ "# Ran by: `whoami` " 
-           , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
-           , e$ "# `"++ghc++" -V`" 
-           , e$ "# "                                                                
-           , e$ "# Running each test for "++show trials++" trial(s)."
-           , e$ "#  ... with compiler options: " ++ ghc_flags
-           , e$ "#  ... with runtime options: " ++ ghc_RTS
-           , e$ "# Benchmarks_File: " ++ benchfile
-           , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
-           , e$ "# Benchmarks_Version: " ++ show ver
-           , e$ "# Git_Branch: " ++ trim branch
-           , e$ "# Git_Hash: "   ++ trim revision
-           , e$ "# Git_Depth: "  ++ show (length hashes)
-           , e$ "# Using the following settings from environment variables:" 
-           , e$ "#  ENV BENCHLIST=$BENCHLIST"
-           , e$ "#  ENV THREADS=   $THREADS"
-           , e$ "#  ENV TRIALS=    $TRIALS"
-           , e$ "#  ENV SHORTRUN=  $SHORTRUN"
-           , e$ "#  ENV SCHEDS=    $SCHEDS"
-           , e$ "#  ENV KEEPGOING= $KEEPGOING"
-           , e$ "#  ENV GHC=       $GHC"
-           , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
-           , e$ "#  ENV GHC_RTS=   $GHC_RTS"
-           , e$ "#  ENV ENVS=      $ENVS"
-           ]
-  sequence $ concat ls
-  return ()
+-- | Write the results header out stdout and to disk.
+printBenchrunHeader :: ReaderT Config IO ()
+printBenchrunHeader = do
+  Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, logOut, resultsOut, stdOut, benchversion, shortrun } <- ask
+  liftIO $ do   
+    let (benchfile, ver) = benchversion
+    -- There has got to be a simpler way!
+    -- branch   <- runIgnoreErr "git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/'"
+    -- branch <- "git symbolic-ref HEAD"
+    branch   <- runSL  "git name-rev --name-only HEAD"
+    revision <- runSL  "git rev-parse HEAD"
+    -- Note that this will NOT be newline-terminated:
+    hashes   <- runLines "git log --pretty=format:'%H'"
+    let ls :: [IO String]
+        ls = [ e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
+             , e$ "#    "        
+             , e$ "# `date`"
+             , e$ "# `uname -a`" 
+             , e$ "# Ran by: `whoami` " 
+             , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
+             , e$ "# `"++ghc++" -V`" 
+             , e$ "# "                                                                
+             , e$ "# Running each test for "++show trials++" trial(s)."
+             , e$ "#  ... with compiler options: " ++ ghc_flags
+             , e$ "#  ... with runtime options: " ++ ghc_RTS
+             , e$ "# Benchmarks_File: " ++ benchfile
+             , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
+             , e$ "# Benchmarks_Version: " ++ show ver
+             , e$ "# Git_Branch: " ++ trim branch
+             , e$ "# Git_Hash: "   ++ trim revision
+             , e$ "# Git_Depth: "  ++ show (length hashes)
+             , e$ "# Using the following settings from environment variables:" 
+             , e$ "#  ENV BENCHLIST=$BENCHLIST"
+             , e$ "#  ENV THREADS=   $THREADS"
+             , e$ "#  ENV TRIALS=    $TRIALS"
+             , e$ "#  ENV SHORTRUN=  $SHORTRUN"
+             , e$ "#  ENV SCHEDS=    $SCHEDS"
+             , e$ "#  ENV KEEPGOING= $KEEPGOING"
+             , e$ "#  ENV GHC=       $GHC"
+             , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
+             , e$ "#  ENV GHC_RTS=   $GHC_RTS"
+             , e$ "#  ENV ENVS=      $ENVS"
+             ]
+    ls' <- sequence ls
+    forM_ ls' $ \line -> do
+      Strm.write (Just$ B.pack line) resultsOut
+      Strm.write (Just$ B.pack line) logOut 
+      Strm.write (Just$ B.pack line) stdOut
+    return ()
+
  where 
-   -- This is a manual "tee" operation:
-   e :: String -> [IO ExitCode]
-   e s = [system ("echo \""++s++"\" >> /dev/stdout") , 
-	  system ("echo \""++s++"\" >> "++logFile),
-	  system ("echo \""++s++"\" >> "++resultsFile)]
+   -- This is a hack for shell expanding inside a string:
+   e :: String -> IO String
+   e s =
+     runSL ("echo \""++s++"\"")
+     -- readCommand ("echo \""++s++"\"")
+--     readProcess "echo" ["\""++s++"\""] ""
 
 
 ----------------------------------------------------------------------------------------------------
@@ -822,7 +834,7 @@ main = do
   system "chmod +x ./ntime* ./*.sh"
 
   conf@Config{benchlist,scheds,envs,stdOut,threadsettings} <- getConfig    
-
+  
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
   let hasCabalFile = (cabalFile /= []) &&
@@ -830,10 +842,9 @@ main = do
 
   runReaderT 
     (do         
-
-        lift$ backupResults conf
 	log "Writing header for result data file:"
-	lift$ resultsHeader conf 
+	printBenchrunHeader 
+        
         let recomp  = not $ NoRecomp `elem` options
             doclean = (not $ NoCabal `elem` options) && recomp
         when doclean $ 
@@ -948,6 +959,10 @@ main = do
           forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
               runOne bench (confnum,total)
 
+        do Config{logOut, resultsOut, stdOut} <- ask
+           liftIO$ Strm.write Nothing logOut 
+           liftIO$ Strm.write Nothing resultsOut 
+
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
         log$ "--------------------------------------------------------------------------------"
@@ -1021,7 +1036,6 @@ runSL cmd = do
   case lns of
     h:_ -> return h
     []  -> error$ "runSL: expected at least one line of output for command "++cmd
-
 
 
 ----------------------------------------------------------------------------------------------------
