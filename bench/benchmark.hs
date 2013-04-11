@@ -887,7 +887,8 @@ main = do
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
 
-        if ParBench `elem` options then do 
+        if ParBench `elem` options then do
+            unless rtsSupportsBoundThreads $ error "benchmark.hs was NOT compiled with -threaded.  Can't do --par."
         --------------------------------------------------------------------------------
         -- Parallel version:
             lift$ putStrLn$ "[!!!] Compiling in Parallel, numCapabilities="++show numCapabilities++" ... "
