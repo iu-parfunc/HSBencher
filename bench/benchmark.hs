@@ -61,7 +61,7 @@ import Data.IORef
 import Data.List (intercalate)
 import qualified Data.Set as Set
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
-import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(NoArg), usageInfo)
+import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getEnv, getEnvironment, getExecutablePath)
 import System.Directory
 import System.Posix.Env (setEnv)
@@ -82,6 +82,13 @@ import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydra
 import Scripting.Parallel.ThreadPool (parForM)
 
 import Text.Printf
+
+#define FUSION_TABLES
+#ifdef FUSION_TABLES
+import Network.Google.OAuth2 (getCachedTokens)
+import Network.Google.FusionTables (listColumns, insertRows, TableId)
+#endif
+
 ----------------------------------------------------------------------------------------------------
 
 
@@ -793,12 +800,16 @@ printBenchrunHeader = do
 data Flag = ParBench 
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
-  deriving Eq
+          | ShowHelp
+#ifdef FUSION_TABLES
+          | FusionTables (Maybe TableId)
+#endif
+  deriving (Eq,Ord,Show,Read)
 
 -- | Command line options.
 cli_options :: [OptDescr Flag]
 cli_options = 
-     [ Option [] ["par"] (NoArg ParBench) 
+     [ Option ['p'] ["par"] (NoArg ParBench) 
        "Build benchmarks in parallel (run in parallel too if SHORTRUN=1)."
      , Option [] ["no-recomp"] (NoArg NoRecomp)
        "Don't perform any compilation of benchmark executables.  Implies -no-clean."
@@ -806,7 +817,17 @@ cli_options =
        "Do not clean pre-existing executables before beginning."
      , Option [] ["no-cabal"] (NoArg NoCabal)
        "Build directly through GHC even if .cabal file is present."
-     
+
+     , Option ['h'] ["help"] (NoArg ShowHelp)
+       "Show this help message and exit."
+       
+#ifdef FUSION_TABLES
+     , Option [] ["fusion-tables"] (OptArg FusionTables "TABLEID")
+       "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
+     -- , Option [] ["table"] (ReqArg )
+     --   "set table "
+#endif
+       
      -- , Option [] ["bindir"] (ReqArg BinDir)
      --   "Place or expect built binaries to be in BINDIR"
      ]
@@ -821,7 +842,7 @@ main = do
 
   cli_args <- getArgs
   let (options,args,errs) = getOpt Permute cli_options cli_args
-  unless (null errs && null args) $ do
+  when (not (null errs && null args) || ShowHelp `elem` options) $ do
     putStrLn$ "Errors parsing command line options:" 
     mapM_ (putStr . ("   "++)) errs       
     putStrLn "\nUSAGE: [set ENV VARS] ./benchmark.hs [CMDLN OPTIONS]"    
