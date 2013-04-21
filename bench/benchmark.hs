@@ -86,7 +86,8 @@ import Text.Printf
 #define FUSION_TABLES
 #ifdef FUSION_TABLES
 import Network.Google.OAuth2 (getCachedTokens, OAuth2Client(..), OAuth2Tokens(..))
-import Network.Google.FusionTables (createTable, listColumns, insertRows, TableId)
+import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
+                                    TableId, CellType(..), TableMetadata(..))
 #endif
 
 ----------------------------------------------------------------------------------------------------
@@ -132,7 +133,7 @@ usageStr = unlines $
 -- The global configuration for benchmarking:
 data Config = Config 
  { benchlist      :: [Benchmark]
- , benchsetName   :: String           -- ^ What identifies this set of benchmarks, used to create fusion table.
+ , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
  , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
  , maxthreads     :: Int
@@ -156,10 +157,19 @@ data Config = Config
  , envs           :: [[(String, String)]]
    
 #ifdef FUSION_TABLES
- , fusionTableID  :: TableId
+ , doFusionUpload :: Bool
+ , fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
+ , fusionClientID :: Maybe String
+ , fusionClientSecret :: Maybe String
+--  , fusionUpload   :: Maybe FusionInfo
 #endif
  }
  deriving Show
+
+-- -- | If we are uploading to a fusion table, we need ALL three of these pieces:
+-- data FusionInfo = FusionInfo { tableID :: TableId, 
+--                                cliID :: String,
+--                                cliSec :: String }
 
 instance Show (Strm.OutputStream a) where
   show _ = "<OutputStream>"
@@ -211,7 +221,7 @@ getConfig cmd_line_options = do
 		  Nothing -> x
 		  Just  s -> s
 
-      bench = get "BENCHLIST" "benchlist.txt"
+      benchF = get "BENCHLIST" "benchlist.txt"
       logFile = "bench_" ++ hostname ++ ".log"
       resultsFile = "results_" ++ hostname ++ ".dat"      
       shortrun = strBool (get "SHORTRUN"  "0")
@@ -227,7 +237,7 @@ getConfig cmd_line_options = do
     s  -> error$ "GENERIC env variable not handled yet.  Set to: " ++ show s
   
   maxthreads <- getNumberOfCores
-  benchstr   <- readFile bench
+  benchstr   <- readFile benchF
 
   backupResults resultsFile logFile
 
@@ -240,21 +250,14 @@ getConfig cmd_line_options = do
   resultsOut <- Strm.unlines =<< Strm.handleToOutputStream rhnd
   logOut     <- Strm.unlines =<< Strm.handleToOutputStream lhnd
   stdOut     <- Strm.unlines Strm.stdout
-
-  let benchsetName = ""
-        -- case filter isBenchsetName cmd_line_options of
-        --   []  -> ""
-        --   [BenchsetName name] -> name
       
-#ifdef FUSION_TABLES
-  tab <- getTableId benchsetName
-#endif         
   let -- Messy way to extract the benchlist version:
       ver = case filter (isInfixOf "ersion") (lines benchstr) of 
 	      (h:t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
 	      []    -> 0
-      conf = Config 
-           { hostname, scheds, shortrun, benchsetName
+      base_conf = Config 
+           { hostname, scheds, shortrun
+           , benchsetName = Nothing
 	   , ghc        =       get "GHC"       "ghc"
            , ghc_pkg    =       get "GHC_PKG"   "ghc-pkg"
 	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
@@ -262,19 +265,56 @@ getConfig cmd_line_options = do
 	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
 	   , benchlist      = parseBenchList benchstr
-	   , benchversion   = (bench, ver)
+	   , benchversion   = (benchF, ver)
 	   , maxthreads     = maxthreads
 	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
 	   , keepgoing      = strBool (get "KEEPGOING" "0")
 	   , resultsFile, logFile, logOut, resultsOut, stdOut         
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
-#ifdef FUSION_TABLES                              
-           , fusionTableID  = tab
-#endif
+#ifdef FUSION_TABLES
+           , doFusionUpload = False
+           , fusionTableID  = Nothing 
+           , fusionClientID = Nothing
+           , fusionClientSecret = Nothing
+#endif                              
 	   }
-  runReaderT (log$ "Read list of benchmarks/parameters from: "++bench) conf
-  return conf
+
+  -- Process command line arguments to add extra cofiguration information:
+  let doFlag (BenchsetName name) r     = r { benchsetName= Just name }
+#ifdef FUSION_TABLES
+      doFlag (ClientID cid)   r = r { fusionClientID     = Just cid }
+      doFlag (ClientSecret s) r = r { fusionClientSecret = Just s }
+      doFlag (FusionTables m) r = 
+         let r2 = r { doFusionUpload = True } in
+         case m of 
+           Just tid -> r2 { fusionTableID = Just tid }
+           Nothing -> r2
+#endif
+      -- Ignored options:
+      doFlag ShowHelp r = r
+      doFlag NoRecomp r = r
+      doFlag NoCabal  r = r
+      doFlag NoClean  r = r
+      doFlag ParBench r = r
+      --------------------
+      conf = foldr ($) base_conf (map doFlag cmd_line_options)
+
+#ifdef FUSION_TABLES
+  finalconf <- if not (doFusionUpload conf) then return conf else
+               case (benchsetName conf, fusionTableID conf) of
+                (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
+                (_, Just tid) -> return conf
+                (Just name,_) -> do
+                  let auth = OAuth2Client { clientId= fromJust (fusionClientID conf)
+                                          , clientSecret= fromJust (fusionClientSecret conf) }
+                  tid <- getTableId auth name
+                  return conf{fusionTableID= Just tid}
+#else
+  let finalconf = conf      
+#endif         
+  runReaderT (log$ "Read list of benchmarks/parameters from: "++benchF) finalconf
+  return finalconf
 
 -- TODO: Support Windows!
 getNumberOfCores :: IO Int
@@ -666,26 +706,39 @@ runOne br@(BenchRun { threads=numthreads
 	                    (padr 7$ show sched) (padr 3$ show numthreads) formatted
   return ()
 #ifdef FUSION_TABLES
-  liftIO$ do
+  when doFusionUpload $ liftIO$ do
     let cid    = "679570803037.apps.googleusercontent.com"
         secret = "FnLhDezKFlHL46XLbCf7Ik1L"
-        client = OAuth2Client { clientId = cid, clientSecret = secret }    
+        client = OAuth2Client { clientId = cid, clientSecret = secret }
     toks  <- getCachedTokens client
     let [t1,t2,t3] = ts
         [p1,p2,p3] = prods
-    insertRows (B.pack$ accessToken toks) fusionTableID
+    insertRows (B.pack$ accessToken toks) (fromJust fusionTableID)
        defaultColumns
        [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
     return ()       
 #endif
 
-
 #ifdef FUSION_TABLES
+resultsSchema :: [(String, CellType)]
+resultsSchema =
+  [ ("PROGNAME",STRING)
+  , ("VARIANT",STRING)
+  , ("ARGS",STRING)
+  ]
+
 -- Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
-getTableId :: String -> IO TableId
-getTableId = do
-  
+getTableId :: OAuth2Client -> String -> IO TableId
+getTableId auth tablename = do
+  toks <- getCachedTokens auth
+  allTables <- listTables (B.pack$ accessToken toks)
+
+  case filter (\ t -> tab_name t == tablename) allTables of
+    [] -> do -- log $ " No table with name "++show tablename ++" found, creating..."
+             error "FINISH: create table"
+    [t] -> return (tab_tableId t)
+    ls  -> error$ " More than one table with name "++show tablename++"!\n "++show ls
   error "FINISH getTableId"
 #endif
 
