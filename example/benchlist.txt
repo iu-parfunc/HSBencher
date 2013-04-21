@@ -1,5 +1,9 @@
+# NAME:    example
+# COLUMNS: program SCHED args
+# VARY: THREADS 1 2 3 4
+# VARY: flags "+RTS -qa -RTS"
+
 # This is an example benchmark list.
 
-# Name, Scheduler, Command inputs
 example  none  . 
 example  none  *.hi *.hs

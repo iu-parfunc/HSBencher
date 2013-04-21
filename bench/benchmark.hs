@@ -85,8 +85,8 @@ import Text.Printf
 
 #define FUSION_TABLES
 #ifdef FUSION_TABLES
-import Network.Google.OAuth2 (getCachedTokens)
-import Network.Google.FusionTables (listColumns, insertRows, TableId)
+import Network.Google.OAuth2 (getCachedTokens, OAuth2Client(..), OAuth2Tokens(..))
+import Network.Google.FusionTables (createTable, listColumns, insertRows, TableId)
 #endif
 
 ----------------------------------------------------------------------------------------------------
@@ -132,20 +132,21 @@ usageStr = unlines $
 -- The global configuration for benchmarking:
 data Config = Config 
  { benchlist      :: [Benchmark]
- , benchversion   :: (String, Double) -- benchlist file name and version number (e.g. X.Y)
- , threadsettings :: [Int]  -- A list of #threads to test.  0 signifies non-threaded mode.
+ , benchsetName   :: String           -- ^ What identifies this set of benchmarks, used to create fusion table.
+ , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
+ , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
  , maxthreads     :: Int
- , trials         :: Int    -- number of runs of each configuration
+ , trials         :: Int    -- ^ number of runs of each configuration
  , shortrun       :: Bool
- , keepgoing      :: Bool   -- keep going after error
- , ghc            :: String -- ghc compiler path
+ , keepgoing      :: Bool   -- ^ keep going after error
+ , ghc            :: String -- ^ ghc compiler path
  , ghc_pkg        :: String
  , ghc_flags      :: String
- , ghc_RTS        :: String -- +RTS flags
- , scheds         :: Set.Set Sched -- subset of schedulers to test.
+ , ghc_RTS        :: String -- ^ +RTS flags
+ , scheds         :: Set.Set Sched -- ^ subset of schedulers to test.
  , hostname       :: String 
- , resultsFile    :: String -- Where to put timing results.
- , logFile        :: String -- Where to put more verbose testing output.
+ , resultsFile    :: String -- ^ Where to put timing results.
+ , logFile        :: String -- ^ Where to put more verbose testing output.
  
  -- These are all LINES-streams (implicit newlines).
  , logOut         :: Strm.OutputStream B.ByteString
@@ -153,6 +154,10 @@ data Config = Config
  , stdOut         :: Strm.OutputStream B.ByteString
    -- A set of environment variable configurations to test
  , envs           :: [[(String, String)]]
+   
+#ifdef FUSION_TABLES
+ , fusionTableID  :: TableId
+#endif
  }
  deriving Show
 
@@ -197,8 +202,8 @@ exedir = "./bin"
 
 -- Retrieve the (default) configuration from the environment, it may
 -- subsequently be tinkered with.  This procedure should be idempotent.
-getConfig :: IO Config
-getConfig = do
+getConfig :: [Flag] -> IO Config
+getConfig cmd_line_options = do
   hostname <- runSL$ "hostname -s"
   env      <- getEnvironment
 
@@ -236,11 +241,20 @@ getConfig = do
   logOut     <- Strm.unlines =<< Strm.handleToOutputStream lhnd
   stdOut     <- Strm.unlines Strm.stdout
 
-  let ver = case filter (isInfixOf "ersion") (lines benchstr) of 
+  let benchsetName = ""
+        -- case filter isBenchsetName cmd_line_options of
+        --   []  -> ""
+        --   [BenchsetName name] -> name
+      
+#ifdef FUSION_TABLES
+  tab <- getTableId benchsetName
+#endif         
+  let -- Messy way to extract the benchlist version:
+      ver = case filter (isInfixOf "ersion") (lines benchstr) of 
 	      (h:t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
 	      []    -> 0
       conf = Config 
-           { hostname, scheds, shortrun    
+           { hostname, scheds, shortrun, benchsetName
 	   , ghc        =       get "GHC"       "ghc"
            , ghc_pkg    =       get "GHC_PKG"   "ghc-pkg"
 	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
@@ -255,6 +269,9 @@ getConfig = do
 	   , resultsFile, logFile, logOut, resultsOut, stdOut         
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
+#ifdef FUSION_TABLES                              
+           , fusionTableID  = tab
+#endif
 	   }
   runReaderT (log$ "Read list of benchmarks/parameters from: "++bench) conf
   return conf
@@ -587,7 +604,7 @@ runOne br@(BenchRun { threads=numthreads
                     , bench=(Benchmark testPath _ args_)
                     , env}) 
           (iterNum,totalIters) = do
-  Config{..} <- ask
+  conf@Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
       (_,testRoot) = splitFileName testPath
   log$ "\n--------------------------------------------------------------------------------"
@@ -643,12 +660,39 @@ runOne br@(BenchRun { threads=numthreads
       formatted = (padl 15$ unwords ts) ++"   "++ unwords prods -- prods may be empty!
 
   log $ " >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
+
   logOn [ResultsFile]$ 
     printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
 	                    (padr 7$ show sched) (padr 3$ show numthreads) formatted
-
   return ()
+#ifdef FUSION_TABLES
+  liftIO$ do
+    let cid    = "679570803037.apps.googleusercontent.com"
+        secret = "FnLhDezKFlHL46XLbCf7Ik1L"
+        client = OAuth2Client { clientId = cid, clientSecret = secret }    
+    toks  <- getCachedTokens client
+    let [t1,t2,t3] = ts
+        [p1,p2,p3] = prods
+    insertRows (B.pack$ accessToken toks) fusionTableID
+       defaultColumns
+       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
+    return ()       
+#endif
+
+
+#ifdef FUSION_TABLES
+-- Get the table ID that has been cached on disk, or find the the table in the users
+-- Google Drive, or create a new table if needed.
+getTableId :: String -> IO TableId
+getTableId = do
   
+  error "FINISH getTableId"
+#endif
+
+defaultColumns =
+  ["Program","Args","Threads","Sched","Threads",
+   "MinTime","MedianTime","MaxTime", "MinTime_Prod","MedianTime_Prod","MaxTime_Prod"]
+
 -- Indent for prettier output
 indent :: [String] -> [String]
 indent = map ("    "++)
@@ -803,6 +847,9 @@ data Flag = ParBench
           | ShowHelp
 #ifdef FUSION_TABLES
           | FusionTables (Maybe TableId)
+          | BenchsetName (String)
+          | ClientID     String
+          | ClientSecret String
 #endif
   deriving (Eq,Ord,Show,Read)
 
@@ -824,8 +871,10 @@ cli_options =
 #ifdef FUSION_TABLES
      , Option [] ["fusion-tables"] (OptArg FusionTables "TABLEID")
        "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
-     -- , Option [] ["table"] (ReqArg )
-     --   "set table "
+
+     , Option [] ["name"]         (ReqArg BenchsetName "NAME") "Name for created/discovered fusion table."
+     , Option [] ["clientid"]     (ReqArg ClientID "ID")     "Use (and cache) Google client ID"
+     , Option [] ["clientsecret"] (ReqArg ClientSecret "STR") "Use (and cache) Google client secret"
 #endif
        
      -- , Option [] ["bindir"] (ReqArg BinDir)
@@ -854,7 +903,7 @@ main = do
   -- control systems I run into permissions problems sometimes:
   system "chmod +x ./ntime* ./*.sh"
 
-  conf@Config{benchlist,scheds,envs,stdOut,threadsettings} <- getConfig    
+  conf@Config{benchlist,scheds,envs,stdOut,threadsettings} <- getConfig options
   
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
