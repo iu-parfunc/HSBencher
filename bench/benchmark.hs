@@ -215,6 +215,22 @@ exedir = "./bin"
 -- Configuration
 --------------------------------------------------------------------------------
 
+-- | Fill in "static" fields of a FusionTable row based on the `Config` data.
+augmentTupleWithConfig :: Config -> [(String,String)] -> IO [(String,String)]
+augmentTupleWithConfig Config{ghc,ghc_RTS,ghc_flags} base = do
+  ghcVer <- runSL$ ghc ++ " -V"
+  return $ 
+    addit "COMPILER"       ghcVer    $
+    addit "COMPILE_FLAGS"  ghc_flags $
+    addit "RUNTIME_FLAGS"  ghc_RTS   $ 
+    base
+  where
+    addit :: String -> String -> [(String,String)] -> [(String,String)]
+    addit key val als =
+      case lookup key als of
+        Just b -> error$"augmentTupleWithConfig: cannot add field "++key++", already present!: "++b
+        Nothing -> (key,val) : als
+
 -- Retrieve the (default) configuration from the environment, it may
 -- subsequently be tinkered with.  This procedure should be idempotent.
 getConfig :: [Flag] -> IO Config
@@ -720,12 +736,13 @@ runOne br@(BenchRun { threads=numthreads
     toks  <- liftIO$ getCachedTokens client
     let [t1,t2,t3] = ts
         [p1,p2,p3] = prods
-        tuple =
+        tuple =          
           [("PROGNAME",testRoot),("ARGS", unwords args),("THREADS",show numthreads),
            ("MINTIME",t1),("MEDIANTIME",t2),("MAXTIME",t3),
            ("MINTIME_PRODUCTIVITY",p1),("MEDIANTIME_PRODUCTIVITY",p2),("MAXTIME_PRODUCTIVITY",p3)]
-        (cols,vals) = unzip tuple
-    log$ " [fusiontable] Uploading row: "++show tuple
+    tuple' <- liftIO$ augmentTupleWithConfig conf tuple
+    let (cols,vals) = unzip tuple'
+    log$ " [fusiontable] Uploading row: "++show tuple'
     liftIO$ insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
 --       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
     return ()       
@@ -743,6 +760,7 @@ resultsSchema =
   , ("ARGS",STRING)
   , ("HOSTNAME",STRING)    
   , ("THREADS",NUMBER)
+  , ("DATETIME",DATETIME)    
   , ("MINTIME", NUMBER)
   , ("MEDIANTIME", NUMBER)
   , ("MAXTIME", NUMBER)
@@ -761,7 +779,6 @@ resultsSchema =
   , ("UNAME",STRING)
   , ("PROCESSOR",STRING)
   , ("TOPOLOGY",STRING)
-  , ("DATETIME",DATETIME)
   , ("GIT_BRANCH",STRING)
   , ("GIT_HASH",STRING)
   , ("GIT_DEPTH",NUMBER)
@@ -770,7 +787,7 @@ resultsSchema =
   , ("FULL_LOG",STRING)
   ]
 
--- Get the table ID that has been cached on disk, or find the the table in the users
+-- | Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
 getTableId :: OAuth2Client -> String -> ReaderT Config IO TableId
 getTableId auth tablename = do
