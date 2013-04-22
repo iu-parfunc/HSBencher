@@ -116,6 +116,11 @@ usageStr = unlines $
    "",
    "     GENERIC=1 to go through the generic (type class) monad par",
    "               interface instead of using each scheduler directly",
+   "",
+#ifdef FUSION_TABLES   
+   "     GOOGLE_CLIENTID, GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
+   "               client ID and secret can be provided by env vars OR command line options. ",
+#endif
    " ",
    "     ENVS='[[(\"KEY1\", \"VALUE1\")], [(\"KEY1\", \"VALUE2\")]]' to set",
    "     different configurations of environment variables to be set *at",
@@ -217,7 +222,8 @@ getConfig cmd_line_options = do
   hostname <- runSL$ "hostname -s"
   env      <- getEnvironment
 
-  let get v x = case lookup v env of 
+  let -- Read an ENV var with default:
+      get v x = case lookup v env of 
 		  Nothing -> x
 		  Just  s -> s
 
@@ -275,8 +281,8 @@ getConfig cmd_line_options = do
 #ifdef FUSION_TABLES
            , doFusionUpload = False
            , fusionTableID  = Nothing 
-           , fusionClientID = Nothing
-           , fusionClientSecret = Nothing
+           , fusionClientID     = lookup "GOOGLE_CLIENTID" env
+           , fusionClientSecret = lookup "GOOGLE_CLIENTSECRET" env
 #endif                              
 	   }
 
@@ -306,10 +312,12 @@ getConfig cmd_line_options = do
                 (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
                 (_, Just tid) -> return conf
                 (Just name,_) -> do
-                  let auth = OAuth2Client { clientId= fromJust (fusionClientID conf)
-                                          , clientSecret= fromJust (fusionClientSecret conf) }
-                  tid <- getTableId auth name
-                  return conf{fusionTableID= Just tid}
+                  case (fusionClientID conf, fusionClientSecret conf) of
+                    (Just cid, Just sec ) -> do
+                      let auth = OAuth2Client { clientId=cid, clientSecret=sec }
+                      tid <- runReaderT (getTableId auth name) conf
+                      return conf{fusionTableID= Just tid}
+                    (_,_) -> error "When --fusion-tables is activated --clientid and --clientsecret are required too."
 #else
   let finalconf = conf      
 #endif         
@@ -706,18 +714,26 @@ runOne br@(BenchRun { threads=numthreads
 	                    (padr 7$ show sched) (padr 3$ show numthreads) formatted
   return ()
 #ifdef FUSION_TABLES
-  when doFusionUpload $ liftIO$ do
-    let cid    = "679570803037.apps.googleusercontent.com"
-        secret = "FnLhDezKFlHL46XLbCf7Ik1L"
-        client = OAuth2Client { clientId = cid, clientSecret = secret }
-    toks  <- getCachedTokens client
+  when doFusionUpload $ do
+    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+        client = OAuth2Client { clientId = cid, clientSecret = sec }
+    toks  <- liftIO$ getCachedTokens client
     let [t1,t2,t3] = ts
         [p1,p2,p3] = prods
-    insertRows (B.pack$ accessToken toks) (fromJust fusionTableID)
-       defaultColumns
-       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
+        tuple =
+          [("PROGNAME",testRoot),("ARGS", unwords args),("THREADS",show numthreads),
+           ("MINTIME",t1),("MEDIANTIME",t2),("MAXTIME",t3),
+           ("MINTIME_PRODUCTIVITY",p1),("MEDIANTIME_PRODUCTIVITY",p2),("MAXTIME_PRODUCTIVITY",p3)]
+        (cols,vals) = unzip tuple
+    log$ " [fusiontable] Uploading row: "++show tuple
+    liftIO$ insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
+--       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
     return ()       
 #endif
+
+-- defaultColumns =
+--   ["Program","Args","Threads","Sched","Threads",
+--    "MinTime","MedianTime","MaxTime", "MinTime_Prod","MedianTime_Prod","MaxTime_Prod"]
 
 #ifdef FUSION_TABLES
 resultsSchema :: [(String, CellType)]
@@ -725,26 +741,56 @@ resultsSchema =
   [ ("PROGNAME",STRING)
   , ("VARIANT",STRING)
   , ("ARGS",STRING)
+  , ("HOSTNAME",STRING)    
+  , ("THREADS",NUMBER)
+  , ("MINTIME", NUMBER)
+  , ("MEDIANTIME", NUMBER)
+  , ("MAXTIME", NUMBER)
+  , ("MINTIME_PRODUCTIVITY", NUMBER)
+  , ("MEDIANTIME_PRODUCTIVITY", NUMBER)
+  , ("MAXTIME_PRODUCTIVITY", NUMBER)
+  , ("ALLTIMES", STRING)
+  , ("TRIALS", NUMBER)
+  , ("COMPILER",STRING)
+  , ("COMPILE_FLAGS",STRING)
+  , ("RUNTIME_FLAGS",STRING)
+  , ("ENV_VARS",STRING)
+  , ("BENCH_VERSION", STRING)
+  , ("BENCH_FILE", STRING)
+--  , ("OS",STRING)
+  , ("UNAME",STRING)
+  , ("PROCESSOR",STRING)
+  , ("TOPOLOGY",STRING)
+  , ("DATETIME",DATETIME)
+  , ("GIT_BRANCH",STRING)
+  , ("GIT_HASH",STRING)
+  , ("GIT_DEPTH",NUMBER)
+  , ("ETC_ISSUE",STRING)
+  , ("LSPCI",STRING)    
+  , ("FULL_LOG",STRING)
   ]
 
 -- Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
-getTableId :: OAuth2Client -> String -> IO TableId
+getTableId :: OAuth2Client -> String -> ReaderT Config IO TableId
 getTableId auth tablename = do
-  toks <- getCachedTokens auth
-  allTables <- listTables (B.pack$ accessToken toks)
+  log$ " [fusiontable] Fetching access tokens, client ID/secret: "++show (clientId auth, clientSecret auth)
+  toks      <- liftIO$ getCachedTokens auth
+  log$ " [fusiontable] Retrieved: "++show toks
+  let atok  = B.pack $ accessToken toks
+  allTables <- liftIO$ listTables atok
+  log$ " [fusiontable] Retrieved metadata on "++show (length allTables)++" tables"
 
   case filter (\ t -> tab_name t == tablename) allTables of
-    [] -> do -- log $ " No table with name "++show tablename ++" found, creating..."
-             error "FINISH: create table"
-    [t] -> return (tab_tableId t)
-    ls  -> error$ " More than one table with name "++show tablename++"!\n "++show ls
-  error "FINISH getTableId"
+    [] -> do log$ " [fusiontable] No table with name "++show tablename ++" found, creating..."
+             TableMetadata{tab_tableId} <- liftIO$ createTable atok tablename resultsSchema
+             log$ " [fusiontable] Table created with ID "++show tab_tableId
+             return tab_tableId
+    [t] -> do log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show (tab_tableId t)
+              return (tab_tableId t)
+    ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
 #endif
 
-defaultColumns =
-  ["Program","Args","Threads","Sched","Threads",
-   "MinTime","MedianTime","MaxTime", "MinTime_Prod","MedianTime_Prod","MaxTime_Prod"]
 
 -- Indent for prettier output
 indent :: [String] -> [String]
