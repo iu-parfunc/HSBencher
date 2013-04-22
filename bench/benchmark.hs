@@ -55,6 +55,7 @@ import Control.Monad.Reader
 import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
 import Debug.Trace
 import Data.Char (isSpace)
+import Data.Time.Clock (getCurrentTime)
 import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
 import Data.IORef
@@ -217,12 +218,24 @@ exedir = "./bin"
 
 -- | Fill in "static" fields of a FusionTable row based on the `Config` data.
 augmentTupleWithConfig :: Config -> [(String,String)] -> IO [(String,String)]
-augmentTupleWithConfig Config{ghc,ghc_RTS,ghc_flags} base = do
+augmentTupleWithConfig Config{..} base = do
   ghcVer <- runSL$ ghc ++ " -V"
+  let ghcVer' = collapsePrefix "The Glorious Glasgow Haskell Compilation System," "GHC" ghcVer
+  datetime <- getCurrentTime
+  uname    <- runSL "uname -a"
+  lspci    <- runLines "lspci"
   return $ 
-    addit "COMPILER"       ghcVer    $
+    addit "COMPILER"       ghcVer'   $
     addit "COMPILE_FLAGS"  ghc_flags $
-    addit "RUNTIME_FLAGS"  ghc_RTS   $ 
+    addit "RUNTIME_FLAGS"  ghc_RTS   $
+    addit "HOSTNAME"       hostname $
+    addit "DATETIME"       (show datetime) $
+    addit "TRIALS"         (show trials) $
+    addit "ENV_VARS"       (show envs) $
+    addit "BENCH_VERSION"  (show$ snd benchversion) $
+    addit "BENCH_FILE"     (fst benchversion) $
+    addit "UNAME"          uname $
+    addit "LSPCI"          (unlines lspci) $
     base
   where
     addit :: String -> String -> [(String,String)] -> [(String,String)]
@@ -739,7 +752,8 @@ runOne br@(BenchRun { threads=numthreads
         tuple =          
           [("PROGNAME",testRoot),("ARGS", unwords args),("THREADS",show numthreads),
            ("MINTIME",t1),("MEDIANTIME",t2),("MAXTIME",t3),
-           ("MINTIME_PRODUCTIVITY",p1),("MEDIANTIME_PRODUCTIVITY",p2),("MAXTIME_PRODUCTIVITY",p3)]
+           ("MINTIME_PRODUCTIVITY",p1),("MEDIANTIME_PRODUCTIVITY",p2),("MAXTIME_PRODUCTIVITY",p3),
+           ("VARIANT", show sched)]
     tuple' <- liftIO$ augmentTupleWithConfig conf tuple
     let (cols,vals) = unzip tuple'
     log$ " [fusiontable] Uploading row: "++show tuple'
@@ -1225,5 +1239,10 @@ runSL cmd = do
     h:_ -> return h
     []  -> error$ "runSL: expected at least one line of output for command "++cmd
 
+collapsePrefix :: String -> String -> String -> String
+collapsePrefix old new str =
+  if isPrefixOf old str
+  then new ++ drop (length old) str
+  else str  
 
 ----------------------------------------------------------------------------------------------------
