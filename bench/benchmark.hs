@@ -84,7 +84,6 @@ import Scripting.Parallel.ThreadPool (parForM)
 
 import Text.Printf
 
--- #define FUSION_TABLES
 #ifdef FUSION_TABLES
 import Network.Google.OAuth2 (getCachedTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
@@ -239,7 +238,7 @@ augmentTupleWithConfig Config{..} base = do
     addit "BENCH_VERSION"  (show$ snd benchversion) $
     addit "BENCH_FILE"     (fst benchversion) $
     addit "UNAME"          uname $
-    addit "LSPCI"          (unlines lspci) $
+--    addit "LSPCI"          (unlines lspci) $
     addit "GIT_BRANCH"     branch   $
     addit "GIT_HASH"       revision $
     addit "GIT_DEPTH"      (show depth) $

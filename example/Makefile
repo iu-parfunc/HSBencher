@@ -1,13 +1,11 @@
 
 
 # TEMP: Fix the dependency on ntimes scripts:
-all: benchmark.run
+all:
 	cp ../bench/ntimes_minmedmax . 
 	cp ../bench/ntimes . 
-	./benchmark.run
-
-benchmark.run:
 	ghc ../bench/benchmark.hs -o benchmark.run
+	./benchmark.run
 
 clean:
 
