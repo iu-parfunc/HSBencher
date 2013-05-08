@@ -84,7 +84,7 @@ import Scripting.Parallel.ThreadPool (parForM)
 
 import Text.Printf
 
-#define FUSION_TABLES
+-- #define FUSION_TABLES
 #ifdef FUSION_TABLES
 import Network.Google.OAuth2 (getCachedTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
@@ -154,7 +154,9 @@ data Config = Config
  , hostname       :: String 
  , resultsFile    :: String -- ^ Where to put timing results.
  , logFile        :: String -- ^ Where to put more verbose testing output.
- 
+
+ , gitInfo        :: (String,String,Int)
+   
  -- These are all LINES-streams (implicit newlines).
  , logOut         :: Strm.OutputStream B.ByteString
  , resultsOut     :: Strm.OutputStream B.ByteString
@@ -224,6 +226,8 @@ augmentTupleWithConfig Config{..} base = do
   datetime <- getCurrentTime
   uname    <- runSL "uname -a"
   lspci    <- runLines "lspci"
+  whos     <- runLines "who"
+  let (branch,revision,depth) = gitInfo
   return $ 
     addit "COMPILER"       ghcVer'   $
     addit "COMPILE_FLAGS"  ghc_flags $
@@ -236,6 +240,10 @@ augmentTupleWithConfig Config{..} base = do
     addit "BENCH_FILE"     (fst benchversion) $
     addit "UNAME"          uname $
     addit "LSPCI"          (unlines lspci) $
+    addit "GIT_BRANCH"     branch   $
+    addit "GIT_HASH"       revision $
+    addit "GIT_DEPTH"      (show depth) $
+    addit "WHO"            (unlines whos) $ 
     base
   where
     addit :: String -> String -> [(String,String)] -> [(String,String)]
@@ -251,7 +259,14 @@ getConfig cmd_line_options = do
   hostname <- runSL$ "hostname -s"
   env      <- getEnvironment
 
-  let -- Read an ENV var with default:
+  -- There has got to be a simpler way!
+  branch   <- runSL  "git name-rev --name-only HEAD"
+  revision <- runSL  "git rev-parse HEAD"
+  -- Note that this will NOT be newline-terminated:
+  hashes   <- runLines "git log --pretty=format:'%H'"
+
+  let       
+      -- Read an ENV var with default:
       get v x = case lookup v env of 
 		  Nothing -> x
 		  Just  s -> s
@@ -307,6 +322,7 @@ getConfig cmd_line_options = do
 	   , resultsFile, logFile, logOut, resultsOut, stdOut         
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
+           , gitInfo        = (trim branch, trim revision, length hashes)
 #ifdef FUSION_TABLES
            , doFusionUpload = False
            , fusionTableID  = Nothing 
@@ -316,8 +332,9 @@ getConfig cmd_line_options = do
 	   }
 
   -- Process command line arguments to add extra cofiguration information:
-  let doFlag (BenchsetName name) r     = r { benchsetName= Just name }
+  let 
 #ifdef FUSION_TABLES
+      doFlag (BenchsetName name) r     = r { benchsetName= Just name }
       doFlag (ClientID cid)   r = r { fusionClientID     = Just cid }
       doFlag (ClientSecret s) r = r { fusionClientSecret = Just s }
       doFlag (FusionTables m) r = 
@@ -796,6 +813,7 @@ resultsSchema =
   , ("GIT_BRANCH",STRING)
   , ("GIT_HASH",STRING)
   , ("GIT_DEPTH",NUMBER)
+  , ("WHO",STRING)
   , ("ETC_ISSUE",STRING)
   , ("LSPCI",STRING)    
   , ("FULL_LOG",STRING)
@@ -910,16 +928,10 @@ whichVariant _                      = "unknown"
 -- | Write the results header out stdout and to disk.
 printBenchrunHeader :: ReaderT Config IO ()
 printBenchrunHeader = do
-  Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads, logOut, resultsOut, stdOut, benchversion, shortrun } <- ask
+  Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads,
+         logOut, resultsOut, stdOut, benchversion, shortrun, gitInfo=(branch,revision,depth) } <- ask
   liftIO $ do   
     let (benchfile, ver) = benchversion
-    -- There has got to be a simpler way!
-    -- branch   <- runIgnoreErr "git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/'"
-    -- branch <- "git symbolic-ref HEAD"
-    branch   <- runSL  "git name-rev --name-only HEAD"
-    revision <- runSL  "git rev-parse HEAD"
-    -- Note that this will NOT be newline-terminated:
-    hashes   <- runLines "git log --pretty=format:'%H'"
     let ls :: [IO String]
         ls = [ e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
              , e$ "#    "        
@@ -935,9 +947,9 @@ printBenchrunHeader = do
              , e$ "# Benchmarks_File: " ++ benchfile
              , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
              , e$ "# Benchmarks_Version: " ++ show ver
-             , e$ "# Git_Branch: " ++ trim branch
-             , e$ "# Git_Hash: "   ++ trim revision
-             , e$ "# Git_Depth: "  ++ show (length hashes)
+             , e$ "# Git_Branch: " ++ branch
+             , e$ "# Git_Hash: "   ++ revision
+             , e$ "# Git_Depth: "  ++ show depth
              , e$ "# Using the following settings from environment variables:" 
              , e$ "#  ENV BENCHLIST=$BENCHLIST"
              , e$ "#  ENV THREADS=   $THREADS"
