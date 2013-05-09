@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns, NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 --------------------------------------------------------------------------------
 -- NOTE: This is best when compiled with "ghc -threaded"
 -- However, ideally for real benchmarking runs we WANT the waitForProcess below block the whole process.
@@ -56,7 +56,7 @@ import Control.Monad.Reader
 import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
 import Debug.Trace
 import Data.Char (isSpace)
-import Data.Time.Clock (getCurrentTime)
+import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
 import Data.IORef
@@ -202,9 +202,11 @@ data Benchmark = Benchmark
  } deriving (Eq, Show, Ord)
 
 
+gc_stats_flag :: String
 gc_stats_flag = " -s " 
 -- gc_stats_flag = " --machine-readable -t "
 
+exedir :: String
 exedir = "./bin"
 
 --------------------------------------------------------------------------------
@@ -395,6 +397,7 @@ data Sched
 
 -- [2012.05.03] RRN: ContFree is not exposed, thus removing it from the
 -- default set, though you can still ask for it explicitly:
+defaultSchedSet :: Set.Set Sched
 defaultSchedSet = Set.difference (Set.fromList [minBound ..])
                                (Set.fromList [ContFree, NUMA, SMP])
 
@@ -423,10 +426,12 @@ expandMode "NUMA"     = [NUMA]
 expandMode s = error$ "Unknown Scheduler or mode: " ++s
 
 -- Omitting ContFree, as it takes way too long for most trials
+ivarScheds :: [Sched]
 ivarScheds = [Trace, Direct, SMP, NUMA] 
 -- ivarScheds = [Trace, Direct]
 
 -- TODO -- we really need to factor this out into a configuration file.
+schedToModule :: Sched -> String
 schedToModule s = 
   case s of 
 --   Trace    -> "Control.Monad.Par"
@@ -438,6 +443,7 @@ schedToModule s =
    NUMA     -> "Control.Monad.Par.Meta.NUMAOnly"
    None     -> "qualified Control.Monad.Par as NotUsed"
 
+schedToCabalFlag :: Sched -> String
 schedToCabalFlag s =
   case s of
     Trace -> "-ftrace"
@@ -725,7 +731,15 @@ runOne br@(BenchRun { threads=numthreads
     log$ printf "Running trial %d of %d" i trials
     log "------------------------------------------------------------"
     SubProcess {wait,process_out,process_err} <-
-      lift$ measureProcess exefile (args ++ ["+RTS "++rts++"-RTS"]) env (Just 150)
+      lift$ measureProcess exefile (args ++ ["+RTS "++rts++" -RTS"]) env (Just 150)
+
+    -- TEMP: Shouldn't need to convert here:
+    -- outH <- lift$ Strm.inputStreamToHandle =<< Strm.map (B.append "\n") process_out
+    -- errH <- lift$ Strm.inputStreamToHandle =<< Strm.map (B.append "\n") process_err
+    -- mv1 <- echoThread (not shortrun) outH
+    -- mv2 <- echoThread (not shortrun) errH
+    -- _ <- lift$ takeMVar mv1
+    -- _ <- lift$ takeMVar mv2
     lift wait
 
   -- Extract the min, median, and max:
@@ -795,8 +809,10 @@ data SubProcess =
 -- | Internal data type.
 data ProcessEvt = ErrLine B.ByteString
                 | OutLine B.ByteString
+                | ProcessClosed
                 | TimerFire 
-
+  deriving (Show,Eq,Read)
+           
 -- | This runs a sub-process and tries to determine how long it took (real time) and
 -- how much of that time was spent in the mutator vs. the garbage collector.
 --
@@ -809,21 +825,31 @@ data ProcessEvt = ErrLine B.ByteString
 --     productivity.
 --
 measureProcess ::
---  Bool                  -- ^ Echo process output to log?
   String                -- ^ Executable
   -> [String]           -- ^ Command line arguments
   -> [(String, String)] -- ^ Environment variables
   -> Maybe Double       -- ^ Optional timeout in seconds.
   -> IO SubProcess
 measureProcess cmd args env timeout = do
+  startTime <- getCurrentTime
   (_inp,out,err,pid) <- Strm.runInteractiveProcess cmd args Nothing (Just env)
   out'  <- Strm.map OutLine =<< Strm.lines out
   err'  <- Strm.map ErrLine =<< Strm.lines err
   timeEvt <- case timeout of
                Nothing -> Strm.nullInput
                Just t  -> Strm.map (\_ -> TimerFire) =<< timeOutStream t
-  merged <- Strm.concurrentMerge [out',err', timeEvt]
 
+  -- Merging the streams is complicated because we want to catch when both stdout and
+  -- stderr have closed (and not wait around until the timeout fires).
+  ----------------------------------------
+  merged0 <- Strm.concurrentMerge [out',err']
+  merged1 <- reifyEOS merged0
+  merged2 <- Strm.map (\x -> case x of
+                              Nothing -> ProcessClosed
+                              Just y -> y) merged1
+  merged3 <- Strm.concurrentMerge [merged2, timeEvt]
+  ----------------------------------------
+  
   -- 'loop' below destructively consumes "merged" so we need fresh streams for output:
   relay_out <- newChan
   relay_err <- newChan  
@@ -833,23 +859,22 @@ measureProcess cmd args env timeout = do
   -- Process the input until there is no more, and then return the result.
   let 
       loop time prod = do
-        x <- Strm.read merged
+        mcode <- getProcessExitCode pid
+        x <- Strm.read merged3
         case x of
-          Nothing -> do
+          Just ProcessClosed -> do
             code <- waitForProcess pid
+            endtime <- getCurrentTime
             case code of
               ExitSuccess -> do
                 tm <- case time of
                          -- If there's no self-reported time, we measure it ourselves:
-                         Nothing -> undefined
+                         Nothing -> let d = diffUTCTime endtime startTime in
+                                    return$ fromRational$ toRational d
                          Just t -> return t
                 return (RunCompleted {realtime=tm, productivity=prod})
-                
-              -- ExitFailure 143 -> return TimeOut
-              -- ExitFailure 15  -> return TimeOut
-              -- TEMP ^^ : [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily ^
               ExitFailure c   -> return (ExitError c)
-
+        
           Just TimerFire -> return TimeOut
   
           -- Bounce the line back to anyone thats waiting:
@@ -861,12 +886,36 @@ measureProcess cmd args env timeout = do
             writeChan relay_out (Just outLine)
             -- The SELFTIMED readout will be reported on stdout:
             loop (time `orMaybe` checkTimingLine outLine) prod
-      -- Hacks for looking for particular bits of text:
-      checkTimingLine ln = Nothing
-      checkProductivity ln = Nothing
+
+          Nothing -> error "benchmark.hs: Internal error!  This should not happen."
   
   fut <- A.async (loop Nothing Nothing)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
+
+
+-------------------------------------------------------------------
+-- Hacks for looking for particular bits of text in process output:
+-------------------------------------------------------------------
+
+checkTimingLine :: B.ByteString -> Maybe Double
+checkTimingLine ln =
+  case B.words ln of
+    [] -> Nothing
+    hd:tl | hd == "SELFTIMED" || hd == "SELFTIMED:" ->
+      case tl of
+        [time] ->
+          case reads (B.unpack time) of
+            (dbl,_):_ -> Just dbl
+            _ -> error$ "Error parsing number in SELFTIMED line: "++B.unpack ln
+    _ -> Nothing
+--    _ -> error$"Bad SELFTIMED line, too many tokens: "++B.unpack ln
+
+
+-- | Retrieve productivity as output by 
+checkProductivity :: B.ByteString -> Maybe Double
+checkProductivity ln =  
+  Nothing
+
 
 -- | Fire a single event after a time interval, then end the stream.
 timeOutStream :: Double -> IO (Strm.InputStream ())
@@ -1359,5 +1408,21 @@ collapsePrefix old new str =
 orMaybe :: Maybe a -> Maybe a -> Maybe a 
 orMaybe Nothing x  = x
 orMaybe x@(Just _) _ = x 
+
+-- | This makes the EOS into an /explicit/, penultimate message. This way it survives
+-- `concurrentMerge`.  It represents this end of stream by Nothing, but beware the
+-- doubly-nested `Maybe` type.
+reifyEOS :: Strm.InputStream a -> IO (Strm.InputStream (Maybe a))
+reifyEOS ins =
+  do flag <- newIORef True
+     Strm.makeInputStream $ do
+       x   <- Strm.read ins
+       flg <- readIORef flag
+       case x of
+         Just y -> return (Just (Just y))
+         Nothing | flg -> do writeIORef flag False
+                             return (Just Nothing)
+                 | otherwise -> return Nothing
+
 
 ----------------------------------------------------------------------------------------------------

@@ -31,9 +31,11 @@ executable hsbencher
       hydra-print >= 0.1.0.3,
       io-streams >= 1.0
 
+  ghc-options: -threaded 
+
   if flag(fusion) {
     build-depends: handa-gdata >= 0.6.1
-    ghc-options: -DFUSION_TABLES
+    cpp-options: -DFUSION_TABLES
   }
 
   -- hs-source-dirs:      
