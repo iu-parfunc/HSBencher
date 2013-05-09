@@ -51,7 +51,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.Chan
 
-import GHC.Conc (numCapabilities)
+import GHC.Conc (getNumProcessors)
 import Control.Monad.Reader
 import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
 import Debug.Trace
@@ -273,9 +273,6 @@ getConfig cmd_line_options = do
       logFile = "bench_" ++ hostname ++ ".log"
       resultsFile = "results_" ++ hostname ++ ".dat"      
       shortrun = strBool (get "SHORTRUN"  "0")
-  -- We can't use numCapabilities as the number of hardware threads
-  -- because this script may not be running in threaded mode.
-
   let scheds = case get "SCHEDS" "" of 
 		"" -> defaultSchedSet
 		s  -> Set.fromList (map read (words s))
@@ -1123,13 +1120,13 @@ main = do
             unless rtsSupportsBoundThreads $ error "benchmark.hs was NOT compiled with -threaded.  Can't do --par."
         --------------------------------------------------------------------------------
         -- Parallel version:
-            lift$ putStrLn$ "[!!!] Compiling in Parallel, numCapabilities="++show numCapabilities++" ... "
+            numProcs <- liftIO getNumProcessors
+            lift$ putStrLn$ "[!!!] Compiling in Parallel, numProcessors="++show numProcs++" ... "
                
             when recomp $ liftIO$ do 
               when hasCabalFile (error "Currently, cabalized build does not support parallelism!")
             
-              -- This uses numCapabilities worker threads:
-              (strms,barrier) <- parForM numCapabilities (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
+              (strms,barrier) <- parForM numProcs (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                  outStrm' <- Strm.unlines outStrm
                  let conf' = conf { stdOut = outStrm' } 
                  runReaderT (compileOne bench (confnum,length pruned)) conf'
@@ -1141,7 +1138,7 @@ main = do
             Config{shortrun} <- ask
 	    if shortrun then liftIO$ do
                putStrLn$ "[!!!] Running in Parallel..."              
-               (strms,barrier) <- parForM numCapabilities (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
+               (strms,barrier) <- parForM numProcs (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                   outStrm' <- Strm.unlines outStrm
                   let conf' = conf { stdOut = outStrm' }
                   runReaderT (runOne bench (confnum,total)) conf'
