@@ -762,7 +762,7 @@ runOne br@(BenchRun { threads=numthreads
       formatted = (padl 15$ unwords $ ts)
                   ++"   "++ unwords prods -- prods may be empty!
 
-  log $ " >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
+  log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
 
   logOn [ResultsFile]$ 
     printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
@@ -1203,8 +1203,9 @@ catParallelOutput strms stdOut = do
            interleaved <- Strm.concurrentMerge strms2
            Strm.connect interleaved stdOut
    -- This version serializes the output one worker at a time:           
-   4 -> do 
-           merged <- Strm.concatInputStreams strms
+   4 -> do
+           strms2 <- mapM Strm.lines strms
+           merged <- Strm.concatInputStreams strms2
            -- Strm.connect (head strms) stdOut
            Strm.connect merged stdOut
 

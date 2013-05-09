@@ -168,7 +168,7 @@ checkProductivity ln =
           ((gcD,_):_,(totalD,_):_) -> Just $ 
             if totalD == 0.0
             then 100.0
-            else (gcD / totalD * 100)
+            else (100 - (gcD / totalD * 100))
           _ -> error$ "checkGCTime: Error parsing number in MUT time line: "++B.unpack ln
    -- TODO: Support  "+RTS -t --machine-readable" as well...          
    --  read GC_wall_seconds     
