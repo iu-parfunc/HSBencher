@@ -21,10 +21,19 @@ Flag fusion
       Add support for Google Fusion Table upload of benchmark data.
   default: False  
 
-executable hsbencher
+
+Library 
+  exposed-modules: HSBencher.MeasureProcess
+  build-depends:   
+      base ==4.6.*, bytestring ==0.10.*, process ==1.1.*, directory ==1.2.*, filepath ==1.3.*, random ==1.0.*, 
+      unix ==2.6.*, containers ==0.5.*, time ==1.4.*, mtl ==2.1.*, async >= 2.0, 
+      hydra-print >= 0.1.0.3,
+      io-streams >= 1.0
+  default-language:    Haskell2010
+
+Executable hsbencher
   main-is: bench/benchmark.hs
   -- other-modules:       
---  other-extensions:   NamedFieldPuns, TemplateHaskell, CPP, DeriveDataTypeable, FlexibleInstances, DeriveGeneric, BangPatterns, OverloadedStrings
   build-depends:       
       base ==4.6.*, bytestring ==0.10.*, process ==1.1.*, directory ==1.2.*, filepath ==1.3.*, random ==1.0.*, 
       unix ==2.6.*, containers ==0.5.*, time ==1.4.*, mtl ==2.1.*, async >= 2.0, 
@@ -37,6 +46,4 @@ executable hsbencher
     build-depends: handa-gdata >= 0.6.1
     cpp-options: -DFUSION_TABLES
   }
-
-  -- hs-source-dirs:      
   default-language:    Haskell2010
