@@ -780,7 +780,8 @@ runOne br@(BenchRun { threads=numthreads
            ("VARIANT", show sched)]
     tuple' <- liftIO$ augmentTupleWithConfig conf tuple
     let (cols,vals) = unzip tuple'
-    log$ " [fusiontable] Uploading row: "++show tuple'
+    log$ " [fusiontable] Uploading row with "++show (length cols)++
+         " columns containing "++show (sum$ map length vals)++" characters of data"
     liftIO$ insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
 --       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
     return ()       
