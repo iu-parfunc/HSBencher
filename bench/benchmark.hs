@@ -63,6 +63,7 @@ import Data.IORef
 import Data.List (intercalate, sortBy)
 import qualified Data.Set as Set
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
+import Numeric (showFFloat)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getEnv, getEnvironment, getExecutablePath)
 import System.Directory
@@ -747,10 +748,11 @@ runOne br@(BenchRun { threads=numthreads
       maxR = last sorted
       medianR = sorted !! (length sorted `quot` 2)
   
-  let ts@[t1,t2,t3]    = map show [realtime minR, realtime medianR, realtime maxR]
+  let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
+                         [realtime minR, realtime medianR, realtime maxR]
       prods@[p1,p2,p3] = map mshow [productivity minR, productivity medianR, productivity maxR]
       mshow Nothing  = ""
-      mshow (Just x) = show x
+      mshow (Just x) = showFFloat (Just 2) x "" 
   
   let 
       pads n s = take (max 1 (n - length s)) $ repeat ' '
