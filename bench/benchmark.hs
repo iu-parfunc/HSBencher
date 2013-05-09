@@ -735,13 +735,14 @@ runOne br@(BenchRun { threads=numthreads
     SubProcess {wait,process_out,process_err} <-
       lift$ measureProcess exefile allargs env (Just 150)
 
-    -- TEMP: Shouldn't need to convert here:
-    -- outH <- lift$ Strm.inputStreamToHandle =<< Strm.map (B.append "\n") process_out
-    -- errH <- lift$ Strm.inputStreamToHandle =<< Strm.map (B.append "\n") process_err
-    -- mv1 <- echoThread (not shortrun) outH
-    -- mv2 <- echoThread (not shortrun) errH
+    err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
+    -- mv1 <- echoStream (not shortrun) process_out
+    -- mv2 <- echoStream (not shortrun) err2
     -- _ <- lift$ takeMVar mv1
     -- _ <- lift$ takeMVar mv2
+    both <- lift$ Strm.concurrentMerge [process_out, err2]
+    mv <- echoStream (not shortrun) both
+    lift$ takeMVar mv
     lift wait
 
   -- Extract the min, median, and max:
@@ -861,10 +862,11 @@ measureProcess cmd args env timeout = do
   -- Process the input until there is no more, and then return the result.
   let 
       loop time prod = do
-        mcode <- getProcessExitCode pid
         x <- Strm.read merged3
         case x of
           Just ProcessClosed -> do
+            writeChan relay_err Nothing
+            writeChan relay_out Nothing
             code <- waitForProcess pid
             endtime <- getCurrentTime
             case code of
@@ -1038,7 +1040,6 @@ runCmdWithEnv echo env cmd = do
        close_fds = False,
        create_group = False
      }
-  
   mv1 <- echoThread echo outH
   mv2 <- echoThread echo errH
   lift$ waitForProcess ph  
@@ -1077,14 +1078,30 @@ echoThread echoStdout hndl = do
                  logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) ln 
                  echoloop mv (ln:acc)
 
--- Take a lazy string that performs blocking IO behind the scenes, echo it.
--- echoLazyIO :: String -> ReaderT Config IO (MVar )
--- echoLazyIO str = 
---   forM_ (lines str) $ \ln -> do 
---     return ""
+-- | Create a thread that echos the contents of stdout/stderr InputStreams (lines) to
+-- the appropriate places.
+echoStream :: Bool -> Strm.InputStream B.ByteString -> ReaderT Config IO (MVar ())
+echoStream echoStdout outS = do
+  conf <- ask
+  mv   <- lift$ newEmptyMVar
+  lift$ void$ forkIOH "echoStream thread"  $ 
+    runReaderT (echoloop mv) conf 
+  return mv
+ where
+   echoloop mv = 
+     do
+        x <- lift$ Strm.read outS
+        case x of
+          Nothing -> lift$ putMVar mv ()
+          Just ln -> do
+--            logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) (B.unpack ln)
+            lift$ B.putStrLn ln
+            echoloop mv
+
 
 --------------------------------------------------------------------------------
 
+whichVariant :: String -> String
 whichVariant "benchlist.txt"        = "desktop"
 whichVariant "benchlist_server.txt" = "server"
 whichVariant "benchlist_laptop.txt" = "laptop"
@@ -1365,8 +1382,9 @@ forkIOH who action =
   forkIO $ handle (\ (e::SomeException) -> 
                    case fromException e of
                      Just ThreadKilled -> return ()
-                     Nothing -> do 
-		        hPutStrLn stderr$ "ERROR: "++who++": Got exception inside forked thread: "++show e
+                     Nothing -> do
+--                        hPrintf stderr $ "ERROR: "++who++": Got exception inside forked thread: "++show e++"\n"
+                        printf $ "ERROR: "++who++": Got exception inside forked thread: "++show e++"\n"                       
 			tid <- readIORef main_threadid
 			-- case maybhndls of 
 			--   Nothing -> return ()
