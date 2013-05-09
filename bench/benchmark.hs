@@ -50,6 +50,7 @@ import Prelude hiding (log)
 import Control.Applicative    
 import Control.Concurrent
 import Control.Concurrent.Chan
+import qualified Control.Concurrent.Async as A
 import GHC.Conc (numCapabilities)
 import Control.Monad.Reader
 import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
@@ -59,7 +60,7 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
 import Data.IORef
-import Data.List (intercalate)
+import Data.List (intercalate, sortBy)
 import qualified Data.Set as Set
 import Data.List (isPrefixOf, tails, isInfixOf, delete)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
@@ -77,6 +78,8 @@ import System.IO.Unsafe (unsafePerformIO)
 
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
+import qualified System.IO.Streams.Process as Strm
+import qualified System.IO.Streams.Combinators as Strm
 import qualified Data.ByteString.Char8 as B
 
 import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydraConf, hydraPrintStatic)
@@ -198,15 +201,6 @@ data Benchmark = Benchmark
  , args :: [String]
  } deriving (Eq, Show, Ord)
 
--- | Name of a script to time N runs of a program:
---   (I used a haskell script for this but ran into problems at one point):
---
--- CONTRACT FOR NTIMES:
---   * Return ONLY a series of three times (min/med/max) on a single line of stdout
---   * Optionally return matching productivities after the min/med/max times on the same line.
---   * Return the original output of the program, or any additional
---     output, on stderr.
-ntimes = takeDirectory (unsafePerformIO getExecutablePath) </> "ntimes_minmedmax"
 
 gc_stats_flag = " -s " 
 -- gc_stats_flag = " --machine-readable -t "
@@ -722,35 +716,38 @@ runOne br@(BenchRun { threads=numthreads
 	     _ -> ghc_RTS  ++" -N"++show numthreads
       exefile = exedir </> testRoot ++ uniqueSuffix br ++ ".exe"
   ----------------------------------------
-  -- Now Execute:
+  -- Now execute N trials:
   ----------------------------------------
-  -- If we failed compilation we don't bother running either:
-  let ntimescmd = printf "%s %d %s %s +RTS %s -RTS" ntimes trials exefile (unwords args) rts
+  -- (One option woud be dynamic feedback where if the first one
+  -- takes a long time we don't bother doing more trials.)
 
-  -- One option woud be dynamic feedback where if the first one
-  -- takes a long time we don't bother doing more trials.  
+  nruns <- forM [1..trials] $ \ i -> do 
+    log$ printf "Running trial %d of %d" i trials
+    log "------------------------------------------------------------"
+    SubProcess {wait,process_out,process_err} <-
+      lift$ measureProcess exefile (args ++ ["+RTS "++rts++"-RTS"]) env (Just 150)
+    lift wait
 
-  (str,code) <- runCmdWithEnv (not shortrun) env ntimescmd
-
-  let (ts,prods) = 
-       case code of
-	ExitSuccess     -> 
-           case map words (lines str) of
-	      -- Here we expect a very specific output format from ntimes:
-	      ["REALTIME":ts, "PRODUCTIVITY":prods] -> (ts, prods)
-	      _ -> error "bad output from ntimes, expected two timing numbers"     
-	ExitFailure 143 -> (["TIMEOUT","TIMEOUT","TIMEOUT"],[])
-	ExitFailure 15  -> (["TIMEOUT","TIMEOUT","TIMEOUT"],[])
-	-- TEMP ^^ : [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily ^
-	ExitFailure _   -> (["ERR","ERR","ERR"],[])
-
+  -- Extract the min, median, and max:
+  let sorted = sortBy (\ a b -> compare (realtime a) (realtime b)) nruns
+      minR = head sorted
+      maxR = last sorted
+      medianR = sorted !! (length sorted `quot` 2)
+  
+  let ts@[t1,t2,t3]    = map show [realtime minR, realtime medianR, realtime maxR]
+      prods@[p1,p2,p3] = map mshow [productivity minR, productivity medianR, productivity maxR]
+      mshow Nothing  = ""
+      mshow (Just x) = show x
+  
+  let 
       pads n s = take (max 1 (n - length s)) $ repeat ' '
       padl n x = pads n x ++ x 
       padr n x = x ++ pads n x
       
       -- These are really (time,prod) tuples, but a flat list of
       -- scalars is simpler and readable by gnuplot:
-      formatted = (padl 15$ unwords ts) ++"   "++ unwords prods -- prods may be empty!
+      formatted = (padl 15$ unwords $ ts)
+                  ++"   "++ unwords prods -- prods may be empty!
 
   log $ " >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
 
@@ -763,8 +760,7 @@ runOne br@(BenchRun { threads=numthreads
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
         client = OAuth2Client { clientId = cid, clientSecret = sec }
     toks  <- liftIO$ getCachedTokens client
-    let [t1,t2,t3] = ts
-        [p1,p2,p3] = prods
+    let         
         tuple =          
           [("PROGNAME",testRoot),("ARGS", unwords args),("THREADS",show numthreads),
            ("MINTIME",t1),("MEDIANTIME",t2),("MAXTIME",t3),
@@ -777,6 +773,110 @@ runOne br@(BenchRun { threads=numthreads
 --       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
     return ()       
 #endif
+
+
+-- | Measured results from running a subprocess (benchmark).
+data RunResult =
+    RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
+                 , productivity :: Maybe Double -- ^ Seconds
+                 }
+  | TimeOut
+  | ExitError Int -- ^ Contains the returned error code.
+ deriving Eq
+
+-- | A running subprocess.
+data SubProcess =
+  SubProcess
+  { wait :: IO RunResult
+  , process_out  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
+  , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
+  }
+
+-- | Internal data type.
+data ProcessEvt = ErrLine B.ByteString
+                | OutLine B.ByteString
+                | TimerFire 
+
+-- | This runs a sub-process and tries to determine how long it took (real time) and
+-- how much of that time was spent in the mutator vs. the garbage collector.
+--
+-- It is complicated by:
+--
+--   (1) An additional protocol for the process to report self-measured realtime (a
+--     line starting in "SELFTIMED")
+--
+--   (2) Parsing the output of +RTS -s or "+RTS --machine-readable -t" to retrieve
+--     productivity.
+--
+measureProcess ::
+--  Bool                  -- ^ Echo process output to log?
+  String                -- ^ Executable
+  -> [String]           -- ^ Command line arguments
+  -> [(String, String)] -- ^ Environment variables
+  -> Maybe Double       -- ^ Optional timeout in seconds.
+  -> IO SubProcess
+measureProcess cmd args env timeout = do
+  (_inp,out,err,pid) <- Strm.runInteractiveProcess cmd args Nothing (Just env)
+  out'  <- Strm.map OutLine =<< Strm.lines out
+  err'  <- Strm.map ErrLine =<< Strm.lines err
+  timeEvt <- case timeout of
+               Nothing -> Strm.nullInput
+               Just t  -> Strm.map (\_ -> TimerFire) =<< timeOutStream t
+  merged <- Strm.concurrentMerge [out',err', timeEvt]
+
+  -- 'loop' below destructively consumes "merged" so we need fresh streams for output:
+  relay_out <- newChan
+  relay_err <- newChan  
+  process_out <- Strm.chanToInput relay_out
+  process_err <- Strm.chanToInput relay_err
+  
+  -- Process the input until there is no more, and then return the result.
+  let 
+      loop time prod = do
+        x <- Strm.read merged
+        case x of
+          Nothing -> do
+            code <- waitForProcess pid
+            case code of
+              ExitSuccess -> do
+                tm <- case time of
+                         -- If there's no self-reported time, we measure it ourselves:
+                         Nothing -> undefined
+                         Just t -> return t
+                return (RunCompleted {realtime=tm, productivity=prod})
+                
+              -- ExitFailure 143 -> return TimeOut
+              -- ExitFailure 15  -> return TimeOut
+              -- TEMP ^^ : [2012.01.16], ntimes is for some reason getting 15 instead of 143.  HACKING this temporarily ^
+              ExitFailure c   -> return (ExitError c)
+
+          Just TimerFire -> return TimeOut
+  
+          -- Bounce the line back to anyone thats waiting:
+          Just (ErrLine errLine) -> do 
+            writeChan relay_err (Just errLine)
+            -- Check for GHC-produced GC stats here:
+            loop time (prod `orMaybe` checkProductivity errLine)
+          Just (OutLine outLine) -> do
+            writeChan relay_out (Just outLine)
+            -- The SELFTIMED readout will be reported on stdout:
+            loop (time `orMaybe` checkTimingLine outLine) prod
+      -- Hacks for looking for particular bits of text:
+      checkTimingLine ln = Nothing
+      checkProductivity ln = Nothing
+  
+  fut <- A.async (loop Nothing Nothing)
+  return$ SubProcess {wait=A.wait fut, process_out, process_err}
+
+-- | Fire a single event after a time interval, then end the stream.
+timeOutStream :: Double -> IO (Strm.InputStream ())
+timeOutStream time = do
+  s1 <- Strm.makeInputStream $ do
+         threadDelay (round$ time * 1000 * 1000)
+         return$ Just ()
+  Strm.take 1 s1
+
+
 
 -- defaultColumns =
 --   ["Program","Args","Threads","Sched","Threads",
@@ -850,7 +950,7 @@ indent = map ("    "++)
 -- [2012.05.03] HSH has been causing no end of problems in the
 -- subprocess-management department.  Here we instead use the
 -- underlying createProcess library function:
-runCmdWithEnv :: Bool -> [(String, String)] -> [Char]
+runCmdWithEnv :: Bool -> [(String, String)] -> String
               -> ReaderT Config IO (String, ExitCode)
 runCmdWithEnv echo env cmd = do 
   -- This current design has the unfortunate disadvantage that it
@@ -1255,5 +1355,9 @@ collapsePrefix old new str =
   if isPrefixOf old str
   then new ++ drop (length old) str
   else str  
+
+orMaybe :: Maybe a -> Maybe a -> Maybe a 
+orMaybe Nothing x  = x
+orMaybe x@(Just _) _ = x 
 
 ----------------------------------------------------------------------------------------------------
