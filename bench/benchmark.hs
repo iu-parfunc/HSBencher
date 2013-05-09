@@ -1140,24 +1140,21 @@ main = do
                  let conf' = conf { stdOut = outStrm' } 
                  runReaderT (compileOne bench (confnum,length pruned)) conf'
                  return ()
-
               catParallelOutput strms stdOut
               res <- barrier
               return ()
 
             Config{shortrun} <- ask
-{-            
-	    if shortrun then do
-               lift$ putStrLn$ "[!!!] Running in Parallel..."
-               error "benchmark.hs !!!Restore this part of the code"
-	       -- (outputs,_) <- parForMTwoPhaseAsync (zip [1..] pruned) $ \ (confnum,bench) -> do
-	       --    out@(BL _ ls3) <- forkWithBufferedLogs$ runOne bench (confnum,total)
-	       --    return (ls3, forceBuffered out)
-	       -- flushBuffered outputs 
+	    if shortrun then liftIO$ do
+               putStrLn$ "[!!!] Running in Parallel..."              
+               (strms,barrier) <- parForM numCapabilities (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
+                  outStrm' <- Strm.unlines outStrm
+                  let conf' = conf { stdOut = outStrm' }
+                  runReaderT (runOne bench (confnum,total)) conf'
+               catParallelOutput strms stdOut
+               _ <- barrier
                return ()
 	     else do
--}
-            do
                -- Non-shortrun's NEVER run multiple benchmarks at once:
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 		    runOne bench (confnum,total)
@@ -1193,7 +1190,7 @@ main = do
 -- Several different options for how to display output in parallel:
 catParallelOutput :: [Strm.InputStream B.ByteString] -> Strm.OutputStream B.ByteString -> IO ()
 catParallelOutput strms stdOut = do 
- case 1 of
+ case 4 of
    -- First option is to create N window panes immediately.
    1 -> do
            hydraPrintStatic defaultHydraConf (zip (map show [1..]) strms)
