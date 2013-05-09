@@ -31,9 +31,9 @@ straight .hs files buildable by "ghc --make".
    
 ---------------------------------------------------------------------------
                                 << TODO >>
-   ---------------------------------------------------------------------------
+ ---------------------------------------------------------------------------
 
-   * Replace environment variable argument passing with proper flags/getopt.
+ * Replace environment variable argument passing with proper flags/getopt.
 
    <Things that worked at one time but need to be cleaned up:>
      
@@ -41,6 +41,9 @@ straight .hs files buildable by "ghc --make".
        without GHC (as with Haskell Cnc)
      
      * Clusterbench -- adding an additional layer of parameter variation.
+
+ * TODO/FIXME: I'm seeing a thread-blocked-indefinitely on MVar error at the end of
+   running the first benchmark when fusion table upload is enabled.
 
 -}
 
@@ -358,7 +361,7 @@ getConfig cmd_line_options = do
                       let auth = OAuth2Client { clientId=cid, clientSecret=sec }
                       tid <- runReaderT (getTableId auth name) conf
                       return conf{fusionTableID= Just tid}
-                    (_,_) -> error "When --fusion-tables is activated --clientid and --clientsecret are required too."
+                    (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required too."
 #else
   let finalconf = conf      
 #endif         
@@ -1032,7 +1035,7 @@ cli_options =
        "Show this help message and exit."
        
 #ifdef FUSION_TABLES
-     , Option [] ["fusion-tables"] (OptArg FusionTables "TABLEID")
+     , Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
        "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
 
      , Option [] ["name"]         (ReqArg BenchsetName "NAME") "Name for created/discovered fusion table."
