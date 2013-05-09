@@ -878,10 +878,6 @@ runCmdWithEnv echo env cmd = do
        std_in  = Inherit,
        std_out = CreatePipe,
        std_err = CreatePipe,
-       -- [2012.05.03] Having problems with redirecting stderr for ntimes:
-       -- Inheriting WORKS, CreatePipe WORKS, UseHandle DOESN'T:
-       -- Redirecting to a file fails with several of these errors:
-       --    ./ntimes: line 69: /dev/stderr: Not a directory
        cwd = Nothing,
        close_fds = False,
        create_group = False
@@ -1068,10 +1064,6 @@ main = do
     putStr$ usageInfo "\n CMDLN OPTIONS:" cli_options
     putStrLn$ usageStr    
     exitFailure
-
-  -- HACK: with all the inter-machine syncing and different version
-  -- control systems I run into permissions problems sometimes:
-  system "chmod +x ./ntime* ./*.sh"
 
   conf@Config{benchlist,scheds,envs,stdOut,threadsettings} <- getConfig options
   
