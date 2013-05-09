@@ -729,9 +729,11 @@ runOne br@(BenchRun { threads=numthreads
 
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "Running trial %d of %d" i trials
-    log "------------------------------------------------------------"
+    let allargs = args++["+RTS"]++words rts++["-RTS"]
+    log "------------------------------------------------------------"        
+    log$ " Executing command: " ++ unwords (exefile:allargs)    
     SubProcess {wait,process_out,process_err} <-
-      lift$ measureProcess exefile (args ++ ["+RTS "++rts++" -RTS"]) env (Just 150)
+      lift$ measureProcess exefile allargs env (Just 150)
 
     -- TEMP: Shouldn't need to convert here:
     -- outH <- lift$ Strm.inputStreamToHandle =<< Strm.map (B.append "\n") process_out
@@ -897,6 +899,7 @@ measureProcess cmd args env timeout = do
 -- Hacks for looking for particular bits of text in process output:
 -------------------------------------------------------------------
 
+-- | Check for a SELFTIMED line of output.
 checkTimingLine :: B.ByteString -> Maybe Double
 checkTimingLine ln =
   case B.words ln of
@@ -908,13 +911,27 @@ checkTimingLine ln =
             (dbl,_):_ -> Just dbl
             _ -> error$ "Error parsing number in SELFTIMED line: "++B.unpack ln
     _ -> Nothing
---    _ -> error$"Bad SELFTIMED line, too many tokens: "++B.unpack ln
 
-
--- | Retrieve productivity as output by 
+-- | Retrieve productivity (i.e. percent time NOT garbage collecting) as output from
+-- a Haskell program with "+RTS -s".  Productivity is a percentage (double between
+-- 0.0 and 100.0, inclusive).
 checkProductivity :: B.ByteString -> Maybe Double
-checkProductivity ln =  
-  Nothing
+checkProductivity ln =
+  case words (B.unpack ln) of
+    [] -> Nothing
+    -- EGAD: This is NOT really meant to be machine read:
+    ["GC","time",gc,"(",total,"elapsed)"] ->
+--    "GC":"time": gc :"(": total :_ ->
+        case (reads gc, reads total) of
+          ((gcD,_):_,(totalD,_):_) -> Just $ 
+            if totalD == 0.0
+            then 100.0
+            else (gcD / totalD * 100)
+          _ -> error$ "checkGCTime: Error parsing number in MUT time line: "++B.unpack ln
+   -- TODO: Support  "+RTS -t --machine-readable" as well...          
+   --  read GC_wall_seconds     
+   --  read mutator_wall_seconds
+    _ -> Nothing
 
 
 -- | Fire a single event after a time interval, then end the stream.
@@ -1004,7 +1021,7 @@ runCmdWithEnv :: Bool -> [(String, String)] -> String
 runCmdWithEnv echo env cmd = do 
   -- This current design has the unfortunate disadvantage that it
   -- produces no observable output until the subprocess is FINISHED.
-  log$ "Executing: " ++ cmd      
+  log$ "Executing: " ++ cmd
   baseEnv <- lift$ getEnvironment
   (Nothing, Just outH, Just errH, ph) <- lift$ createProcess 
      CreateProcess {
