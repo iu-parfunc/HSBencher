@@ -1133,43 +1133,20 @@ main = do
                
             when recomp $ liftIO$ do 
               when hasCabalFile (error "Currently, cabalized build does not support parallelism!")
-
-
-              -- This uses numCapabilities worker threads:
             
               -- This uses numCapabilities worker threads:
               (strms,barrier) <- parForM numCapabilities (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
-                 -- let outStrm' = outStrm
                  outStrm' <- Strm.unlines outStrm
-                 Strm.write (Just$ B.pack "[strm] CALLING compileOne...") outStrm'
---                 devnull <- Strm.handleToOutputStream =<< openFile "/dev/null" AppendMode
---                 let conf' = conf { stdOut = devnull }
                  let conf' = conf { stdOut = outStrm' } 
                  runReaderT (compileOne bench (confnum,length pruned)) conf'
-                 Strm.write (Just$ B.pack "[strm] FINISHED with that compileOne...") outStrm'
                  return ()
 
-                 
-#if 0
-              srcs <- Strm.fromList (zip (map show [1..]) strms)
-              hydraPrint defaultHydraConf{deleteWhen=Never} srcs
-#elif 1
-              hydraPrintStatic defaultHydraConf (zip (map show [1..]) strms)
-#elif 0
-              strms2 <- mapM Strm.lines strms
-              interleaved <- Strm.concurrentMerge strms2
-              Strm.connect interleaved stdOut
---              Strm.toList interleaved
-#else
-              -- This version serializes the output one worker at a time:
-              merged <- Strm.concatInputStreams strms
-              -- Strm.connect (head strms) stdOut
-              Strm.connect merged stdOut
-#endif
+              catParallelOutput strms stdOut
               res <- barrier
               return ()
 
             Config{shortrun} <- ask
+{-            
 	    if shortrun then do
                lift$ putStrLn$ "[!!!] Running in Parallel..."
                error "benchmark.hs !!!Restore this part of the code"
@@ -1178,7 +1155,9 @@ main = do
 	       --    return (ls3, forceBuffered out)
 	       -- flushBuffered outputs 
                return ()
-	     else do 
+	     else do
+-}
+            do
                -- Non-shortrun's NEVER run multiple benchmarks at once:
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 		    runOne bench (confnum,total)
@@ -1211,6 +1190,27 @@ main = do
     conf
 
 
+-- Several different options for how to display output in parallel:
+catParallelOutput :: [Strm.InputStream B.ByteString] -> Strm.OutputStream B.ByteString -> IO ()
+catParallelOutput strms stdOut = do 
+ case 1 of
+   -- First option is to create N window panes immediately.
+   1 -> do
+           hydraPrintStatic defaultHydraConf (zip (map show [1..]) strms)
+   2 -> do
+           srcs <- Strm.fromList (zip (map show [1..]) strms)
+           hydraPrint defaultHydraConf{deleteWhen=Never} srcs
+   -- This version interleaves their output lines (ugly):
+   3 -> do 
+           strms2 <- mapM Strm.lines strms
+           interleaved <- Strm.concurrentMerge strms2
+           Strm.connect interleaved stdOut
+   -- This version serializes the output one worker at a time:           
+   4 -> do 
+           merged <- Strm.concatInputStreams strms
+           -- Strm.connect (head strms) stdOut
+           Strm.connect merged stdOut
+
 
 ----------------------------------------------------------------------------------------------------
 -- *                                 GENERIC HELPER ROUTINES                                      
@@ -1227,19 +1227,8 @@ forkIOH who action =
                    case fromException e of
                      Just ThreadKilled -> return ()
                      Nothing -> do
---                        hPrintf stderr $ "ERROR: "++who++": Got exception inside forked thread: "++show e++"\n"
                         printf $ "ERROR: "++who++": Got exception inside forked thread: "++show e++"\n"                       
 			tid <- readIORef main_threadid
-			-- case maybhndls of 
-			--   Nothing -> return ()
-			--   Just (logBuf,resBuf,stdoutBuf) -> 
-			--      do 
-			-- 	hPutStrLn stderr "=========================="
-			-- 	hPutStrLn stderr "Buffered contents for log:"
-			-- 	hPutStrLn stderr "=========================="
-			-- 	str <- peekBuffer logBuf
-			-- 	hPutStrLn stderr (unlines str)
-			-- 	return ()
 			throwTo tid e
 		  )
            action
