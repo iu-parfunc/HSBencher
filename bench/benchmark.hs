@@ -42,9 +42,6 @@ straight .hs files buildable by "ghc --make".
      
      * Clusterbench -- adding an additional layer of parameter variation.
 
- * TODO/FIXME: I'm seeing a thread-blocked-indefinitely on MVar error at the end of
-   running the first benchmark when fusion table upload is enabled.
-
 -}
 
 module Main where 
@@ -1138,8 +1135,8 @@ main = do
               res <- barrier
               return ()
 
-            Config{shortrun} <- ask
-	    if shortrun then liftIO$ do
+            Config{shortrun,doFusionUpload} <- ask
+	    if shortrun && not doFusionUpload then liftIO$ do
                putStrLn$ "[!!!] Running in Parallel..."              
                (strms,barrier) <- parForM numProcs (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                   outStrm' <- Strm.unlines outStrm
