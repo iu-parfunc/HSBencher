@@ -125,7 +125,7 @@ usageStr = unlines $
    "               interface instead of using each scheduler directly",
    "",
 #ifdef FUSION_TABLES   
-   "     GOOGLE_CLIENTID, GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
+   "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
    "               client ID and secret can be provided by env vars OR command line options. ",
 #endif
    " ",
@@ -327,8 +327,8 @@ getConfig cmd_line_options = do
            , doFusionUpload = False                              
 #ifdef FUSION_TABLES
            , fusionTableID  = Nothing 
-           , fusionClientID     = lookup "GOOGLE_CLIENTID" env
-           , fusionClientSecret = lookup "GOOGLE_CLIENTSECRET" env
+           , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" env
+           , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
 #endif                              
 	   }
 
