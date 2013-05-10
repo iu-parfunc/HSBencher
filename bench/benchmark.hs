@@ -57,6 +57,7 @@ import Control.Exception (evaluate, handle, SomeException, throwTo, fromExceptio
 import Debug.Trace
 import Data.Char (isSpace)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
 import Data.IORef
@@ -156,7 +157,8 @@ data Config = Config
  , ghc_flags      :: String
  , ghc_RTS        :: String -- ^ +RTS flags
  , scheds         :: Set.Set Sched -- ^ subset of schedulers to test.
- , hostname       :: String 
+ , hostname       :: String
+ , startTime      :: Integer -- ^ Seconds since Epoch. 
  , resultsFile    :: String -- ^ Where to put timing results.
  , logFile        :: String -- ^ Where to put more verbose testing output.
 
@@ -168,9 +170,9 @@ data Config = Config
  , stdOut         :: Strm.OutputStream B.ByteString
    -- A set of environment variable configurations to test
  , envs           :: [[(String, String)]]
-   
-#ifdef FUSION_TABLES
+
  , doFusionUpload :: Bool
+#ifdef FUSION_TABLES
  , fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
  , fusionClientID :: Maybe String
  , fusionClientSecret :: Maybe String
@@ -225,12 +227,14 @@ augmentTupleWithConfig Config{..} base = do
   uname    <- runSL "uname -a"
   lspci    <- runLines "lspci"
   whos     <- runLines "who"
+  let runID = (hostname ++ "_" ++ show startTime)
   let (branch,revision,depth) = gitInfo
   return $ 
     addit "COMPILER"       ghcVer'   $
     addit "COMPILE_FLAGS"  ghc_flags $
     addit "RUNTIME_FLAGS"  ghc_RTS   $
     addit "HOSTNAME"       hostname $
+    addit "RUNID"          runID $ 
     addit "DATETIME"       (show datetime) $
     addit "TRIALS"         (show trials) $
     addit "ENV_VARS"       (show envs) $
@@ -255,6 +259,8 @@ augmentTupleWithConfig Config{..} base = do
 getConfig :: [Flag] -> IO Config
 getConfig cmd_line_options = do
   hostname <- runSL$ "hostname -s"
+  t0 <- getCurrentTime
+  let startTime = round (utcTimeToPOSIXSeconds t0)
   env      <- getEnvironment
 
   -- There has got to be a simpler way!
@@ -301,7 +307,7 @@ getConfig cmd_line_options = do
 	      (h:t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
 	      []    -> 0
       base_conf = Config 
-           { hostname, scheds, shortrun
+           { hostname, startTime, scheds, shortrun
            , benchsetName = Nothing
 	   , ghc        =       get "GHC"       "ghc"
            , ghc_pkg    =       get "GHC_PKG"   "ghc-pkg"
@@ -318,8 +324,8 @@ getConfig cmd_line_options = do
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
            , gitInfo        = (trim branch, trim revision, length hashes)
+           , doFusionUpload = False                              
 #ifdef FUSION_TABLES
-           , doFusionUpload = False
            , fusionTableID  = Nothing 
            , fusionClientID     = lookup "GOOGLE_CLIENTID" env
            , fusionClientSecret = lookup "GOOGLE_CLIENTSECRET" env
@@ -799,8 +805,10 @@ resultsSchema :: [(String, CellType)]
 resultsSchema =
   [ ("PROGNAME",STRING)
   , ("VARIANT",STRING)
-  , ("ARGS",STRING)
-  , ("HOSTNAME",STRING)    
+  , ("ARGS",STRING)    
+  , ("HOSTNAME",STRING)
+  -- The run is identified by hostname_secondsSinceEpoch:
+  , ("RUNID",STRING)
   , ("THREADS",NUMBER)
   , ("DATETIME",DATETIME)    
   , ("MINTIME", NUMBER)
@@ -1262,6 +1270,5 @@ collapsePrefix old new str =
   if isPrefixOf old str
   then new ++ drop (length old) str
   else str  
-
 
 ----------------------------------------------------------------------------------------------------
