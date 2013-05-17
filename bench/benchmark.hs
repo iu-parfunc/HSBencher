@@ -459,12 +459,12 @@ schedToModule s =
 schedToCabalFlag :: Sched -> String
 schedToCabalFlag s =
   case s of
-    Trace -> "-ftrace"
-    Direct -> "-fdirect"
-    ContFree -> "-fcontfree"
-    Sparks -> "-fsparks"
-    SMP -> "-fmeta-smp"
-    NUMA -> "-fmeta-numa"
+    Trace -> "--flags=\"-ftrace\""
+    Direct -> "--flags=\"-fdirect\""
+    ContFree -> "--flags=\"-fcontfree\""
+    Sparks -> "--flags=\"-fsparks\""
+    SMP -> "--flags=\"-fmeta-smp\""
+    NUMA -> "--flags=\"-fmeta-numa\""
     None -> ""
   
 
