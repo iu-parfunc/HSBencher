@@ -7,7 +7,7 @@
 --   benchmark.run: bench_hive.log: openFile: resource busy (file is locked)
 
 --------------------------------------------------------------------------------
-
+ 
 
 {- |
    
@@ -137,7 +137,9 @@ usageStr = unlines $
    "",
    "   Additionally, this script will propagate any flags placed in the",
    "   environment variables $GHC_FLAGS and $GHC_RTS.  It will also use",
-   "   $GHC, if available, to select the $GHC executable."
+   "   $GHC or $CABAL, if available, to select the executable paths.", 
+   "   ",
+   "   Command line arguments take precedence over environment variables, if both apply."
  ]
 
 ----------------------------------------------------------------------------------------------------
@@ -153,6 +155,7 @@ data Config = Config
  , shortrun       :: Bool
  , keepgoing      :: Bool   -- ^ keep going after error
  , ghc            :: String -- ^ ghc compiler path
+ , cabalPath      :: String   
  , ghc_pkg        :: String
  , ghc_flags      :: String
  , ghc_RTS        :: String -- ^ +RTS flags
@@ -306,10 +309,12 @@ getConfig cmd_line_options = do
       ver = case filter (isInfixOf "ersion") (lines benchstr) of 
 	      (h:t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
 	      []    -> 0
+      -- This is our starting point BEFORE processing command line flags:
       base_conf = Config 
            { hostname, startTime, scheds, shortrun
            , benchsetName = Nothing
 	   , ghc        =       get "GHC"       "ghc"
+	   , cabalPath  =       get "CABAL"     "cabal"
            , ghc_pkg    =       get "GHC_PKG"   "ghc-pkg"
 	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
@@ -344,6 +349,8 @@ getConfig cmd_line_options = do
            Just tid -> r2 { fusionTableID = Just tid }
            Nothing -> r2
 #endif
+      doFlag (CabalPath p) r = r { cabalPath=p }
+      doFlag (GHCPath   p) r = r { ghc=p }
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag NoRecomp r = r
@@ -592,10 +599,10 @@ path ls = foldl1 (</>) ls
 -- | Invoke cabal for all of the schedulers in the current config
 invokeCabal :: ReaderT Config IO Bool
 invokeCabal = do
-  Config{ghc, ghc_pkg, ghc_flags, scheds} <- ask  
+  Config{ghc, ghc_pkg, ghc_flags, scheds, cabalPath} <- ask  
   bs <- forM (Set.toList scheds) $ \sched -> do
           let schedflag = schedToCabalFlag sched
-              cmd = unwords [ "cabal install"
+              cmd = unwords [ cabalPath++" install"
                             , "--with-ghc=" ++ ghc
                             , "--with-ghc-pkg=" ++ ghc_pkg
                             , "--ghc-options='" ++ ghc_flags ++ "'"
@@ -1016,6 +1023,8 @@ printBenchrunHeader = do
 data Flag = ParBench 
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
+          | CabalPath String
+          | GHCPath String
           | ShowHelp
 #ifdef FUSION_TABLES
           | FusionTables (Maybe TableId)
@@ -1037,6 +1046,11 @@ cli_options =
      , Option [] ["no-cabal"] (NoArg NoCabal)
        "Build directly through GHC even if .cabal file is present."
 
+     , Option [] ["with-cabal-install"] (ReqArg CabalPath "PATH")
+       "Set the version of cabal-install to use, default 'cabal'."
+     , Option [] ["with-ghc"] (ReqArg GHCPath "PATH")
+       "Set the path of the ghc compiler, default 'ghc'."
+       
      , Option ['h'] ["help"] (NoArg ShowHelp)
        "Show this help message and exit."
        
@@ -1093,7 +1107,7 @@ main = do
 	        log " -> Cleaning Succeeded."
                 liftIO$ removeFile "clean_output.tmp"
           in      if hasMakefile  then cleanit "make clean"
-             else if hasCabalFile then cleanit "cabal clean"
+             else if hasCabalFile then cleanit (cabalPath conf++" clean")
              else    return ()
 
         unless recomp $ log "[!!!] Skipping benchmark recompilation!"
