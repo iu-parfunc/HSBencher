@@ -371,7 +371,7 @@ getConfig cmd_line_options = do
                       let auth = OAuth2Client { clientId=cid, clientSecret=sec }
                       tid <- runReaderT (getTableId auth name) conf
                       return conf{fusionTableID= Just tid}
-                    (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required too."
+                    (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required (or equiv ENV vars)"
 #else
   let finalconf = conf      
 #endif         
