@@ -789,7 +789,8 @@ runOne br@(BenchRun { threads=numthreads
   when doFusionUpload $ do
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
         client = OAuth2Client { clientId = cid, clientSecret = sec }
-    toks  <- liftIO$ getCachedTokens client
+    -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
+    toks  <- liftIO$ getCachedTokens client    
     let         
         tuple =          
           [("PROGNAME",testRoot),("ARGS", unwords args),("THREADS",show numthreads),
@@ -800,9 +801,11 @@ runOne br@(BenchRun { threads=numthreads
     let (cols,vals) = unzip tuple'
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
+    -- 
+    -- FIXME: It's easy to blow the URL size; we need the bulk import version.
     liftIO$ insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
     log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple')
-         ++ " date "++ (fromJust$ lookup "RUNID" tuple')
+         ++ " date "++ (fromJust$ lookup "DATETIME" tuple')
 --       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
     return ()           
 #endif
