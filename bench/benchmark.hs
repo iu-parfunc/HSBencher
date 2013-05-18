@@ -752,34 +752,39 @@ runOne br@(BenchRun { threads=numthreads
     lift$ takeMVar mv
     lift wait
 
-  -- Extract the min, median, and max:
-  let sorted = sortBy (\ a b -> compare (realtime a) (realtime b)) nruns
-      minR = head sorted
-      maxR = last sorted
-      medianR = sorted !! (length sorted `quot` 2)
-  
-  let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
-                         [realtime minR, realtime medianR, realtime maxR]
-      prods@[p1,p2,p3] = map mshow [productivity minR, productivity medianR, productivity maxR]
-      mshow Nothing  = ""
-      mshow (Just x) = showFFloat (Just 2) x "" 
-  
-  let 
-      pads n s = take (max 1 (n - length s)) $ repeat ' '
-      padl n x = pads n x ++ x 
-      padr n x = x ++ pads n x
-      
-      -- These are really (time,prod) tuples, but a flat list of
-      -- scalars is simpler and readable by gnuplot:
-      formatted = (padl 15$ unwords $ ts)
-                  ++"   "++ unwords prods -- prods may be empty!
+  (t1,t2,t3,p1,p2,p3) <-
+    if not (all didComplete nruns) then do
+      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got ERRORS: " ++show nruns
+      return ("","","","","","")
+    else do 
+      -- Extract the min, median, and max:
+      let sorted = sortBy (\ a b -> compare (realtime a) (realtime b)) nruns
+          minR = head sorted
+          maxR = last sorted
+          medianR = sorted !! (length sorted `quot` 2)
 
-  log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
+      let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
+                             [realtime minR, realtime medianR, realtime maxR]
+          prods@[p1,p2,p3] = map mshow [productivity minR, productivity medianR, productivity maxR]
+          mshow Nothing  = ""
+          mshow (Just x) = showFFloat (Just 2) x "" 
 
-  logOn [ResultsFile]$ 
-    printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
-	                    (padr 7$ show sched) (padr 3$ show numthreads) formatted
-  return ()
+      let 
+          pads n s = take (max 1 (n - length s)) $ repeat ' '
+          padl n x = pads n x ++ x 
+          padr n x = x ++ pads n x
+
+          -- These are really (time,prod) tuples, but a flat list of
+          -- scalars is simpler and readable by gnuplot:
+          formatted = (padl 15$ unwords $ ts)
+                      ++"   "++ unwords prods -- prods may be empty!
+
+      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
+
+      logOn [ResultsFile]$ 
+        printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
+                                (padr 7$ show sched) (padr 3$ show numthreads) formatted
+      return (t1,t2,t3,p1,p2,p3)
 #ifdef FUSION_TABLES
   when doFusionUpload $ do
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
@@ -796,9 +801,13 @@ runOne br@(BenchRun { threads=numthreads
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
     liftIO$ insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
+    log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple')
+         ++ " date "++ (fromJust$ lookup "RUNID" tuple')
 --       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
-    return ()       
+    return ()           
 #endif
+  return ()     
+
 
 
 
@@ -1284,5 +1293,8 @@ collapsePrefix old new str =
   if isPrefixOf old str
   then new ++ drop (length old) str
   else str  
+
+didComplete RunCompleted{} = True
+didComplete _              = False
 
 ----------------------------------------------------------------------------------------------------

@@ -33,7 +33,7 @@ data RunResult =
                  }
   | TimeOut
   | ExitError Int -- ^ Contains the returned error code.
- deriving Eq
+ deriving (Eq,Show)
 
 -- | A running subprocess.
 data SubProcess =
