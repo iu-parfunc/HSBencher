@@ -11,9 +11,6 @@
 
 {- |
    
-benchmark.hs
-------------
-
 This program runs a set of benchmarks contained in the current
 directory.  It produces two files as output:
 
@@ -90,7 +87,8 @@ import Scripting.Parallel.ThreadPool (parForM)
 import Text.Printf
 
 #ifdef FUSION_TABLES
-import Network.Google.OAuth2 (getCachedTokens, OAuth2Client(..), OAuth2Tokens(..))
+import Network.Google (retryIORequest)
+import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
                                     TableId, CellType(..), TableMetadata(..))
 #endif
@@ -103,8 +101,6 @@ import HSBencher.MeasureProcess (measureProcess, RunResult(..), SubProcess(..))
 -- | USAGE
 usageStr = unlines $
  [
---   "USAGE: [set environment vars] ./benchmark.hs [--no-recomp, --par]",
---   "\nUSAGE: [set environment vars] ./benchmark.hs [CMDLN OPTIONS]",
    "\n ENV VARS:",
    "   These environment variables control the behavior of the benchmark script:",
    "",
@@ -616,7 +612,7 @@ invokeCabal = do
           log$ "\nRunning cabal... "
           log$ "============================================================"
           (_,code) <- runCmdWithEnv True [] cmd
-          check False code "ERROR, benchmark.hs: cabal-based compilation failed."          
+          check False code ("ERROR, "++my_name++": cabal-based compilation failed.")
   
   return $ all id bs
 
@@ -653,8 +649,8 @@ compileOne br@(BenchRun { threads=numthreads
      log$"First, creating a directory for intermediate compiler files: "++outdir
      code1 <- lift$ system$ "mkdir -p "++outdir
      code2 <- lift$ system$ "mkdir -p "++exedir
-     check False code1 "ERROR, benchmark.hs: making compiler temp dir failed."
-     check False code2 "ERROR, benchmark.hs: making compiler temp dir failed."
+     check False code1 ("ERROR, "++my_name++": making compiler temp dir failed.")
+     check False code2 ("ERROR, "++my_name++": making compiler temp dir failed.")
 
      log$"Next figure out what kind of benchmark this is by poking around the file system: "
      log$"  Checking for: "++hsfile
@@ -687,13 +683,13 @@ compileOne br@(BenchRun { threads=numthreads
            Strm.supply merged stdOut -- Feed interleaved LINES to stdout.
            waitForProcess pid
 
-	 check False code "ERROR, benchmark.hs: compilation failed."
+	 check False code ("ERROR, "++my_name++": compilation failed.")
 
      -- else if (d && mf && diroffset /= ".") then do
      --    log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
      --    error "No makefile-based builds supported..."
      else do 
-	log$ "ERROR, benchmark.hs: File does not exist: "++hsfile
+	log$ "ERROR, "++my_name++": File does not exist: "++hsfile
 	lift$ exitFailure
 
 
@@ -788,9 +784,9 @@ runOne br@(BenchRun { threads=numthreads
 #ifdef FUSION_TABLES
   when doFusionUpload $ do
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
-        client = OAuth2Client { clientId = cid, clientSecret = sec }
+        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
     -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
-    toks  <- liftIO$ getCachedTokens client    
+    toks  <- liftIO$ getCachedTokens authclient
     let         
         tuple =          
           [("PROGNAME",testRoot),("ARGS", unwords args),("THREADS",show numthreads),
@@ -803,7 +799,8 @@ runOne br@(BenchRun { threads=numthreads
          " columns containing "++show (sum$ map length vals)++" characters of data"
     -- 
     -- FIXME: It's easy to blow the URL size; we need the bulk import version.
-    liftIO$ insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
+    stdRetry "insertRows" authclient toks $
+      insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
     log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple')
          ++ " date "++ (fromJust$ lookup "DATETIME" tuple')
 --       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
@@ -857,6 +854,22 @@ resultsSchema =
   , ("FULL_LOG",STRING)
   ]
 
+-- | The standard retry behavior when receiving HTTP network errors.
+stdRetry :: String -> OAuth2Client -> OAuth2Tokens -> IO a ->
+            ReaderT Config IO a
+stdRetry msg client toks action = do
+  conf <- ask
+  let retryHook exn = runReaderT (do
+        log$ " [fusiontable] Retrying during <"++msg++"> due to HTTPException: " ++ show exn
+        log$ " [fusiontable] Retrying, but first, attempt token refresh..."
+        -- QUESTION: should we retry the refresh itself, it is NOT inside the exception handler.
+        -- liftIO$ refreshTokens client toks
+        -- liftIO$ retryIORequest (refreshTokens client toks) (\_ -> return ()) [1,1]
+        stdRetry "refresh tokens" client toks (refreshTokens client toks)
+        return ()
+                                 ) conf
+  liftIO$ retryIORequest action retryHook [1,2,4,8,16,32,64]
+
 -- | Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
 getTableId :: OAuth2Client -> String -> ReaderT Config IO TableId
@@ -865,12 +878,13 @@ getTableId auth tablename = do
   toks      <- liftIO$ getCachedTokens auth
   log$ " [fusiontable] Retrieved: "++show toks
   let atok  = B.pack $ accessToken toks
-  allTables <- liftIO$ listTables atok
+  allTables <- stdRetry "listTables" auth toks $ listTables atok
   log$ " [fusiontable] Retrieved metadata on "++show (length allTables)++" tables"
 
   case filter (\ t -> tab_name t == tablename) allTables of
     [] -> do log$ " [fusiontable] No table with name "++show tablename ++" found, creating..."
-             TableMetadata{tab_tableId} <- liftIO$ createTable atok tablename resultsSchema
+             TableMetadata{tab_tableId} <- stdRetry "createTable" auth toks $
+                                           createTable atok tablename resultsSchema
              log$ " [fusiontable] Table created with ID "++show tab_tableId
              return tab_tableId
     [t] -> do log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show (tab_tableId t)
@@ -915,7 +929,7 @@ runCmdWithEnv echo env cmd = do
   _      <- lift$ takeMVar mv2
                 
   Config{keepgoing} <- ask
-  check keepgoing code ("ERROR, benchmark.hs: command \""++cmd++"\" failed with code "++ show code)
+  check keepgoing code ("ERROR, "++my_name++": command \""++cmd++"\" failed with code "++ show code)
   return (outStr, code)
 
 
@@ -1092,7 +1106,7 @@ main = do
   when (not (null errs && null args) || ShowHelp `elem` options) $ do
     putStrLn$ "Errors parsing command line options:" 
     mapM_ (putStr . ("   "++)) errs       
-    putStrLn "\nUSAGE: [set ENV VARS] ./benchmark.hs [CMDLN OPTIONS]"    
+    putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]"    
     putStr$ usageInfo "\n CMDLN OPTIONS:" cli_options
     putStrLn$ usageStr    
     exitFailure
@@ -1152,7 +1166,7 @@ main = do
         log$ "--------------------------------------------------------------------------------"
 
         if ParBench `elem` options then do
-            unless rtsSupportsBoundThreads $ error "benchmark.hs was NOT compiled with -threaded.  Can't do --par."
+            unless rtsSupportsBoundThreads $ error (my_name++" was NOT compiled with -threaded.  Can't do --par.")
         --------------------------------------------------------------------------------
         -- Parallel version:
             numProcs <- liftIO getNumProcessors
@@ -1240,9 +1254,7 @@ catParallelOutput strms stdOut = do
 -- *                                 GENERIC HELPER ROUTINES                                      
 ----------------------------------------------------------------------------------------------------
 
--- | These should properly go in another module, but they live here to
---   keep benchmark.hs self contained.
-
+-- These should go in another module.......
 
 -- | Fork a thread but ALSO set up an error handler.
 forkIOH :: String -> IO () -> IO ThreadId
@@ -1299,5 +1311,8 @@ collapsePrefix old new str =
 
 didComplete RunCompleted{} = True
 didComplete _              = False
+
+my_name :: String
+my_name = "hsbencher"
 
 ----------------------------------------------------------------------------------------------------
