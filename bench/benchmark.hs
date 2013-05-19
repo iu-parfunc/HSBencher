@@ -43,12 +43,11 @@ straight .hs files buildable by "ghc --make".
 
 module Main where 
 
+----------------------------
+-- Standard library imports
 import Prelude hiding (log)
 import Control.Applicative    
 import Control.Concurrent
-import Control.Concurrent.Chan
-
-import GHC.Conc (getNumProcessors)
 import Control.Monad.Reader
 import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
 import Debug.Trace
@@ -58,9 +57,10 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (isJust, fromJust)
 import Data.Word (Word64)
 import Data.IORef
-import Data.List (intercalate, sortBy)
+import Data.List (intercalate, sortBy, intersperse, isPrefixOf, tails, isInfixOf, delete)
 import qualified Data.Set as Set
-import Data.List (isPrefixOf, tails, isInfixOf, delete)
+import Data.Version (versionBranch, versionTags)
+import GHC.Conc (getNumProcessors)
 import Numeric (showFFloat)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getEnv, getEnvironment, getExecutablePath)
@@ -74,17 +74,19 @@ import System.Process (system, waitForProcess, getProcessExitCode, runInteractiv
 import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
                   IOMode(..), BufferMode(..), hSetBuffering)
 import System.IO.Unsafe (unsafePerformIO)
+import qualified Data.ByteString.Char8 as B
+import Text.Printf
+
+----------------------------
+-- Additional libraries:
 
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
-import qualified Data.ByteString.Char8 as B
 
 import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydraConf, hydraPrintStatic)
 import Scripting.Parallel.ThreadPool (parForM)
-
-import Text.Printf
 
 #ifdef FUSION_TABLES
 import Network.Google (retryIORequest)
@@ -93,12 +95,17 @@ import Network.Google.FusionTables (createTable, listTables, listColumns, insert
                                     TableId, CellType(..), TableMetadata(..))
 #endif
 
+----------------------------
+-- Self imports:
+
 import HSBencher.MeasureProcess (measureProcess, RunResult(..), SubProcess(..))
+import Paths_hsbencher (version) -- Thanks, cabal!
 
 ----------------------------------------------------------------------------------------------------
 
 
 -- | USAGE
+usageStr :: String
 usageStr = unlines $
  [
    "\n ENV VARS:",
@@ -303,7 +310,7 @@ getConfig cmd_line_options = do
       
   let -- Messy way to extract the benchlist version:
       ver = case filter (isInfixOf "ersion") (lines benchstr) of 
-	      (h:t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
+	      (h:_t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
 	      []    -> 0
       -- This is our starting point BEFORE processing command line flags:
       base_conf = Config 
@@ -349,6 +356,7 @@ getConfig cmd_line_options = do
       doFlag (GHCPath   p) r = r { ghc=p }
       -- Ignored options:
       doFlag ShowHelp r = r
+      doFlag ShowVersion r = r
       doFlag NoRecomp r = r
       doFlag NoCabal  r = r
       doFlag NoClean  r = r
@@ -488,9 +496,11 @@ parseBenchList str =
   lines str
 
 -- Parse one line of a benchmark file (a single benchmark name with args).
+parseBench :: [String] -> Benchmark
 parseBench (h:m:tl) = Benchmark {name=h, compatScheds=expandMode m, args=tl }
 parseBench ls = error$ "entry in benchlist does not have enough fields (name mode args): "++ unwords ls
 
+strBool :: String -> Bool
 strBool ""  = False
 strBool "0" = False
 strBool "1" = True
@@ -510,11 +520,13 @@ thd3 (a,b,c) = c
 -- non-numeric arguments are considered qualitative (e.g. "monad" vs
 -- "sparks") rather than quantitative and are not pruned by this
 -- function.
+shortArgs :: [String] -> [String]
 shortArgs [] = []
 -- Crop as soon as we see something that is a number:
 shortArgs (h:tl) | isNumber h = []
 		 | otherwise  = h : shortArgs tl
 
+isNumber :: String -> Bool
 isNumber s =
   case reads s :: [(Double, String)] of 
     [(n,"")] -> True
@@ -522,6 +534,7 @@ isNumber s =
 
 -- Based on a benchmark configuration, come up with a unique suffix to
 -- distinguish the executable.
+uniqueSuffix :: BenchRun -> String
 uniqueSuffix BenchRun{threads,sched,bench} =    
   "_" ++ show sched ++ 
    if threads == 0 then "_serial"
@@ -624,7 +637,7 @@ compileOne br@(BenchRun { threads=numthreads
                         , bench=(Benchmark testPath _ args_)
                         }) 
 	      (iterNum,totalIters) = 
-  do Config{ghc, ghc_flags, shortrun, logOut, resultsOut, stdOut} <- ask
+  do Config{ghc, ghc_flags, shortrun, resultsOut, stdOut} <- ask
 
      uid :: Word64 <- lift$ randomIO
      let flags_ = case numthreads of
@@ -1051,7 +1064,7 @@ data Flag = ParBench
           | NoRecomp | NoCabal | NoClean
           | CabalPath String
           | GHCPath String
-          | ShowHelp
+          | ShowHelp | ShowVersion
 #ifdef FUSION_TABLES
           | FusionTables (Maybe TableId)
           | BenchsetName (String)
@@ -1080,6 +1093,9 @@ cli_options =
      , Option ['h'] ["help"] (NoArg ShowHelp)
        "Show this help message and exit."
        
+     , Option ['V'] ["version"] (NoArg ShowVersion)
+       "Show the version and exit"
+       
 #ifdef FUSION_TABLES
      , Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
        "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
@@ -1097,19 +1113,28 @@ cli_options =
 main_threadid :: IORef ThreadId
 main_threadid = unsafePerformIO$ newIORef (error "main_threadid uninitialized")
 
+main :: IO ()
 main = do
   id <- myThreadId
   writeIORef main_threadid id
 
   cli_args <- getArgs
   let (options,args,errs) = getOpt Permute cli_options cli_args
+
+  when (ShowVersion `elem` options) $ do
+    putStrLn$ "hsbencher version "++
+      (concat$ intersperse "." $ map show $ versionBranch version) ++
+      (unwords$ versionTags version)
+    exitSuccess 
+      
   when (not (null errs && null args) || ShowHelp `elem` options) $ do
-    putStrLn$ "Errors parsing command line options:" 
+    unless (ShowHelp `elem` options) $
+      putStrLn$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
     putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]"    
     putStr$ usageInfo "\n CMDLN OPTIONS:" cli_options
-    putStrLn$ usageStr    
-    exitFailure
+    putStrLn$ usageStr
+    if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
   conf@Config{benchlist,scheds,envs,stdOut,threadsettings} <- getConfig options
   
