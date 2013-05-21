@@ -1,6 +1,7 @@
 
 
 [2012.01.16] {Developing clusterbench, seeing indefinite MVar block failures}
+-----------------------------------------------------------------------------
 
 Here's the tail end of the run:
 
@@ -23,6 +24,7 @@ The problem may have been this failed SSH from earlier:
 
 
 [2012.01.22] {Debugging new parallel benchmark.hs}
+--------------------------------------------------
 
 My first strategy, spawning ALL compiles or ALL runs at once seemed to
 work.  But now I'm seeing OCCASIONAL failures of the following sort
@@ -40,6 +42,7 @@ ones like this:
 /usr/bin/i686-apple-darwin11-gcc-4.2.1 
 
 [2012.01.23] {Apparent GHC divergence (actually, GCC)}
+------------------------------------------------------
 
 This GHC command appears to have just become stuck overnight:
 
@@ -75,4 +78,9 @@ kill -9).  So this seems to have nothing to do with GHC and everything
 to do with Apple.
 
 
+
+[2013.05.19] {First successful monad-par benchmark run via Jenkins/PBS/Delta}
+-----------------------------------------------------------------------------
+
+RUNID: d011_1368995991
 
