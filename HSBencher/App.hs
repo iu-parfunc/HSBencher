@@ -41,7 +41,7 @@ straight .hs files buildable by "ghc --make".
 
 -}
 
-module Main where 
+module HSBencher.App (defaultMain) where 
 
 ----------------------------
 -- Standard library imports
@@ -1113,8 +1113,10 @@ cli_options =
 main_threadid :: IORef ThreadId
 main_threadid = unsafePerformIO$ newIORef (error "main_threadid uninitialized")
 
-main :: IO ()
-main = do
+
+-- | TODO: Eventually this will be parameterized.
+defaultMain :: IO ()
+defaultMain = do
   id <- myThreadId
   writeIORef main_threadid id
 
@@ -1337,6 +1339,7 @@ collapsePrefix old new str =
 didComplete RunCompleted{} = True
 didComplete _              = False
 
+-- TODO: grab this from the command line arguments:
 my_name :: String
 my_name = "hsbencher"
 
