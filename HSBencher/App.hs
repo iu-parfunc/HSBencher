@@ -100,7 +100,7 @@ import Network.Google.FusionTables (createTable, listTables, listColumns, insert
 
 import HSBencher.Types
 import HSBencher.Methods
-import HSBencher.MeasureProcess (measureProcess, RunResult(..), SubProcess(..))
+import HSBencher.MeasureProcess 
 import Paths_hsbencher (version) -- Thanks, cabal!
 
 ----------------------------------------------------------------------------------------------------
@@ -734,14 +734,15 @@ runOne :: BenchRun -> (Int,Int) -> ReaderT Config IO ()
 runOne br@(BenchRun { threads=numthreads
                     , sched
                     , bench=(Benchmark testPath _ args_)
-                    , env}) 
+                    , env=envVars })
           (iterNum,totalIters) = do
   conf@Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
       (_,testRoot) = splitFileName testPath
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters++
-       ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++"  threads "++show numthreads++" (Env="++show env++")"
+       ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
+       "  threads "++show numthreads++" (Env="++show envVars++")"
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
   log$ "(In directory "++ pwd ++")"
@@ -759,7 +760,7 @@ runOne br@(BenchRun { threads=numthreads
             case numthreads of
 	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
 	     _ -> ghc_RTS  ++" -N"++show numthreads
-      exefile = exedir </> testRoot ++ uniqueSuffix br ++ ".exe"
+      exeFile = exedir </> testRoot ++ uniqueSuffix br ++ ".exe"
   ----------------------------------------
   -- Now execute N trials:
   ----------------------------------------
@@ -767,11 +768,12 @@ runOne br@(BenchRun { threads=numthreads
   -- takes a long time we don't bother doing more trials.)
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "Running trial %d of %d" i trials
-    let allargs = args++["+RTS"]++words rts++["-RTS"]
+    let cmdArgs = args++["+RTS"]++words rts++["-RTS"]
     log "------------------------------------------------------------"        
-    log$ " Executing command: " ++ unwords (exefile:allargs)    
+    log$ " Executing command: " ++ unwords (exeFile:cmdArgs)    
     SubProcess {wait,process_out,process_err} <-
-      lift$ measureProcess exefile allargs env (Just 150)
+      lift$ measureProcess
+              CommandDescr{ exeFile, cmdArgs, envVars, timeout=Just 150, workingDir=Nothing }
     err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
     both <- lift$ Strm.concurrentMerge [process_out, err2]
     mv <- echoStream (not shortrun) both

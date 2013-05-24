@@ -5,12 +5,13 @@
 -- overhead.
 
 module HSBencher.MeasureProcess
-       (RunResult(..), SubProcess(..),
+       (RunResult(..), SubProcess(..), CommandDescr(..),
         measureProcess)
        where
 
 import Data.IORef
 import System.Exit
+import System.Directory
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
 import qualified Control.Concurrent.Async as A
@@ -26,6 +27,18 @@ import qualified Data.ByteString.Char8 as B
 
 --------------------------------------------------------------------------------
 
+-- | A self-contained description of a runnable command.  Similar to
+-- System.Process.CreateProcess but slightly simpler.
+data CommandDescr =
+  CommandDescr
+  { exeFile :: String                -- ^ Executable
+  , cmdArgs :: [String]           -- ^ Command line arguments
+  , envVars :: [(String, String)] -- ^ Environment variables
+  , timeout :: Maybe Double       -- ^ Optional timeout in seconds.
+  , workingDir :: Maybe FilePath  -- ^ Optional working directory to switch to before
+                                  -- running command.
+  }
+  
 -- | Measured results from running a subprocess (benchmark).
 data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
@@ -56,15 +69,17 @@ data SubProcess =
 --
 -- Note that "+RTS -s" is specific to Haskell/GHC, but the PRODUCTIVITY tag allows
 -- non-haskell processes to report garbage collector overhead.
-measureProcess ::
-  String                -- ^ Executable
-  -> [String]           -- ^ Command line arguments
-  -> [(String, String)] -- ^ Environment variables
-  -> Maybe Double       -- ^ Optional timeout in seconds.
-  -> IO SubProcess
-measureProcess cmd args env timeout = do
+measureProcess :: CommandDescr -> IO SubProcess
+measureProcess CommandDescr{exeFile, cmdArgs, envVars, timeout, workingDir} = do
+  origDir <- getCurrentDirectory
+  case workingDir of
+    Just d  -> setCurrentDirectory d
+    Nothing -> return ()
+  
   startTime <- getCurrentTime
-  (_inp,out,err,pid) <- Strm.runInteractiveProcess cmd args Nothing (Just env)
+  (_inp,out,err,pid) <- Strm.runInteractiveProcess exeFile cmdArgs Nothing (Just envVars)
+  setCurrentDirectory origDir
+  
   out'  <- Strm.map OutLine =<< Strm.lines out
   err'  <- Strm.map ErrLine =<< Strm.lines err
   timeEvt <- case timeout of

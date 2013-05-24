@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances  #-}
+{-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances, NamedFieldPuns  #-}
 
 module HSBencher.Types
        where
@@ -7,6 +7,11 @@ import Data.Maybe (catMaybes)
 import Control.Monad (filterM)
 import System.FilePath
 import System.Directory
+import HSBencher.MeasureProcess -- (CommandDescr(..))
+
+
+type RunFlags     = [String]
+type CompileFlags = [String]
 
 #if 1
 -- | A description of a set of files.  The description may take one of multiple
@@ -56,18 +61,28 @@ instance Show FilePredicate where
   show _ = "<FilePredicate>"
 #endif
 
+data BuildResult =
+    StandAloneBinary FilePath -- ^ This binary can be copied and executed whenever.
+  | RunInPlace (RunFlags -> CommandDescr)
+    -- ^ In this case the build return what you need to do the benchmark run, but the
+    -- directory contents cannot be touched until after than run is finished.
 
 #if 1
 -- | A completely encapsulated method of building benchmarks.  Cabal and Makefiles
 -- are two examples of this.  The user may extend it with their own methods.
 data BuildMethod =
   BuildMethod
-  { methodName :: String
+  { methodName :: String          -- ^ Identifies this build method for humans.
 --  , buildsFiles :: FilePredicate
 --  , canBuild    :: FilePath -> IO Bool
-  , canBuild    :: FilePredicate
+  , canBuild    :: FilePredicate  -- ^ Can this method build a given file/directory?
+  , concurrentBuild :: Bool -- ^ More than one build can happen at once.  This
+                            -- implies that compile always returns StandAloneBinary.
+  , compile :: CompileFlags -> FilePath -> IO BuildResult
   }
-  deriving Show
+
+instance Show BuildMethod where
+  show BuildMethod{methodName, canBuild} = "<buildMethod "++methodName++" "++show canBuild ++">"
 
 -- instance Show FilePredicate where
 --   show (WithExtension s) = "<FilePredicate: *."++s++">"  
