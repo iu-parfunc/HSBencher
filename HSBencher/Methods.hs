@@ -8,7 +8,11 @@ module HSBencher.Methods
         )
        where
 
+import System.Process
+import System.Directory
+import System.FilePath
 import HSBencher.Types
+import HSBencher.MeasureProcess
 
 makeMethod :: BuildMethod
 makeMethod = BuildMethod
@@ -16,6 +20,20 @@ makeMethod = BuildMethod
   , canBuild = (IsExactly "Makefile")
                `PredOr`
                InDirectoryWithExactlyOne (IsExactly "Makefile")
+  , concurrentBuild = False
+  , compile = \ flags target -> do
+     isdir <- doesDirectoryExist target
+     let dir = if isdir then target
+               else takeDirectory target
+     system "make"
+     let runit args =
+           CommandDescr
+           { exeFile = "make"
+           , cmdArgs = ["run","ARGS=\""++ unwords args ++"\""]
+           , timeout = Just 150  
+           , workingDir = Just dir
+           }
+     return (RunInPlace runit)
   }
 
 ghcMethod :: BuildMethod
