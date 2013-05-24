@@ -54,7 +54,7 @@ import Debug.Trace
 import Data.Char (isSpace)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.Maybe (isJust, fromJust)
+import Data.Maybe (isJust, fromJust, catMaybes)
 import Data.Word (Word64)
 import Data.IORef
 import Data.List (intercalate, sortBy, intersperse, isPrefixOf, tails, isInfixOf, delete)
@@ -98,6 +98,8 @@ import Network.Google.FusionTables (createTable, listTables, listColumns, insert
 ----------------------------
 -- Self imports:
 
+import HSBencher.Types
+import HSBencher.Methods
 import HSBencher.MeasureProcess (measureProcess, RunResult(..), SubProcess(..))
 import Paths_hsbencher (version) -- Thanks, cabal!
 
@@ -169,6 +171,8 @@ data Config = Config
  , logFile        :: String -- ^ Where to put more verbose testing output.
 
  , gitInfo        :: (String,String,Int)
+
+ , buildMethods   :: [BuildMethod] -- ^ Starts with cabal/make/ghc, can be extended by user.
    
  -- These are all LINES-streams (implicit newlines).
  , logOut         :: Strm.OutputStream B.ByteString
@@ -332,6 +336,8 @@ getConfig cmd_line_options = do
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
            , gitInfo        = (trim branch, trim revision, length hashes)
+           -- This is in priority order:                   
+           , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
            , doFusionUpload = False                              
 #ifdef FUSION_TABLES
            , fusionTableID  = Nothing 
@@ -637,7 +643,7 @@ compileOne br@(BenchRun { threads=numthreads
                         , bench=(Benchmark testPath _ args_)
                         }) 
 	      (iterNum,totalIters) = 
-  do Config{ghc, ghc_flags, shortrun, resultsOut, stdOut} <- ask
+  do Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
 
      uid :: Word64 <- lift$ randomIO
      let flags_ = case numthreads of
@@ -664,6 +670,17 @@ compileOne br@(BenchRun { threads=numthreads
      code2 <- lift$ system$ "mkdir -p "++exedir
      check False code1 ("ERROR, "++my_name++": making compiler temp dir failed.")
      check False code2 ("ERROR, "++my_name++": making compiler temp dir failed.")
+
+     matches <- lift$ 
+                filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
+     when (null matches) $ do
+       log$ "ERROR, no build method matches path: "++testPath
+       lift$ exitFailure     
+     log$ printf "Found %d methods that can handle %s: %s" 
+            (length matches) testPath (show$ map methodName matches)
+     log$ "WARNING: resolving ambiguity, picking method: "++(methodName$ head matches)
+     liftIO exitSuccess
+
 
      log$"Next figure out what kind of benchmark this is by poking around the file system: "
      log$"  Checking for: "++hsfile
