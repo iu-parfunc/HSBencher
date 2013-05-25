@@ -149,73 +149,6 @@ usageStr = unlines $
 
 ----------------------------------------------------------------------------------------------------
 
--- The global configuration for benchmarking:
-data Config = Config 
- { benchlist      :: [Benchmark]
- , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
- , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
- , maxthreads     :: Int
- , trials         :: Int    -- ^ number of runs of each configuration
- , shortrun       :: Bool
- , keepgoing      :: Bool   -- ^ keep going after error
- , ghc            :: String -- ^ ghc compiler path
- , cabalPath      :: String   
- , ghc_pkg        :: String
- , ghc_flags      :: String
- , ghc_RTS        :: String -- ^ +RTS flags
- , scheds         :: Set.Set Sched -- ^ subset of schedulers to test.
- , hostname       :: String
- , startTime      :: Integer -- ^ Seconds since Epoch. 
- , resultsFile    :: String -- ^ Where to put timing results.
- , logFile        :: String -- ^ Where to put more verbose testing output.
-
- , gitInfo        :: (String,String,Int)
-
- , buildMethods   :: [BuildMethod] -- ^ Starts with cabal/make/ghc, can be extended by user.
-   
- -- These are all LINES-streams (implicit newlines).
- , logOut         :: Strm.OutputStream B.ByteString
- , resultsOut     :: Strm.OutputStream B.ByteString
- , stdOut         :: Strm.OutputStream B.ByteString
-   -- A set of environment variable configurations to test
- , envs           :: [[(String, String)]]
-
- , doFusionUpload :: Bool
-#ifdef FUSION_TABLES
- , fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
- , fusionClientID :: Maybe String
- , fusionClientSecret :: Maybe String
---  , fusionUpload   :: Maybe FusionInfo
-#endif
- }
- deriving Show
-
--- -- | If we are uploading to a fusion table, we need ALL three of these pieces:
--- data FusionInfo = FusionInfo { tableID :: TableId, 
---                                cliID :: String,
---                                cliSec :: String }
-
-instance Show (Strm.OutputStream a) where
-  show _ = "<OutputStream>"
-
-
--- Represents a configuration of an individual run.
---  (number of
--- threads, other flags, etc):
-data BenchRun = BenchRun
- { threads :: Int
- , sched   :: Sched 
- , bench   :: Benchmark
- , env     :: [(String, String)] -- ADDITIONAL bindings for the environment
- } deriving (Eq, Show, Ord)
-
-data Benchmark = Benchmark
- { name :: String
- , compatScheds :: [Sched]
- , args :: [String]
- } deriving (Eq, Show, Ord)
-
 
 gc_stats_flag :: String
 gc_stats_flag = " -s " 
@@ -413,10 +346,6 @@ pruneThreadedOpts = filter (`notElem` ["-qa", "-qb"])
 -- benchmark script a bit more generic.
 --------------------------------------------------------------------------------
 
-data Sched 
-   = Trace | Direct | Sparks | ContFree | SMP | NUMA
-   | None
- deriving (Eq, Show, Read, Ord, Enum, Bounded)
 
 -- [2012.05.03] RRN: ContFree is not exposed, thus removing it from the
 -- default set, though you can still ask for it explicitly:
