@@ -231,7 +231,7 @@ getConfig cmd_line_options = do
     "" -> return ()
     s  -> error$ "GENERIC env variable not handled yet.  Set to: " ++ show s
   
-  maxthreads <- getNumberOfCores
+  maxthreads <- getNumProcessors
   benchstr   <- readFile benchF
 
   backupResults resultsFile logFile
@@ -322,20 +322,6 @@ getConfig cmd_line_options = do
   runReaderT (log$ "Read list of benchmarks/parameters from: "++benchF) finalconf
   return finalconf
 
--- TODO: Support Windows!
-getNumberOfCores :: IO Int
-getNumberOfCores = do 
-  -- Determine the number of cores.
-  d <- doesDirectoryExist "/sys/devices/system/cpu/"
-  uname <- runSL "uname"
-  str :: String 
-       <- if d 
-	  then runSL$ "ls  /sys/devices/system/cpu/ | egrep \"cpu[0123456789]*$\" | wc -l" 
-	  else if uname == "Darwin"
-	  then runSL$ "sysctl -n hw.ncpu"
-	  else error$ "Don't know how to determine the number of threads on platform: "++ show uname
-  -- Note -- how do we find the # of threads ignoring hyperthreading?
-  return (read str)
 
 
 -- | Remove RTS options that are specific to -threaded mode.
