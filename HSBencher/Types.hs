@@ -185,6 +185,9 @@ data Sched
  deriving (Eq, Show, Read, Ord, Enum, Bounded)
 
 
+-- type BenchFile = [BenchStmt]
+
+
 -- | A datatype for describing (generating) benchmark configuration spaces.
 --   This is accomplished by nested conjunctions and disjunctions.
 --   For example, varying threads from 1-32 would be a 32-way Or.  Combining that
@@ -194,6 +197,7 @@ data BenchSpace = And [BenchSpace]
                 | Set ParamType String
  deriving (Show,Eq,Ord,Read)
 
+-- | Exhaustively compute all configurations described by a benchmark configuration space.
 enumerateBenchSpace :: BenchSpace -> [ [(ParamType,String)] ] 
 enumerateBenchSpace bs =
   case bs of
@@ -210,12 +214,14 @@ enumerateBenchSpace bs =
 
 
 test1 = Or (zipWith Set (repeat$ EnvVar "CILK_NPROCS") (map show [1..32]))
-test2 = Or [Set (RTS "-A") "1M", Set (RTS "-A") "2M"]
+test2 = Or [Set RuntimeParam "-A1M", Set RuntimeParam "-A2M"]
 test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
-data ParamType = RTS     String   -- e.g. "-A"
-	       | Compile String   -- e.g. "--ddump-simpl"
-               | EnvVar  String
+data ParamType = RuntimeParam
+	       | CompileParam
+               | EnvVar String -- ^ Contains the name of the env var.
+--               | Threads -- ^ Shorthand: builtin support for changing the number of
+                         -- threads for certain targets.
  deriving (Show, Eq, Read, Ord)
 

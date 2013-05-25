@@ -26,6 +26,10 @@ Flag fusion
 Library 
   exposed-modules: HSBencher.MeasureProcess
                    HSBencher.App
+                   HSBencher.Types
+                   HSBencher.Logging
+                   HSBencher.Methods
+                   HSBencher.Utils
   build-depends:   
       -- base ==4.6.*, bytestring ==0.10.*, process ==1.1.*, directory ==1.2.*, filepath ==1.3.*, random ==1.0.*, 
       -- unix ==2.6.*, containers ==0.5.*, time ==1.4.*, mtl ==2.1.*, async >= 2.0,
