@@ -8,6 +8,7 @@ module HSBencher.Types
          
          -- * Benchmark configuration spaces
          Benchmark(..), BenchRun(..),
+         Benchmark2(..), BenchSpace(..), ParamSetting(..),
          
          -- * HSBench Driver Configuration
          Config(..), BenchM,
@@ -177,7 +178,6 @@ data Benchmark = Benchmark
  , args :: [String]
  } deriving (Eq, Show, Ord)
 
-
 -- TEMP: Remove this:
 data Sched 
    = Trace | Direct | Sparks | ContFree | SMP | NUMA
@@ -187,6 +187,12 @@ data Sched
 
 -- type BenchFile = [BenchStmt]
 
+data Benchmark2 = Benchmark2
+ { target  :: FilePath
+ , cmdargs :: [String]
+ , configs :: BenchSpace
+ } deriving (Eq, Show, Ord)
+
 
 -- | A datatype for describing (generating) benchmark configuration spaces.
 --   This is accomplished by nested conjunctions and disjunctions.
@@ -194,14 +200,14 @@ data Sched
 --   with profiling on/off (product) would create a 64-config space.
 data BenchSpace = And [BenchSpace]
                 | Or  [BenchSpace]
-                | Set ParamType String
+                | Set ParamSetting 
  deriving (Show,Eq,Ord,Read)
 
 -- | Exhaustively compute all configurations described by a benchmark configuration space.
-enumerateBenchSpace :: BenchSpace -> [ [(ParamType,String)] ] 
+enumerateBenchSpace :: BenchSpace -> [ [ParamSetting] ] 
 enumerateBenchSpace bs =
   case bs of
-    Set p s -> [ [(p,s)] ]
+    Set p -> [ [p] ]
     Or ls -> concatMap enumerateBenchSpace ls
     And ls -> loop ls
   where
@@ -212,16 +218,17 @@ enumerateBenchSpace bs =
       [ c++r | c <- confs
              , r <- loop tl ]
 
-
-test1 = Or (zipWith Set (repeat$ EnvVar "CILK_NPROCS") (map show [1..32]))
-test2 = Or [Set RuntimeParam "-A1M", Set RuntimeParam "-A2M"]
+test1 = Or (map (Set . RuntimeEnv "CILK_NPROCS" . show) [1..32])
+test2 = Or$ map (Set . RuntimeParam "-A") ["1M", "2M"]
 test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
-data ParamType = RuntimeParam
-	       | CompileParam
-               | EnvVar String -- ^ Contains the name of the env var.
---               | Threads -- ^ Shorthand: builtin support for changing the number of
-                         -- threads for certain targets.
+data ParamSetting 
+  = RuntimeParam String String -- ^ These two strings are concattenated to make the option.
+  | CompileParam String String -- ^ These two strings are concattenated to make the option.
+  | RuntimeEnv   String String -- ^ The name of the env var and its value, respectively.
+                               --   For now Env Vars ONLY affect runtime.
+-- | Threads Int -- ^ Shorthand: builtin support for changing the number of
+    -- threads across a number of separate build methods.
  deriving (Show, Eq, Read, Ord)
 
