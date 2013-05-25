@@ -115,7 +115,7 @@ type BenchM a = ReaderT Config IO a
 
 -- | The global configuration for benchmarking:
 data Config = Config 
- { benchlist      :: [Benchmark]
+ { benchlist      :: [Benchmark2]
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
  , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.

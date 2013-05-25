@@ -159,8 +159,6 @@ exedir :: String
 exedir = "./bin"
 
 --------------------------------------------------------------------------------
--- Configuration
---------------------------------------------------------------------------------
 
 -- | Fill in "static" fields of a FusionTable row based on the `Config` data.
 augmentTupleWithConfig :: Config -> [(String,String)] -> IO [(String,String)]
@@ -200,8 +198,8 @@ augmentTupleWithConfig Config{..} base = do
 
 -- Retrieve the (default) configuration from the environment, it may
 -- subsequently be tinkered with.  This procedure should be idempotent.
-getConfig :: [Flag] -> IO Config
-getConfig cmd_line_options = do
+getConfig :: [Flag] -> [Benchmark2] -> IO Config
+getConfig cmd_line_options benches = do
   hostname <- runSL$ "hostname -s"
   t0 <- getCurrentTime
   let startTime = round (utcTimeToPOSIXSeconds t0)
@@ -219,7 +217,7 @@ getConfig cmd_line_options = do
 		  Nothing -> x
 		  Just  s -> s
 
-      benchF = get "BENCHLIST" "benchlist.txt"
+--      benchF = get "BENCHLIST" "benchlist.txt"
       logFile = "bench_" ++ hostname ++ ".log"
       resultsFile = "results_" ++ hostname ++ ".dat"      
       shortrun = strBool (get "SHORTRUN"  "0")
@@ -232,7 +230,6 @@ getConfig cmd_line_options = do
     s  -> error$ "GENERIC env variable not handled yet.  Set to: " ++ show s
   
   maxthreads <- getNumProcessors
-  benchstr   <- readFile benchF
 
   backupResults resultsFile logFile
 
@@ -247,9 +244,9 @@ getConfig cmd_line_options = do
   stdOut     <- Strm.unlines Strm.stdout
       
   let -- Messy way to extract the benchlist version:
-      ver = case filter (isInfixOf "ersion") (lines benchstr) of 
-	      (h:_t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
-	      []    -> 0
+      -- ver = case filter (isInfixOf "ersion") (lines benchstr) of 
+      --         (h:_t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
+      --         []    -> 0
       -- This is our starting point BEFORE processing command line flags:
       base_conf = Config 
            { hostname, startTime, scheds, shortrun
@@ -261,8 +258,10 @@ getConfig cmd_line_options = do
   	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2"))
 	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
-	   , benchlist      = parseBenchList benchstr
-	   , benchversion   = (benchF, ver)
+--	   , benchlist      = parseBenchList benchstr
+--	   , benchversion   = (benchF, ver)
+           , benchlist      = benches
+	   , benchversion   = ("",0)
 	   , maxthreads     = maxthreads
 	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
 	   , keepgoing      = strBool (get "KEEPGOING" "0")
@@ -319,7 +318,7 @@ getConfig cmd_line_options = do
 #else
   let finalconf = conf      
 #endif         
-  runReaderT (log$ "Read list of benchmarks/parameters from: "++benchF) finalconf
+--  runReaderT (log$ "Read list of benchmarks/parameters from: "++benchF) finalconf
   return finalconf
 
 
@@ -785,7 +784,7 @@ printBenchrunHeader = do
   Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads,
          logOut, resultsOut, stdOut, benchversion, shortrun, gitInfo=(branch,revision,depth) } <- ask
   liftIO $ do   
-    let (benchfile, ver) = benchversion
+--    let (benchfile, ver) = benchversion
     let ls :: [IO String]
         ls = [ e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
              , e$ "#    "        
@@ -798,9 +797,9 @@ printBenchrunHeader = do
              , e$ "# Running each test for "++show trials++" trial(s)."
              , e$ "#  ... with compiler options: " ++ ghc_flags
              , e$ "#  ... with runtime options: " ++ ghc_RTS
-             , e$ "# Benchmarks_File: " ++ benchfile
-             , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
-             , e$ "# Benchmarks_Version: " ++ show ver
+--             , e$ "# Benchmarks_File: " ++ benchfile
+--             , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
+--             , e$ "# Benchmarks_Version: " ++ show ver
              , e$ "# Git_Branch: " ++ branch
              , e$ "# Git_Hash: "   ++ revision
              , e$ "# Git_Depth: "  ++ show depth
@@ -902,6 +901,11 @@ main_threadid = unsafePerformIO$ newIORef (error "main_threadid uninitialized")
 -- | TODO: Eventually this will be parameterized.
 defaultMain :: IO ()
 defaultMain = do
+  error "FINISHME: defaultMain requires reading benchmark list from a file.  Implement it!"
+  defaultMainWithBechmarks undefined
+
+defaultMainWithBechmarks :: [Benchmark2] -> IO ()
+defaultMainWithBechmarks benches = do  
   id <- myThreadId
   writeIORef main_threadid id
 
@@ -923,8 +927,8 @@ defaultMain = do
     putStrLn$ usageStr
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
-  conf@Config{benchlist,scheds,envs,stdOut,threadsettings} <- getConfig options
-  
+  conf@Config{scheds,envs,stdOut,threadsettings} <- getConfig options benches
+        
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
   let hasCabalFile = (cabalFile /= []) &&
@@ -949,28 +953,29 @@ defaultMain = do
              else    return ()
 
         unless recomp $ log "[!!!] Skipping benchmark recompilation!"
-        let listConfigs threadsettings = 
-                      [ BenchRun { threads=t, sched=s, bench=b, env=e } | 
-			b@(Benchmark {compatScheds}) <- benchlist, 
-			s <- Set.toList (Set.intersection scheds (Set.fromList compatScheds)),
-			t <- threadsettings,
-                        e <- envs]
+        let
+            -- listConfigs threadsettings = 
+            --           [ BenchRun { threads=t, sched=s, bench=b, env=e } | 
+	    --     	b@(Benchmark {compatScheds}) <- benchlist, 
+	    --     	s <- Set.toList (Set.intersection scheds (Set.fromList compatScheds)),
+	    --     	t <- threadsettings,
+            --             e <- envs]
 
-            allruns = listConfigs threadsettings 
-            total = length allruns
+--            allruns = listConfigs threadsettings 
+--            total = length allruns
 
             -- All that matters for compilation is nonthreaded (0) or threaded [1,inf)
-            pruned = Set.toList $ Set.fromList $
-                     -- Also ARGS and ENV can be ignored for compilation purposes:
-                     map (\ (BenchRun { threads, sched, bench })
-                              -> BenchRun { threads
-                                          , sched
-                                          , bench=bench{ args=[] }
-                                          , env=[]} ) $ 
-                     listConfigs $
-                     Set.toList $ Set.fromList $
-                     map (\ x -> if x==0 then 0 else 1) threadsettings
-
+            -- pruned = Set.toList $ Set.fromList $
+            --          -- Also ARGS and ENV can be ignored for compilation purposes:
+            --          map (\ (BenchRun { threads, sched, bench })
+            --                   -> BenchRun { threads
+            --                               , sched
+            --                               , bench=bench{ args=[] }
+            --                               , env=[]} ) $ 
+            --          listConfigs $
+            --          Set.toList $ Set.fromList $
+            --          map (\ x -> if x==0 then 0 else 1) threadsettings
+{-
         log$ "\n--------------------------------------------------------------------------------"
         log$ "Running all benchmarks for all thread settings in "++show threadsettings
         log$ "Running for all schedulers in: "++show (Set.toList scheds)
@@ -1030,7 +1035,7 @@ defaultMain = do
         do Config{logOut, resultsOut, stdOut} <- ask
            liftIO$ Strm.write Nothing logOut 
            liftIO$ Strm.write Nothing resultsOut 
-
+-}
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all test configurations."
         log$ "--------------------------------------------------------------------------------"
