@@ -1,11 +1,38 @@
 
 name:                hsbencher
-version:             0.1.1
+version:             1.0
 -- CHANGELOG:
--- __ : Initial release
+-- 1.0 : Initial release, new flexible benchmark format.
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
--- description:         
+
+description: Benchmark frameworks are usually very specific to the
+  host language/environment.  Hence they are usually about as reusable
+  as compiler passes (that is, not).
+
+  Nevertheless, hsbencher is an attempt at a reusable benchmark
+  framework.  It knows fairly little about what the benchmarks do, and
+  is mostly concerned with defining and iterating through
+  configuration spaces (e.g. varying the number of threads), and
+  managing the data that results.
+
+  Benchmark data is stored in simple text files, and optionally
+  uploaded to Google Fusion Tables.
+
+  -- TODO: Describe clusterbench functionality when it's ready.
+
+  hsbencher attempts to stradle the divide between language-specific
+  and language-agnostic by having an extensible set of `BuildMethod`s.
+  As shipped, hsbencher knows a little about cabal, ghc, and less
+  about Make, but it can be taught more.
+
+  The general philosophy is to have benchmarks follow a simple
+  protocol, for example printing out a line "SELFTIMED: 3.3s" if they
+  wish to report their own timing.  The focus is on benchmarks that
+  run long enough to run in their own process.  This is typical of
+  parallelism benchmarks and different than the fine grained
+  benchmarks that are well supported by  "Criterion".
+
 
 license:             BSD3
 license-file:        LICENSE
