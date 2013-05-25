@@ -10,11 +10,12 @@ module HSBencher.Types
          Benchmark(..), BenchRun(..),
          
          -- * HSBench Driver Configuration
-         Config(..),
+         Config(..), BenchM,
          Sched(..)
        )
        where
 
+import Control.Monad.Reader
 import Data.Maybe (catMaybes)
 import Control.Monad (filterM)
 import System.FilePath
@@ -106,6 +107,10 @@ instance Show BuildMethod where
 ----------------------------------------------------------------------------------------------------
 -- HSBench Configuration
 ----------------------------------------------------------------------------------------------------
+
+-- | A monad for benchamrking.  This provides access to configuration options, but
+-- really, its main purpose is enabling logging.
+type BenchM a = ReaderT Config IO a
 
 -- | The global configuration for benchmarking:
 data Config = Config 

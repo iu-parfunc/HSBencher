@@ -480,7 +480,7 @@ uniqueSuffix BenchRun{threads,sched,bench} =
 --------------------------------------------------------------------------------
 
 -- Check the return code from a call to a test executable:
-check :: Bool -> ExitCode -> String -> ReaderT Config IO Bool
+check :: Bool -> ExitCode -> String -> BenchM Bool
 check _ ExitSuccess _           = return True
 check keepgoing (ExitFailure code) msg  = do
   Config{ghc_flags, ghc_RTS} <- ask
@@ -507,11 +507,11 @@ check keepgoing (ExitFailure code) msg  = do
 data LogDest = ResultsFile | LogFile | StdOut deriving Show
 
 -- | Print a message (line) both to stdout and logFile:
-log :: String -> ReaderT Config IO ()
+log :: String -> BenchM ()
 log = logOn [LogFile,StdOut] -- The commonly used default. 
 
 -- | Log a line to a particular file and also echo to stdout.
-logOn :: [LogDest] -> String -> ReaderT Config IO ()
+logOn :: [LogDest] -> String -> BenchM ()
 logOn modes s = do
   let bstr = B.pack s -- FIXME
   Config{logOut, resultsOut, stdOut} <- ask
@@ -541,7 +541,7 @@ path ls = foldl1 (</>) ls
 --------------------------------------------------------------------------------
 
 -- | Invoke cabal for all of the schedulers in the current config
-invokeCabal :: ReaderT Config IO Bool
+invokeCabal :: BenchM Bool
 invokeCabal = do
   Config{ghc, ghc_pkg, ghc_flags, scheds, cabalPath} <- ask  
   bs <- forM (Set.toList scheds) $ \sched -> do
@@ -566,7 +566,7 @@ invokeCabal = do
 
 
 -- | Build a single benchmark in a single configuration WITHOUT cabal.
-compileOne :: BenchRun -> (Int,Int) -> ReaderT Config IO Bool
+compileOne :: BenchRun -> (Int,Int) -> BenchM Bool
 compileOne br@(BenchRun { threads=numthreads
                         , sched
                         , bench=(Benchmark testPath _ args_)
@@ -659,7 +659,7 @@ compileOne br@(BenchRun { threads=numthreads
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-runOne :: BenchRun -> (Int,Int) -> ReaderT Config IO ()
+runOne :: BenchRun -> (Int,Int) -> BenchM ()
 runOne br@(BenchRun { threads=numthreads
                     , sched
                     , bench=(Benchmark testPath _ args_)
@@ -817,7 +817,7 @@ resultsSchema =
 
 -- | The standard retry behavior when receiving HTTP network errors.
 stdRetry :: String -> OAuth2Client -> OAuth2Tokens -> IO a ->
-            ReaderT Config IO a
+            BenchM a
 stdRetry msg client toks action = do
   conf <- ask
   let retryHook exn = runReaderT (do
@@ -833,7 +833,7 @@ stdRetry msg client toks action = do
 
 -- | Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
-getTableId :: OAuth2Client -> String -> ReaderT Config IO TableId
+getTableId :: OAuth2Client -> String -> BenchM TableId
 getTableId auth tablename = do
   log$ " [fusiontable] Fetching access tokens, client ID/secret: "++show (clientId auth, clientSecret auth)
   toks      <- liftIO$ getCachedTokens auth
@@ -865,7 +865,7 @@ indent = map ("    "++)
 -- subprocess-management department.  Here we instead use the
 -- underlying createProcess library function:
 runCmdWithEnv :: Bool -> [(String, String)] -> String
-              -> ReaderT Config IO (String, ExitCode)
+              -> BenchM (String, ExitCode)
 runCmdWithEnv echo env cmd = do 
   -- This current design has the unfortunate disadvantage that it
   -- produces no observable output until the subprocess is FINISHED.
@@ -904,7 +904,7 @@ runIgnoreErr cm =
 -- | Create a thread that echos the contents of a Handle as it becomes
 --   available.  Then return all text read through an MVar when the
 --   handle runs dry.
-echoThread :: Bool -> Handle -> ReaderT Config IO (MVar String)
+echoThread :: Bool -> Handle -> BenchM (MVar String)
 echoThread echoStdout hndl = do
   mv   <- lift$ newEmptyMVar
   conf <- ask
@@ -922,7 +922,7 @@ echoThread echoStdout hndl = do
 
 -- | Create a thread that echos the contents of stdout/stderr InputStreams (lines) to
 -- the appropriate places.
-echoStream :: Bool -> Strm.InputStream B.ByteString -> ReaderT Config IO (MVar ())
+echoStream :: Bool -> Strm.InputStream B.ByteString -> BenchM (MVar ())
 echoStream echoStdout outS = do
   conf <- ask
   mv   <- lift$ newEmptyMVar
@@ -950,7 +950,7 @@ whichVariant "benchlist_laptop.txt" = "laptop"
 whichVariant _                      = "unknown"
 
 -- | Write the results header out stdout and to disk.
-printBenchrunHeader :: ReaderT Config IO ()
+printBenchrunHeader :: BenchM ()
 printBenchrunHeader = do
   Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads,
          logOut, resultsOut, stdOut, benchversion, shortrun, gitInfo=(branch,revision,depth) } <- ask
@@ -1024,7 +1024,7 @@ data Flag = ParBench
 -- | Command line options.
 core_cli_options :: (String, [OptDescr Flag])
 core_cli_options = 
-     ("\nCommand Line Options:",
+     ("\n Command Line Options:",
       [ Option ['p'] ["par"] (NoArg ParBench) 
         "Build benchmarks in parallel (run in parallel too if SHORTRUN=1)."
       , Option [] ["no-recomp"] (NoArg NoRecomp)
@@ -1053,7 +1053,7 @@ all_cli_options = [core_cli_options]
 
 fusion_cli_options :: (String, [OptDescr Flag])
 fusion_cli_options =
-  ("\nFusion Table Options:",
+  ("\n Fusion Table Options:",
       [ Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
         "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
 
