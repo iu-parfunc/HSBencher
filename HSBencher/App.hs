@@ -258,7 +258,7 @@ getConfig cmd_line_options = do
 	   , cabalPath  =       get "CABAL"     "cabal"
            , ghc_pkg    =       get "GHC_PKG"   "ghc-pkg"
 	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
-  	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2")) 
+  	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2"))
 	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
 	   , benchlist      = parseBenchList benchstr

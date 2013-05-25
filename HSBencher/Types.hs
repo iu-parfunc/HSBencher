@@ -157,6 +157,10 @@ data Config = Config
 instance Show (Strm.OutputStream a) where
   show _ = "<OutputStream>"
 
+----------------------------------------------------------------------------------------------------
+-- Configuration Spaces
+----------------------------------------------------------------------------------------------------
+
 -- Represents a configuration of an individual run.
 --  (number of
 -- threads, other flags, etc):
@@ -179,3 +183,39 @@ data Sched
    = Trace | Direct | Sparks | ContFree | SMP | NUMA
    | None
  deriving (Eq, Show, Read, Ord, Enum, Bounded)
+
+
+-- | A datatype for describing (generating) benchmark configuration spaces.
+--   This is accomplished by nested conjunctions and disjunctions.
+--   For example, varying threads from 1-32 would be a 32-way Or.  Combining that
+--   with profiling on/off (product) would create a 64-config space.
+data BenchSpace = And [BenchSpace]
+                | Or  [BenchSpace]
+                | Set ParamType String
+ deriving (Show,Eq,Ord,Read)
+
+enumerateBenchSpace :: BenchSpace -> [ [(ParamType,String)] ] 
+enumerateBenchSpace bs =
+  case bs of
+    Set p s -> [ [(p,s)] ]
+    Or ls -> concatMap enumerateBenchSpace ls
+    And ls -> loop ls
+  where
+    loop [] = []
+    loop [lst] = enumerateBenchSpace lst
+    loop (hd:tl) =
+      let confs = enumerateBenchSpace hd in
+      [ c++r | c <- confs
+             , r <- loop tl ]
+
+
+test1 = Or (zipWith Set (repeat$ EnvVar "CILK_NPROCS") (map show [1..32]))
+test2 = Or [Set (RTS "-A") "1M", Set (RTS "-A") "2M"]
+test3 = And [test1, test2]
+
+-- | Different types of parameters that may be set or varied.
+data ParamType = RTS     String   -- e.g. "-A"
+	       | Compile String   -- e.g. "--ddump-simpl"
+               | EnvVar  String
+ deriving (Show, Eq, Read, Ord)
+
