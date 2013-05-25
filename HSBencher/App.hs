@@ -98,6 +98,7 @@ import Network.Google.FusionTables (createTable, listTables, listColumns, insert
 ----------------------------
 -- Self imports:
 
+import HSBencher.Logging
 import HSBencher.Types
 import HSBencher.Methods
 import HSBencher.MeasureProcess 
@@ -501,24 +502,6 @@ check keepgoing (ExitFailure code) msg  = do
 -- Logging
 --------------------------------------------------------------------------------
 
--- | There are three logging destinations we care about.  The .dat
---   file, the .log file, and the user's screen (i.e. the user who
---   launched the benchmarks).
-data LogDest = ResultsFile | LogFile | StdOut deriving Show
-
--- | Print a message (line) both to stdout and logFile:
-log :: String -> BenchM ()
-log = logOn [LogFile,StdOut] -- The commonly used default. 
-
--- | Log a line to a particular file and also echo to stdout.
-logOn :: [LogDest] -> String -> BenchM ()
-logOn modes s = do
-  let bstr = B.pack s -- FIXME
-  Config{logOut, resultsOut, stdOut} <- ask
-  let go ResultsFile = Strm.write (Just bstr) resultsOut 
-      go LogFile     = Strm.write (Just bstr) logOut     
-      go StdOut      = Strm.write (Just bstr) stdOut
-  liftIO$ mapM_ go modes
 
 -- | Create a backup copy of existing results_HOST.dat files.
 backupResults :: String -> String -> IO ()
