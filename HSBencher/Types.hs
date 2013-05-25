@@ -57,7 +57,7 @@ filePredCheck pred path =
 -- instance Show FilePredicate where
 --   show (WithExtension s) = "<FilePredicate: *."++s++">"  
 
-
+-- | The result of doing a build.  Note that `compile` can will throw an exception if compilation fails.
 data BuildResult =
     StandAloneBinary FilePath -- ^ This binary can be copied and executed whenever.
   | RunInPlace (RunFlags -> CommandDescr)
