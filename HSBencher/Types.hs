@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, NamedFieldPuns, CPP  #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module HSBencher.Types
        (
@@ -26,6 +27,8 @@ import qualified Data.Set as Set
 import qualified Data.ByteString.Char8 as B
 import qualified System.IO.Streams as Strm
 
+import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
+
 import HSBencher.MeasureProcess -- (CommandDescr(..))
 
 #ifdef FUSION_TABLES
@@ -52,7 +55,7 @@ data FilePredicate =
   | PredOr FilePredicate FilePredicate -- ^ Logical or.
 
   -- TODO: Allow arbitrary function predicates also.
- deriving Show    
+ deriving (Show, Generic, Ord, Eq)
 -- instance Show FilePredicate where
 --   show (WithExtension s) = "<FilePredicate: *."++s++">"    
 
@@ -183,7 +186,7 @@ data Benchmark = Benchmark
 data Sched 
    = Trace | Direct | Sparks | ContFree | SMP | NUMA
    | None
- deriving (Eq, Show, Read, Ord, Enum, Bounded)
+ deriving (Eq, Show, Read, Ord, Enum, Bounded, Generic)
 
 
 -- type BenchFile = [BenchStmt]
@@ -202,7 +205,7 @@ data Benchmark2 = Benchmark2
 data BenchSpace = And [BenchSpace]
                 | Or  [BenchSpace]
                 | Set ParamSetting 
- deriving (Show,Eq,Ord,Read)
+ deriving (Show,Eq,Ord,Read, Generic)
 
 -- | Exhaustively compute all configurations described by a benchmark configuration space.
 enumerateBenchSpace :: BenchSpace -> [ [ParamSetting] ] 
@@ -246,5 +249,12 @@ data ParamSetting
                                --   For now Env Vars ONLY affect runtime.
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
- deriving (Show, Eq, Read, Ord)
+ deriving (Show, Eq, Read, Ord, Generic)
+
+
+instance Out ParamSetting
+instance Out BenchSpace
+instance Out Sched
+instance Out FilePredicate
+
 

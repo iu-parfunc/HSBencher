@@ -41,7 +41,7 @@ straight .hs files buildable by "ghc --make".
 
 -}
 
-module HSBencher.App (defaultMain) where 
+module HSBencher.App (defaultMain, defaultMainWithBechmarks) where 
 
 ----------------------------
 -- Standard library imports
@@ -956,15 +956,7 @@ defaultMainWithBechmarks benches = do
         let
             cconfs = map (\ b -> b { configs= compileOptsOnly (configs b) })
                      benchlist
-            -- listConfigs threadsettings = 
-            --           [ BenchRun { threads=t, sched=s, bench=b, env=e } | 
-	    --     	b@(Benchmark {compatScheds}) <- benchlist, 
-	    --     	s <- Set.toList (Set.intersection scheds (Set.fromList compatScheds)),
-	    --     	t <- threadsettings,
-            --             e <- envs]
-
---            allruns = listConfigs threadsettings 
---            total = length allruns
+            total = length cconfs
 
             -- All that matters for compilation is nonthreaded (0) or threaded [1,inf)
             -- pruned = Set.toList $ Set.fromList $
@@ -977,13 +969,13 @@ defaultMainWithBechmarks benches = do
             --          listConfigs $
             --          Set.toList $ Set.fromList $
             --          map (\ x -> if x==0 then 0 else 1) threadsettings
-{-
+            
         log$ "\n--------------------------------------------------------------------------------"
         log$ "Running all benchmarks for all thread settings in "++show threadsettings
         log$ "Running for all schedulers in: "++show (Set.toList scheds)
         log$ "Testing "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
         log$ "--------------------------------------------------------------------------------"
-
+     {-
         if ParBench `elem` options then do
             unless rtsSupportsBoundThreads $ error (my_name++" was NOT compiled with -threaded.  Can't do --par.")
         --------------------------------------------------------------------------------
