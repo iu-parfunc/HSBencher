@@ -927,7 +927,7 @@ defaultMainWithBechmarks benches = do
     putStrLn$ usageStr
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
-  conf@Config{scheds,envs,stdOut,threadsettings} <- getConfig options benches
+  conf@Config{scheds,envs,benchlist,stdOut,threadsettings} <- getConfig options benches
         
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
@@ -954,6 +954,8 @@ defaultMainWithBechmarks benches = do
 
         unless recomp $ log "[!!!] Skipping benchmark recompilation!"
         let
+            cconfs = map (\ b -> b { configs= compileOptsOnly (configs b) })
+                     benchlist
             -- listConfigs threadsettings = 
             --           [ BenchRun { threads=t, sched=s, bench=b, env=e } | 
 	    --     	b@(Benchmark {compatScheds}) <- benchlist, 

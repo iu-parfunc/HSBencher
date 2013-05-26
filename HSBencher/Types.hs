@@ -9,6 +9,7 @@ module HSBencher.Types
          -- * Benchmark configuration spaces
          Benchmark(..), BenchRun(..),
          Benchmark2(..), BenchSpace(..), ParamSetting(..),
+         enumerateBenchSpace, compileOptsOnly,
          
          -- * HSBench Driver Configuration
          Config(..), BenchM,
@@ -217,6 +218,21 @@ enumerateBenchSpace bs =
       let confs = enumerateBenchSpace hd in
       [ c++r | c <- confs
              , r <- loop tl ]
+
+-- | Strip all runtime options, leaving only compile-time options.  This is useful
+--   for figuring out how many separate compiles need to happen.
+compileOptsOnly :: BenchSpace -> BenchSpace
+compileOptsOnly x =
+  case loop x of
+    Nothing -> And []
+    Just b  -> b
+ where
+   loop bs = 
+     case bs of
+       And ls -> Just$ And$ catMaybes$ map loop ls
+       Or  ls -> Just$ Or$  catMaybes$ map loop ls
+       Set (CompileParam {}) -> Just bs
+       Set _                 -> Nothing
 
 test1 = Or (map (Set . RuntimeEnv "CILK_NPROCS" . show) [1..32])
 test2 = Or$ map (Set . RuntimeParam "-A") ["1M", "2M"]
