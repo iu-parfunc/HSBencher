@@ -27,6 +27,8 @@ import qualified Data.Set as Set
 import qualified Data.ByteString.Char8 as B
 import qualified System.IO.Streams as Strm
 
+import Debug.Trace
+
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
 import HSBencher.MeasureProcess -- (CommandDescr(..))
@@ -76,7 +78,7 @@ filePredCheck pred path =
         Just _  -> return x
         Nothing -> filePredCheck p2 path
     InDirectoryWithExactlyOne p2 -> do
-      ls  <- getDirectoryContents =<< getCurrentDirectory
+      ls  <- getDirectoryContents (takeDirectory path)
       ls' <- fmap catMaybes $
              mapM (filePredCheck p2) ls
       case ls' of

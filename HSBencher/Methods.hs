@@ -68,7 +68,7 @@ makeMethod = BuildMethod
 ghcMethod :: BuildMethod
 ghcMethod = BuildMethod
   { methodName = "ghc"
-  , canBuild = WithExtension "hs"
+  , canBuild = WithExtension ".hs"
   , concurrentBuild = True -- Only if we use hermetic build directories.
   , compile = \ flags target ->
      let dir  = takeDirectory target
@@ -93,7 +93,7 @@ cabalMethod = BuildMethod
   , compile = \ flags target -> do
      error "FINISHME"
   }
- where dotcab = WithExtension "cabal"
+ where dotcab = WithExtension ".cabal"
 
 
 -- | Checks whether a `BuildMethod` works for a given file

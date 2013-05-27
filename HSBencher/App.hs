@@ -397,6 +397,34 @@ invokeCabal = do
   
   return $ all id bs
 
+-- | Build a single benchmark in a single configuration.
+compileOne :: Benchmark2 -> [ParamSetting] -> BenchM Bool
+compileOne Benchmark2{target=testPath,cmdargs} cconf = do
+  Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
+
+  let (diroffset,testRoot) = splitFileName testPath
+      iterNum = 999
+      totalIters = 999
+
+  log$ "\n--------------------------------------------------------------------------------"
+  log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
+       ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++
+       (show$ makeBuildID$ toCompileFlags cconf)
+  log$ "--------------------------------------------------------------------------------\n"
+
+
+  matches <- lift$ 
+             filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
+  when (null matches) $ do
+       log$ "ERROR, no build method matches path: "++testPath
+       lift$ exitFailure     
+  log$ printf "Found %d methods that can handle %s: %s" 
+         (length matches) testPath (show$ map methodName matches)
+  when (length matches > 1) $
+    log$ "WARNING: resolving ambiguity, picking method: "++(methodName$ head matches)
+  liftIO exitSuccess
+
+  error$ "FINISHME - compileOne: "++show cconf
 
 {-
 -- | Build a single benchmark in a single configuration WITHOUT cabal.
@@ -413,20 +441,10 @@ compileOne br@(BenchRun { threads=numthreads
 		   0 -> ghc_flags
 		   _ -> ghc_flags++" -threaded"
 	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
-	 (diroffset,testRoot) = splitFileName testPath         
-         -- TODO: make this command-line configurable.
-         containingdir = diroffset
-         hsfile = testPath++".hs"
-	 suffix = uniqueSuffix br
-         outdir = "build" </> testRoot++suffix++"_"++show uid
-	 exefile = exedir </> testRoot ++ suffix ++ ".exe"
+
          args = if shortrun then shortArgs args_ else args_
 
-     log$ "\n--------------------------------------------------------------------------------"
-     log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
-	  ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched ++ 
-           if numthreads==0 then " serial" else " threaded"
-     log$ "--------------------------------------------------------------------------------\n"
+---
 
      log$"First, creating a directory for intermediate compiler files: "++outdir
      code1 <- lift$ system$ "mkdir -p "++outdir
@@ -434,16 +452,7 @@ compileOne br@(BenchRun { threads=numthreads
      check False code1 ("ERROR, "++my_name++": making compiler temp dir failed.")
      check False code2 ("ERROR, "++my_name++": making compiler temp dir failed.")
 
-     matches <- lift$ 
-                filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
-     when (null matches) $ do
-       log$ "ERROR, no build method matches path: "++testPath
-       lift$ exitFailure     
-     log$ printf "Found %d methods that can handle %s: %s" 
-            (length matches) testPath (show$ map methodName matches)
-     log$ "WARNING: resolving ambiguity, picking method: "++(methodName$ head matches)
-     liftIO exitSuccess
-
+---
 
      log$"Next figure out what kind of benchmark this is by poking around the file system: "
      log$"  Checking for: "++hsfile
@@ -486,8 +495,6 @@ compileOne br@(BenchRun { threads=numthreads
 	lift$ exitFailure
 -}
 
-compileOne Benchmark2{target,cmdargs} cconf = do
-  error$ "FINISHME - compileOne: "++show cconf
 
 
 --------------------------------------------------------------------------------
