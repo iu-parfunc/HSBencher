@@ -8,18 +8,16 @@ module HSBencher.Methods
        where
 
 import Control.Monad
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (liftIO, MonadIO)
 import System.Process
 import System.Directory
 import System.FilePath
 import Text.Printf
+import Prelude hiding (log)
 
 import HSBencher.Types
+import HSBencher.Logging (log)
 import HSBencher.MeasureProcess
-
---------------------------------------------------------------------------------
--- General utilities
---------------------------------------------------------------------------------
 
 
 --------------------------------------------------------------------------------
@@ -34,11 +32,11 @@ makeMethod = BuildMethod
                `PredOr`
                InDirectoryWithExactlyOne (IsExactly "Makefile")
   , concurrentBuild = False
-  , compile = \ bldid flags target -> liftIO$ do
-     isdir <- doesDirectoryExist target
+  , compile = \ bldid flags target -> do
+     isdir <- liftIO$ doesDirectoryExist target
      let dir = if isdir then target
                else takeDirectory target
-     system "make"
+     liftIO$ system "make"
      let runit args =
            CommandDescr
            { exeFile = "make"
@@ -76,23 +74,29 @@ cabalMethod = BuildMethod
   , canBuild = dotcab `PredOr`
                InDirectoryWithExactlyOne dotcab
   , concurrentBuild = True
-  , compile = \ bldid flags target -> liftIO$ do
-     dir <- getDir target
+  , compile = \ bldid flags target -> do
+     dir <- liftIO$ getDir target
      inDirectory dir $ do 
        -- Ugh... how could we separate out args to the different phases of cabal?
-       system "rm -rf ./bin/*"
+       log$ tag++" Switched to "++dir++", clearing binary target dir... "
+       liftIO$ system "rm -rf ./bin/*"
        let cmd = "cabal install --bindir=./bin/ ./ "++unwords flags
-       putStrLn$ "RUNNING CMD "++cmd
-       system cmd
-       ls <- filesInDir "./bin/"
+       log$ tag++" Running cabal command: "++cmd
+       liftIO$ system cmd -- TODO: run tagged
+       ls <- liftIO$ filesInDir "./bin/"
        case ls of
          []  -> error$"No binaries were produced from building cabal file! In: "++show dir
          [f] -> return (StandAloneBinary$ dir </> "bin" </> f)
          _   -> error$"Multiple binaries were produced from building cabal file!:"
                        ++show ls ++" In: "++show dir
   }
- where dotcab = WithExtension ".cabal"
+ where
+   dotcab = WithExtension ".cabal"
+   tag = " [cabalDriver]"
 
+--------------------------------------------------------------------------------
+-- Helper routines:
+--------------------------------------------------------------------------------
 
 -- | Checks whether a `BuildMethod` works for a given file
 -- matchesMethod :: BuildMethod -> FilePath -> IO Bool
@@ -110,12 +114,12 @@ getDir path = do
          then return (takeDirectory path)
          else error$ "getDir: benchmark target path does not exist at all: "++path
 
-inDirectory :: FilePath -> IO a -> IO a
+inDirectory :: (MonadIO m) => FilePath -> m a -> m a
 inDirectory dir act = do 
-  orig <- getCurrentDirectory
-  setCurrentDirectory dir
+  orig <- liftIO$ getCurrentDirectory
+  liftIO$ setCurrentDirectory dir
   x <- act
-  setCurrentDirectory orig
+  liftIO$ setCurrentDirectory orig
   return x
   
 -- Returns actual files only
