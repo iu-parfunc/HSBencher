@@ -10,7 +10,7 @@ module HSBencher.Types
          -- * Benchmark configuration spaces
          Benchmark(..), BenchRun(..),
          Benchmark2(..), BenchSpace(..), ParamSetting(..),
-         enumerateBenchSpace, compileOptsOnly,
+         enumerateBenchSpace, compileOptsOnly, toCompileFlags, 
          
          -- * HSBench Driver Configuration
          Config(..), BenchM,
@@ -195,7 +195,7 @@ data Benchmark2 = Benchmark2
  { target  :: FilePath
  , cmdargs :: [String]
  , configs :: BenchSpace
- } deriving (Eq, Show, Ord)
+ } deriving (Eq, Show, Ord, Generic)
 
 
 -- | A datatype for describing (generating) benchmark configuration spaces.
@@ -222,6 +222,12 @@ enumerateBenchSpace bs =
       [ c++r | c <- confs
              , r <- loop tl ]
 
+-- 
+toCompileFlags :: [ParamSetting] -> CompileFlags
+toCompileFlags [] = []
+toCompileFlags (CompileParam s1 s2 : tl) = (s1++s2) : toCompileFlags tl
+toCompileFlags (_ : tl)                  =            toCompileFlags tl
+
 -- | Strip all runtime options, leaving only compile-time options.  This is useful
 --   for figuring out how many separate compiles need to happen.
 compileOptsOnly :: BenchSpace -> BenchSpace
@@ -232,10 +238,13 @@ compileOptsOnly x =
  where
    loop bs = 
      case bs of
-       And ls -> Just$ And$ catMaybes$ map loop ls
-       Or  ls -> Just$ Or$  catMaybes$ map loop ls
+       And ls -> mayb$ And$ catMaybes$ map loop ls
+       Or  ls -> mayb$ Or $ catMaybes$ map loop ls
        Set (CompileParam {}) -> Just bs
        Set _                 -> Nothing
+   mayb (And []) = Nothing
+   mayb (Or  []) = Nothing
+   mayb x        = Just x
 
 test1 = Or (map (Set . RuntimeEnv "CILK_NPROCS" . show) [1..32])
 test2 = Or$ map (Set . RuntimeParam "-A") ["1M", "2M"]
@@ -256,5 +265,6 @@ instance Out ParamSetting
 instance Out BenchSpace
 instance Out Sched
 instance Out FilePredicate
+instance Out Benchmark2
 
 

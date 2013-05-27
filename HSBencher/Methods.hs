@@ -3,8 +3,9 @@
 -- | These are the built-in build methods for HSBencher.
 
 module HSBencher.Methods
-       (makeMethod, ghcMethod, cabalMethod
+       (makeMethod, ghcMethod, cabalMethod,        
 --        matchesMethod
+        makeBuildID, BuildID 
         )
        where
 
@@ -23,7 +24,7 @@ import HSBencher.MeasureProcess
 --------------------------------------------------------------------------------
 
 -- | A BuildID should uniquely identify a particular configuration, but consist only
--- of characters that would be reasonable to put ina filename.  This is used to keep
+-- of characters that would be reasonable to put in a filename.  This is used to keep
 -- build results from colliding.
 type BuildID = String
 
@@ -74,6 +75,9 @@ ghcMethod = BuildMethod
          file = takeBaseName target in 
      inDirectory dir $ do
        let buildD = "buildoutput_" ++ makeBuildID flags
+
+-- 	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
+       
        system$ printf "ghc %S -outputdir ./%s %s"
                target buildD (unwords flags)
        return (StandAloneBinary$ dir </> buildD </> file)

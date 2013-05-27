@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns, NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
-{-# LANGUAGE CPP, OverloadedStrings #-}
+{-# LANGUAGE CPP, OverloadedStrings, TupleSections #-}
 --------------------------------------------------------------------------------
 -- NOTE: This is best when compiled with "ghc -threaded"
 -- However, ideally for real benchmarking runs we WANT the waitForProcess below block the whole process.
@@ -54,6 +54,7 @@ import Debug.Trace
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (isJust, fromJust, catMaybes)
+import qualified Data.Map as M
 import Data.Word (Word64)
 import Data.IORef
 import Data.List (intercalate, sortBy, intersperse, isPrefixOf, tails, isInfixOf, delete)
@@ -75,7 +76,8 @@ import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIs
 import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.ByteString.Char8 as B
 import Text.Printf
-
+import Text.PrettyPrint.GenericPretty (Out(doc))
+-- import Text.PrettyPrint.HughesPJ (nest)
 ----------------------------
 -- Additional libraries:
 
@@ -396,6 +398,7 @@ invokeCabal = do
   return $ all id bs
 
 
+{-
 -- | Build a single benchmark in a single configuration WITHOUT cabal.
 compileOne :: BenchRun -> (Int,Int) -> BenchM Bool
 compileOne br@(BenchRun { threads=numthreads
@@ -481,7 +484,10 @@ compileOne br@(BenchRun { threads=numthreads
      else do 
 	log$ "ERROR, "++my_name++": File does not exist: "++hsfile
 	lift$ exitFailure
+-}
 
+compileOne Benchmark2{target,cmdargs} cconf = do
+  error$ "FINISHME - compileOne: "++show cconf
 
 
 --------------------------------------------------------------------------------
@@ -938,11 +944,12 @@ defaultMainWithBechmarks benches = do
     (do         
 	log "Writing header for result data file:"
 	printBenchrunHeader 
-        
-        let recomp  = not $ NoRecomp `elem` options
-            doclean = (not $ NoCabal `elem` options) && recomp
+
+        let recomp  = NoRecomp `notElem` options
+{-     
+            doclean = (NoCabal `notElem` options) && recomp
         when doclean $ 
-          let cleanit cmd = when (not $ NoClean `elem` options) $ do
+          let cleanit cmd = when (NoClean `notElem` options) $ do
                 log$ "Before testing, first '"++ cmd ++"' for hygiene."
                 code <- lift$ system$ cmd++" &> clean_output.tmp"
                 check False code "ERROR: cleaning failed."
@@ -951,33 +958,36 @@ defaultMainWithBechmarks benches = do
           in      if hasMakefile  then cleanit "make clean"
              else if hasCabalFile then cleanit (cabalPath conf++" clean")
              else    return ()
-
+-}
         unless recomp $ log "[!!!] Skipping benchmark recompilation!"
-        let
-            cconfs = map (\ b -> b { configs= compileOptsOnly (configs b) })
-                     benchlist
-            total = length cconfs
 
-            -- All that matters for compilation is nonthreaded (0) or threaded [1,inf)
-            -- pruned = Set.toList $ Set.fromList $
-            --          -- Also ARGS and ENV can be ignored for compilation purposes:
-            --          map (\ (BenchRun { threads, sched, bench })
-            --                   -> BenchRun { threads
-            --                               , sched
-            --                               , bench=bench{ args=[] }
-            --                               , env=[]} ) $ 
-            --          listConfigs $
-            --          Set.toList $ Set.fromList $
-            --          map (\ x -> if x==0 then 0 else 1) threadsettings
+        let
+            benches' = map (\ b -> b { configs= compileOptsOnly (configs b) })
+                       benchlist
+            cfgs = map (enumerateBenchSpace . configs) benches'
+            allcompiles = concat $
+                          zipWith (\ b cs -> map (b,) cs) benches' cfgs
+            
+            total = sum $ map length cfgs
             
         log$ "\n--------------------------------------------------------------------------------"
-        log$ "Running all benchmarks for all thread settings in "++show threadsettings
-        log$ "Running for all schedulers in: "++show (Set.toList scheds)
-        log$ "Testing "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
+        log$ "Running all benchmarks for all settings ..."
+        log$ "Compiling: "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
+        let indent n str = unlines $ map (replicate n ' ' ++) $ lines str
+            printloop _ [] = return ()
+            printloop mp (Benchmark2{target,cmdargs,configs} :tl) = do
+              log$ " * Benchmark/args: "++target++" "++show cmdargs
+              case M.lookup configs mp of
+                Nothing -> log$ indent 4$ show$ doc configs
+                Just trg0 -> log$ "   ...same config space as "++show trg0
+              printloop (M.insertWith (\ _ x -> x) configs target mp) tl
+--        log$ "Benchmarks/compile options: "++show (doc benches')              
+        printloop M.empty benches'
         log$ "--------------------------------------------------------------------------------"
-     {-
+
         if ParBench `elem` options then do
             unless rtsSupportsBoundThreads $ error (my_name++" was NOT compiled with -threaded.  Can't do --par.")
+     {-            
         --------------------------------------------------------------------------------
         -- Parallel version:
             numProcs <- liftIO getNumProcessors
@@ -1010,22 +1020,19 @@ defaultMainWithBechmarks benches = do
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
 		    runOne bench (confnum,total)
                return ()
-
+-}
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
-          when recomp 
-            (if hasCabalFile then do
-                log$ "Found cabal file in top-level benchmark dir.  Using it to build all benchmarks: "++(head cabalFile)
-                void invokeCabal
-             else do              
-                log$ "Not using Cabal.  Attempting to build the old fashioned way."             
-                forM_ (zip [1..] pruned) $ \ (confnum,bench) -> 
-                   compileOne bench (confnum,length pruned))
+          when recomp $ 
+            forM_ (zip benches' cfgs) $ \ (bench, allcfgs) -> 
+              forM_ allcfgs $ \ cfg -> 
+                compileOne bench cfg -- confnum -- (confnum,length pruned)
 
-          forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-              runOne bench (confnum,total)
+          -- forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+          --     runOne bench (confnum,total)
 
+{-
         do Config{logOut, resultsOut, stdOut} <- ask
            liftIO$ Strm.write Nothing logOut 
            liftIO$ Strm.write Nothing resultsOut 
