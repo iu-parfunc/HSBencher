@@ -179,78 +179,16 @@ expandMode "NUMA"     = [NUMA]
 
 expandMode s = error$ "Unknown Scheduler or mode: " ++s
 
-
---------------------------------------------------------------------------------
-
-
-
 ----------------------------------------------------------------------------------------------------
 
-------------------------------------------------------------
 
--- Helper for launching processes with logging and error checking
------------------------------------------------------------------
--- [2012.05.03] HSH has been causing no end of problems in the
--- subprocess-management department.  Here we instead use the
--- underlying createProcess library function:
-runCmdWithEnv :: Bool -> [(String, String)] -> String
-              -> BenchM (String, ExitCode)
-runCmdWithEnv echo env cmd = do 
-  -- This current design has the unfortunate disadvantage that it
-  -- produces no observable output until the subprocess is FINISHED.
-  log$ "Executing: " ++ cmd
-  baseEnv <- lift$ getEnvironment
-  (Nothing, Just outH, Just errH, ph) <- lift$ createProcess 
-     CreateProcess {
-       cmdspec = ShellCommand cmd,
-       env = Just$ baseEnv ++ env,
-       std_in  = Inherit,
-       std_out = CreatePipe,
-       std_err = CreatePipe,
-       cwd = Nothing,
-       close_fds = False,
-       create_group = False
-     }
-  mv1 <- echoThread echo outH
-  mv2 <- echoThread echo errH
-  lift$ waitForProcess ph  
-  Just code <- lift$ getProcessExitCode ph  
-  outStr <- lift$ takeMVar mv1
-  _      <- lift$ takeMVar mv2
-                
-  Config{keepgoing} <- ask
-  check keepgoing code ("ERROR, "++my_name++": command \""++cmd++"\" failed with code "++ show code)
-  return (outStr, code)
-
-
------------------------------------------------------------------
 runIgnoreErr :: String -> IO String
 runIgnoreErr cm = 
   do lns <- runLines cm
      return (unlines lns)
------------------------------------------------------------------
-
--- | Create a thread that echos the contents of a Handle as it becomes
---   available.  Then return all text read through an MVar when the
---   handle runs dry.
-echoThread :: Bool -> Handle -> BenchM (MVar String)
-echoThread echoStdout hndl = do
-  mv   <- lift$ newEmptyMVar
-  conf <- ask
-  lift$ void$ forkIOH "echo thread"  $ 
-    runReaderT (echoloop mv []) conf    
-  return mv  
- where
-   echoloop mv acc = 
-     do b <- lift$ hIsEOF hndl 
-        if b then do lift$ hClose hndl
-                     lift$ putMVar mv (unlines$ reverse acc)
-         else do ln <- lift$ hGetLine hndl
-                 logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) ln 
-                 echoloop mv (ln:acc)
 
 -- | Create a thread that echos the contents of stdout/stderr InputStreams (lines) to
--- the appropriate places.
+-- the appropriate places (as designated by the logging facility).
 echoStream :: Bool -> Strm.InputStream B.ByteString -> BenchM (MVar ())
 echoStream echoStdout outS = do
   conf <- ask

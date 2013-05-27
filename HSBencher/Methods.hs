@@ -8,7 +8,8 @@ module HSBencher.Methods
        where
 
 import Control.Monad
-import Control.Monad.IO.Class (liftIO, MonadIO)
+import Control.Monad.Reader
+-- import Control.Monad.IO.Class (liftIO, MonadIO)
 import System.Process
 import System.Directory
 import System.FilePath
@@ -61,7 +62,10 @@ ghcMethod = BuildMethod
        let buildD = "buildoutput_" ++ makeBuildID flags
 
 -- 	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
-       
+     -- code1 <- lift$ system$ "mkdir -p "++outdir
+     -- code2 <- lift$ system$ "mkdir -p "++exedir
+--       args = if shortrun then shortArgs args_ else args_           
+              
        system$ printf "ghc %S -outputdir ./%s %s"
                target buildD (unwords flags)
        return (StandAloneBinary$ dir </> buildD </> file)
@@ -89,6 +93,9 @@ cabalMethod = BuildMethod
          [f] -> return (StandAloneBinary$ dir </> "bin" </> f)
          _   -> error$"Multiple binaries were produced from building cabal file!:"
                        ++show ls ++" In: "++show dir
+                       
+--                             , "--program-suffix='_" ++ show sched ++ "_threaded.exe'"
+                       
   }
  where
    dotcab = WithExtension ".cabal"

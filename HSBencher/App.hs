@@ -355,30 +355,6 @@ path ls = foldl1 (</>) ls
 -- Compiling Benchmarks
 --------------------------------------------------------------------------------
 
--- | Invoke cabal for all of the schedulers in the current config
-invokeCabal :: BenchM Bool
-invokeCabal = do
-  Config{ghc, ghc_pkg, ghc_flags, scheds, cabalPath} <- ask  
-  bs <- forM (Set.toList scheds) $ \sched -> do
-          let schedflag = schedToCabalFlag sched
-              cmd = unwords [ cabalPath++" install"
-                            , "--with-ghc=" ++ ghc
-                            , "--with-ghc-pkg=" ++ ghc_pkg
-                            , "--ghc-options='" ++ ghc_flags ++ "'"
-                            , schedflag
-                            , "--prefix=`pwd`"
---                            , "--symlink-bindir=" -- Causes problems on linux [2012.05.02] -RRN
-                            , "--disable-documentation"
-                            , "--program-suffix='_" ++ show sched ++ "_threaded.exe'"
---                            , "&& cabal build"
-                            ]
-          log$ "\nRunning cabal... "
-          log$ "============================================================"
-          (_,code) <- runCmdWithEnv True [] cmd
-          check False code ("ERROR, "++my_name++": cabal-based compilation failed.")
-  
-  return $ all id bs
-
 -- | Build a single benchmark in a single configuration.
 compileOne :: Benchmark2 -> [ParamSetting] -> BenchM (RunFlags -> CommandDescr)
 compileOne Benchmark2{target=testPath,cmdargs} cconf = do
@@ -424,43 +400,7 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
       in return runner
     RunInPlace fn -> return fn
 
-
 {-
--- | Build a single benchmark in a single configuration WITHOUT cabal.
-compileOne :: BenchRun -> (Int,Int) -> BenchM Bool
-compileOne br@(BenchRun { threads=numthreads
-                        , sched
-                        , bench=(Benchmark testPath _ args_)
-                        }) 
-	      (iterNum,totalIters) = 
-  do Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
-
-     uid :: Word64 <- lift$ randomIO
-     let flags_ = case numthreads of
-		   0 -> ghc_flags
-		   _ -> ghc_flags++" -threaded"
-	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
-
-         args = if shortrun then shortArgs args_ else args_
-
----
-
-     log$"First, creating a directory for intermediate compiler files: "++outdir
-     code1 <- lift$ system$ "mkdir -p "++outdir
-     code2 <- lift$ system$ "mkdir -p "++exedir
-     check False code1 ("ERROR, "++my_name++": making compiler temp dir failed.")
-     check False code2 ("ERROR, "++my_name++": making compiler temp dir failed.")
-
----
-
-     log$"Next figure out what kind of benchmark this is by poking around the file system: "
-     log$"  Checking for: "++hsfile
-     log$"  Checking for: "++containingdir</>"Makefile"
-
-     e  <- lift$ doesFileExist hsfile
-     d  <- lift$ doesDirectoryExist containingdir
-     mf <- lift$ doesFileExist$     containingdir </> "Makefile"
-
      if e then do 
 	 log "Compiling with a single GHC command: "
          -- HACK for pinning to threads: (TODO - should probably make this for NUMA)
