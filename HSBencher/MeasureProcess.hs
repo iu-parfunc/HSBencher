@@ -5,8 +5,7 @@
 -- overhead.
 
 module HSBencher.MeasureProcess
-       (RunResult(..), SubProcess(..), CommandDescr(..),
-        measureProcess)
+       (measureProcess)
        where
 
 import Data.IORef
@@ -25,36 +24,9 @@ import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 import qualified Data.ByteString.Char8 as B
 
+import HSBencher.Types
+
 --------------------------------------------------------------------------------
-
--- | A self-contained description of a runnable command.  Similar to
--- System.Process.CreateProcess but slightly simpler.
-data CommandDescr =
-  CommandDescr
-  { exeFile :: String                -- ^ Executable
-  , cmdArgs :: [String]           -- ^ Command line arguments
-  , envVars :: [(String, String)] -- ^ Environment variables
-  , timeout :: Maybe Double       -- ^ Optional timeout in seconds.
-  , workingDir :: Maybe FilePath  -- ^ Optional working directory to switch to before
-                                  -- running command.
-  }
-  
--- | Measured results from running a subprocess (benchmark).
-data RunResult =
-    RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
-                 , productivity :: Maybe Double -- ^ Seconds
-                 }
-  | TimeOut
-  | ExitError Int -- ^ Contains the returned error code.
- deriving (Eq,Show)
-
--- | A running subprocess.
-data SubProcess =
-  SubProcess
-  { wait :: IO RunResult
-  , process_out  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
-  , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
-  }
            
 -- | This runs a sub-process and tries to determine how long it took (real time) and
 -- how much of that time was spent in the mutator vs. the garbage collector.

@@ -13,8 +13,10 @@ module HSBencher.Types
          enumerateBenchSpace, compileOptsOnly, toCompileFlags, 
          
          -- * HSBench Driver Configuration
-         Config(..), BenchM,
-         Sched(..)
+         Config(..), BenchM, Sched(..),
+
+         -- * Subprocesses and system commands
+         CommandDescr(..), RunResult(..), SubProcess(..)
        )
        where
 
@@ -30,8 +32,6 @@ import qualified System.IO.Streams as Strm
 import Debug.Trace
 
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
-
-import HSBencher.MeasureProcess -- (CommandDescr(..))
 
 #ifdef FUSION_TABLES
 import Network.Google.FusionTables (TableId)
@@ -261,6 +261,40 @@ data ParamSetting
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
  deriving (Show, Eq, Read, Ord, Generic)
+
+----------------------------------------------------------------------------------------------------
+-- Subprocesses and system commands
+----------------------------------------------------------------------------------------------------
+
+-- | A self-contained description of a runnable command.  Similar to
+-- System.Process.CreateProcess but slightly simpler.
+data CommandDescr =
+  CommandDescr
+  { exeFile :: String                -- ^ Executable
+  , cmdArgs :: [String]           -- ^ Command line arguments
+  , envVars :: [(String, String)] -- ^ Environment variables
+  , timeout :: Maybe Double       -- ^ Optional timeout in seconds.
+  , workingDir :: Maybe FilePath  -- ^ Optional working directory to switch to before
+                                  -- running command.
+  }
+  
+-- | Measured results from running a subprocess (benchmark).
+data RunResult =
+    RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
+                 , productivity :: Maybe Double -- ^ Seconds
+                 }
+  | TimeOut
+  | ExitError Int -- ^ Contains the returned error code.
+ deriving (Eq,Show)
+
+-- | A running subprocess.
+data SubProcess =
+  SubProcess
+  { wait :: IO RunResult
+  , process_out  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
+  , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
+  }
+
 
 
 instance Out ParamSetting
