@@ -7,6 +7,7 @@ module HSBencher.Methods
         )
        where
 
+import Control.Monad
 import System.Process
 import System.Directory
 import System.FilePath
@@ -78,10 +79,16 @@ cabalMethod = BuildMethod
      dir <- getDir target
      inDirectory dir $ do 
        -- Ugh... how could we separate out args to the different phases of cabal?
+       system "rm -rf ./bin/*"
        let cmd = "cabal install --bindir=./bin/ ./ "++unwords flags
        putStrLn$ "RUNNING CMD "++cmd
        system cmd
-       return (RunInPlace$ error "FINISHME : cabalmethod")
+       ls <- filesInDir "./bin/"
+       case ls of
+         []  -> error$"No binaries were produced from building cabal file! In: "++show dir
+         [f] -> return (StandAloneBinary$ dir </> "bin" </> f)
+         _   -> error$"Multiple binaries were produced from building cabal file!:"
+                       ++show ls ++" In: "++show dir
   }
  where dotcab = WithExtension ".cabal"
 
@@ -110,3 +117,8 @@ inDirectory dir act = do
   setCurrentDirectory orig
   return x
   
+-- Returns actual files only
+filesInDir d = do
+  inDirectory d $ do
+    ls <- getDirectoryContents "."
+    filterM doesFileExist ls
