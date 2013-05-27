@@ -406,12 +406,11 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
       iterNum = 999
       totalIters = 999
       flags = toCompileFlags cconf
+      bldid = makeBuildID flags
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
-       ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++
-       (show$ makeBuildID flags)
+       ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++ show bldid
   log$ "--------------------------------------------------------------------------------\n"
-
 
   matches <- lift$ 
              filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
@@ -425,7 +424,8 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
     log$ "WARNING: resolving ambiguity, picking method: "++methodName
 
   -- TODO: might need more info here... e.g. the buildID!!
-  x <- liftIO$ compile flags testPath
+  x <- compile bldid flags testPath
+  log$ "Compile finished, result: "++ show x
   case x of
     StandAloneBinary pth ->
       -- Here we return a simple runner:

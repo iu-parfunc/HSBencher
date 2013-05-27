@@ -99,6 +99,10 @@ data BuildResult =
     -- ^ In this case the build return what you need to do the benchmark run, but the
     -- directory contents cannot be touched until after than run is finished.
 
+instance Show BuildResult where
+  show (StandAloneBinary p) = "StandAloneBinary "++p
+  show (RunInPlace fn)      = "RunInPlace "++show (fn [])
+
 -- | A completely encapsulated method of building benchmarks.  Cabal and Makefiles
 -- are two examples of this.  The user may extend it with their own methods.
 data BuildMethod =
@@ -109,7 +113,7 @@ data BuildMethod =
   , canBuild    :: FilePredicate  -- ^ Can this method build a given file/directory?
   , concurrentBuild :: Bool -- ^ More than one build can happen at once.  This
                             -- implies that compile always returns StandAloneBinary.
-  , compile :: CompileFlags -> FilePath -> IO BuildResult
+  , compile :: BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
   }
 
 instance Show BuildMethod where
@@ -296,7 +300,8 @@ data CommandDescr =
   , workingDir :: Maybe FilePath  -- ^ Optional working directory to switch to before
                                   -- running command.
   }
-  
+ deriving (Show,Eq,Ord,Read,Generic)
+
 -- | Measured results from running a subprocess (benchmark).
 data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.

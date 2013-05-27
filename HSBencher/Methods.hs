@@ -8,6 +8,7 @@ module HSBencher.Methods
        where
 
 import Control.Monad
+import Control.Monad.IO.Class (liftIO)
 import System.Process
 import System.Directory
 import System.FilePath
@@ -33,7 +34,7 @@ makeMethod = BuildMethod
                `PredOr`
                InDirectoryWithExactlyOne (IsExactly "Makefile")
   , concurrentBuild = False
-  , compile = \ flags target -> do
+  , compile = \ bldid flags target -> liftIO$ do
      isdir <- doesDirectoryExist target
      let dir = if isdir then target
                else takeDirectory target
@@ -55,7 +56,7 @@ ghcMethod = BuildMethod
   { methodName = "ghc"
   , canBuild = WithExtension ".hs"
   , concurrentBuild = True -- Only if we use hermetic build directories.
-  , compile = \ flags target ->
+  , compile = \ bldid  flags target -> liftIO$ 
      let dir  = takeDirectory target
          file = takeBaseName target in 
      inDirectory dir $ do
@@ -75,7 +76,7 @@ cabalMethod = BuildMethod
   , canBuild = dotcab `PredOr`
                InDirectoryWithExactlyOne dotcab
   , concurrentBuild = True
-  , compile = \ flags target -> do
+  , compile = \ bldid flags target -> liftIO$ do
      dir <- getDir target
      inDirectory dir $ do 
        -- Ugh... how could we separate out args to the different phases of cabal?
