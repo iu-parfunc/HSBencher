@@ -146,3 +146,10 @@ expandMode "SMP"      = [SMP]
 expandMode "NUMA"     = [NUMA]
 
 expandMode s = error$ "Unknown Scheduler or mode: " ++s
+
+
+--------------------------------------------------------------------------------
+
+-- | In seconds.
+defaultTimeout :: Double
+defaultTimeout = 150

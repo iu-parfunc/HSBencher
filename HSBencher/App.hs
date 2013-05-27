@@ -398,18 +398,18 @@ invokeCabal = do
   return $ all id bs
 
 -- | Build a single benchmark in a single configuration.
-compileOne :: Benchmark2 -> [ParamSetting] -> BenchM Bool
+compileOne :: Benchmark2 -> [ParamSetting] -> BenchM (RunFlags -> CommandDescr)
 compileOne Benchmark2{target=testPath,cmdargs} cconf = do
   Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
 
   let (diroffset,testRoot) = splitFileName testPath
       iterNum = 999
       totalIters = 999
-
+      flags = toCompileFlags cconf
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
        ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++
-       (show$ makeBuildID$ toCompileFlags cconf)
+       (show$ makeBuildID flags)
   log$ "--------------------------------------------------------------------------------\n"
 
 
@@ -420,11 +420,28 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
        lift$ exitFailure     
   log$ printf "Found %d methods that can handle %s: %s" 
          (length matches) testPath (show$ map methodName matches)
+  let BuildMethod{methodName,compile,concurrentBuild} = head matches
   when (length matches > 1) $
-    log$ "WARNING: resolving ambiguity, picking method: "++(methodName$ head matches)
-  liftIO exitSuccess
+    log$ "WARNING: resolving ambiguity, picking method: "++methodName
 
-  error$ "FINISHME - compileOne: "++show cconf
+  -- TODO: might need more info here... e.g. the buildID!!
+  x <- liftIO$ compile flags testPath
+  case x of
+    StandAloneBinary pth ->
+      -- Here we return a simple runner:
+      let runner rtflags =
+            -- TODO: In the future we'll want to move the binary somewhere for
+            -- parallel builds...
+            CommandDescr
+            { exeFile = pth
+            , cmdArgs = rtflags
+            , envVars = []
+            , timeout = Just defaultTimeout
+            , workingDir = Nothing
+            }
+      in return runner
+    RunInPlace fn -> return fn
+
 
 {-
 -- | Build a single benchmark in a single configuration WITHOUT cabal.

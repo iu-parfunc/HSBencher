@@ -91,7 +91,13 @@ cabalMethod = BuildMethod
                InDirectoryWithExactlyOne dotcab
   , concurrentBuild = True
   , compile = \ flags target -> do
-     error "FINISHME"
+     dir <- getDir target
+     inDirectory dir $ do 
+       -- Ugh... how could we separate out args to the different phases of cabal?
+       let cmd = "cabal install --bindir=./bin/ ./ "++unwords flags
+       putStrLn$ "RUNNING CMD "++cmd
+       system cmd
+       return (RunInPlace$ error "FINISHME : cabalmethod")
   }
  where dotcab = WithExtension ".cabal"
 
@@ -101,7 +107,18 @@ cabalMethod = BuildMethod
 -- matchesMethod BuildMethod{canBuild} path =
 --   return $ filePredCheck canBuild path
 
+-- | Our compilation targets might be either directories or file names.
+getDir :: FilePath -> IO FilePath
+getDir path = do
+  b  <- doesDirectoryExist path
+  b2 <- doesFileExist path
+  if b
+    then return path
+    else if b2
+         then return (takeDirectory path)
+         else error$ "getDir: benchmark target path does not exist at all: "++path
 
+inDirectory :: FilePath -> IO a -> IO a
 inDirectory dir act = do 
   orig <- getCurrentDirectory
   setCurrentDirectory dir
