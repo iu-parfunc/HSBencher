@@ -10,7 +10,8 @@ module HSBencher.Types
          -- * Benchmark configuration spaces
          Benchmark(..), BenchRun(..),
          Benchmark2(..), BenchSpace(..), ParamSetting(..),
-         enumerateBenchSpace, compileOptsOnly, toCompileFlags, 
+         enumerateBenchSpace, compileOptsOnly, toCompileFlags,
+         BuildID, makeBuildID, 
          
          -- * HSBench Driver Configuration
          Config(..), BenchM, Sched(..),
@@ -21,6 +22,8 @@ module HSBencher.Types
        where
 
 import Control.Monad.Reader
+import Data.Char
+import Data.List
 import Data.Maybe (catMaybes)
 import Control.Monad (filterM)
 import System.FilePath
@@ -39,6 +42,7 @@ import Network.Google.FusionTables (TableId)
 
 ----------------------------------------------------------------------------------------------------
 -- Benchmark Build Methods
+----------------------------------------------------------------------------------------------------
 
 type RunFlags     = [String]
 type CompileFlags = [String]
@@ -229,6 +233,21 @@ toCompileFlags :: [ParamSetting] -> CompileFlags
 toCompileFlags [] = []
 toCompileFlags (CompileParam s1 s2 : tl) = (s1++s2) : toCompileFlags tl
 toCompileFlags (_ : tl)                  =            toCompileFlags tl
+
+-- | A BuildID should uniquely identify a particular (compile-time) configuration,
+-- but consist only of characters that would be reasonable to put in a filename.
+-- This is used to keep build results from colliding.
+type BuildID = String
+
+-- | Performs a simple reformatting (stripping disallowed characters) to create a
+-- build ID corresponding to a set of compile flags.
+makeBuildID :: CompileFlags -> BuildID
+makeBuildID strs =
+  intercalate "_" $
+  map (filter charAllowed) strs
+ where
+  charAllowed = isAlphaNum
+
 
 -- | Strip all runtime options, leaving only compile-time options.  This is useful
 --   for figuring out how many separate compiles need to happen.

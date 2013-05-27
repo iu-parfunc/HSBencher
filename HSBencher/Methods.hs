@@ -4,13 +4,9 @@
 
 module HSBencher.Methods
        (makeMethod, ghcMethod, cabalMethod,        
---        matchesMethod
-        makeBuildID, BuildID 
         )
        where
 
-import Data.Char
-import Data.List
 import System.Process
 import System.Directory
 import System.FilePath
@@ -23,18 +19,6 @@ import HSBencher.MeasureProcess
 -- General utilities
 --------------------------------------------------------------------------------
 
--- | A BuildID should uniquely identify a particular configuration, but consist only
--- of characters that would be reasonable to put in a filename.  This is used to keep
--- build results from colliding.
-type BuildID = String
-
--- | The BuildID should 
-makeBuildID :: CompileFlags -> BuildID
-makeBuildID strs =
-  intercalate "_" $
-  map (filter charAllowed) strs
- where
-  charAllowed = isAlphaNum
 
 --------------------------------------------------------------------------------
 -- Some useful build methods
