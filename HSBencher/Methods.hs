@@ -123,6 +123,7 @@ inDirectory dir act = do
   return x
   
 -- Returns actual files only
+filesInDir :: FilePath -> IO [FilePath]
 filesInDir d = do
   inDirectory d $ do
     ls <- getDirectoryContents "."
