@@ -9,6 +9,7 @@ module HSBencher.Methods
 
 import Control.Monad
 import Control.Monad.Reader
+import qualified Data.ByteString.Char8 as B
 -- import Control.Monad.IO.Class (liftIO, MonadIO)
 import System.Process
 import System.Directory
@@ -19,7 +20,7 @@ import Prelude hiding (log)
 import HSBencher.Types
 import HSBencher.Logging (log)
 import HSBencher.MeasureProcess
--- import HSBencher.Utils
+import HSBencher.Utils (runLogged)
 
 --------------------------------------------------------------------------------
 -- Some useful build methods
@@ -37,7 +38,7 @@ makeMethod = BuildMethod
      isdir <- liftIO$ doesDirectoryExist target
      let dir = if isdir then target
                else takeDirectory target
-     liftIO$ system "make"
+     _ <- runSuccessful " [make] " "make"
      let runit args =
            CommandDescr
            { command = RawCommand "make" ["run","ARGS=\""++ unwords args ++"\""]
@@ -82,10 +83,10 @@ cabalMethod = BuildMethod
      inDirectory dir $ do 
        -- Ugh... how could we separate out args to the different phases of cabal?
        log$ tag++" Switched to "++dir++", clearing binary target dir... "
-       liftIO$ system "rm -rf ./bin/*"
+       _ <- runSuccessful tag "rm -rf ./bin/*"
        let cmd = "cabal install --bindir=./bin/ ./ "++unwords flags
-       log$ tag++" Running cabal command: "++cmd
-       liftIO$ system cmd -- TODO: run tagged
+       log$ tag++"Running cabal command: "++cmd
+       _ <- runSuccessful " [cabal] " cmd
        ls <- liftIO$ filesInDir "./bin/"
        case ls of
          []  -> error$"No binaries were produced from building cabal file! In: "++show dir
@@ -98,7 +99,7 @@ cabalMethod = BuildMethod
   }
  where
    dotcab = WithExtension ".cabal"
-   tag = " [cabalDriver]"
+   tag = " [cabalMethod] "
 
 --------------------------------------------------------------------------------
 -- Helper routines:
@@ -134,3 +135,14 @@ filesInDir d = do
   inDirectory d $ do
     ls <- getDirectoryContents "."
     filterM doesFileExist ls
+
+
+-- | A simple wrapper for a command that is expected to succeed (and whose output we
+-- don't care about).  Throws an exception if the command fails.
+runSuccessful :: String -> String -> BenchM [B.ByteString]
+runSuccessful tag cmd = do
+  (res,lines) <- runLogged tag cmd
+  case res of
+    ExitError code  -> error$ "expected command to succeed! But it exited with code "++show code++ ": "++ cmd
+    TimeOut {}      -> error "Methods.hs/runSuccessful - internal error!"
+    RunCompleted {} -> return lines

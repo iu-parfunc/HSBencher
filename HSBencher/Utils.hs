@@ -13,6 +13,7 @@ import Data.IORef
 import qualified Data.ByteString.Char8 as B
 import Control.Monad.Reader -- (lift, runReaderT, ask)
 import qualified System.IO.Streams as Strm
+import qualified System.IO.Streams.Concurrent as Strm
 
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
@@ -209,18 +210,28 @@ echoStream echoStdout outS = do
             echoloop mv
 
 -- | Run a command and wait for all output.  Log output to the appropriate places.
-runLogged :: String -> BenchM [String]
-runLogged cmd =
-  -- log$ " Executing command: " ++ cmd
-  -- SubProcess {wait,process_out,process_err} <-
-  --   lift$ measureProcess
-  --           CommandDescr{ exeFile, cmdArgs, envVars, timeout=Just 150, workingDir=Nothing }
-  -- err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
-  -- both <- lift$ Strm.concurrentMerge [process_out, err2]
-  -- mv <- echoStream (not shortrun) both  
-  error "FINISHME - runlogged"
-
-
+--   The first argument is a "tag" to append to each output line to make things
+--   clearer.
+runLogged :: String -> String -> BenchM (RunResult, [B.ByteString])
+runLogged tag cmd = do 
+  log$ " * Executing command: " ++ cmd
+  SubProcess {wait,process_out,process_err} <-
+    lift$ measureProcess
+            CommandDescr{ command=ShellCommand cmd, envVars=[], timeout=Just 150, workingDir=Nothing }
+  err2 <- lift$ Strm.map (B.append (B.pack "[stderr] ")) process_err
+  both <- lift$ Strm.concurrentMerge [process_out, err2]
+  both' <- lift$ Strm.map (B.append$ B.pack tag) both
+  -- Synchronous: gobble up and echo all the input:
+  let loop acc = do
+        x <- lift$ Strm.read both'
+        case x of
+          Nothing -> return (reverse acc)
+          Just ln -> do log (B.unpack ln)
+                        loop (ln:acc)
+  lines <- loop []
+  res   <- lift$ wait
+  log$ " * Command completed with "++show(length lines)++" lines of output." -- ++show res
+  return (res,lines)
 
 -- | Runs a command through the OS shell and returns stdout split into
 -- lines.  (Ignore exit code.)
