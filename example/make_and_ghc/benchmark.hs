@@ -30,8 +30,8 @@ withthreads = defaultHSSettings$
 
 defaultHSSettings spc =
   And [
-     -- Set NoMeaning (CompileParam "-threaded -rtsopts")
-        Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS")
+        Set NoMeaning (CompileParam "-threaded -rtsopts")
+      , Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS")
       , spc]
 
 varyThreads :: BenchSpace DefaultParamMeaning -> BenchSpace DefaultParamMeaning
