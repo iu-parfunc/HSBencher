@@ -65,7 +65,7 @@ import Data.Version (versionBranch, versionTags)
 import GHC.Conc (getNumProcessors)
 import Numeric (showFFloat)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
-import System.Environment (getArgs, getEnv, getEnvironment, getExecutablePath)
+import System.Environment (getArgs, getEnv, getEnvironment)
 import System.Directory
 import System.Posix.Env (setEnv)
 import System.Random (randomIO)
@@ -209,7 +209,7 @@ augmentTupleWithConfig Config{..} base = do
 
 -- Retrieve the (default) configuration from the environment, it may
 -- subsequently be tinkered with.  This procedure should be idempotent.
-getConfig :: [Flag] -> [Benchmark2 DefaultParamMeaning] -> IO Config
+getConfig :: [Flag] -> [Benchmark DefaultParamMeaning] -> IO Config
 getConfig cmd_line_options benches = do
   hostname <- runSL$ "hostname -s"
   t0 <- getCurrentTime
@@ -355,8 +355,8 @@ path ls = foldl1 (</>) ls
 --------------------------------------------------------------------------------
 
 -- | Build a single benchmark in a single configuration.
-compileOne :: (Int,Int) -> Benchmark2 DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
-compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
+compileOne :: (Int,Int) -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
+compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
   Config{shortrun, resultsOut, stdOut, buildMethods} <- ask
 
   let (diroffset,testRoot) = splitFileName testPath
@@ -425,8 +425,8 @@ compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark2 DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
-runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do       
+runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
+runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=args_} runconfig = do       
   let numthreads = foldl (\ acc (x,_) ->
                            case x of
                              Threads n -> n
@@ -774,7 +774,7 @@ defaultMain = do
   error "FINISHME: defaultMain requires reading benchmark list from a file.  Implement it!"
 --  defaultMainWithBechmarks undefined
 
-defaultMainWithBechmarks :: [Benchmark2 DefaultParamMeaning] -> IO ()
+defaultMainWithBechmarks :: [Benchmark DefaultParamMeaning] -> IO ()
 defaultMainWithBechmarks benches = do  
   id <- myThreadId
   writeIORef main_threadid id
@@ -853,7 +853,7 @@ defaultMainWithBechmarks benches = do
         logT$ "Compiling: "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
         let indent n str = unlines $ map (replicate n ' ' ++) $ lines str
             printloop _ [] = return ()
-            printloop mp (Benchmark2{target,cmdargs,configs} :tl) = do
+            printloop mp (Benchmark{target,cmdargs,configs} :tl) = do
               log$ " * Benchmark/args: "++target++" "++show cmdargs
               case M.lookup configs mp of
                 Nothing -> log$ indent 4$ show$ doc configs
@@ -930,7 +930,7 @@ defaultMainWithBechmarks benches = do
           let allruns = map (enumerateBenchSpace . configs) benches              
               allrunsLens = map length allruns
               totalruns = sum allrunsLens
-          forM_ (zip3 (scanl (+) 0 allrunsLens) runners benches) $ \ (offset, compiles, b2@Benchmark2{configs}) -> do 
+          forM_ (zip3 (scanl (+) 0 allrunsLens) runners benches) $ \ (offset, compiles, b2@Benchmark{configs}) -> do 
             let bidMap = M.fromList compiles
             forM_ (zip (enumerateBenchSpace configs) [1..])  $ \ (runconfig, localidx) -> do 
               let bid = makeBuildID$ toCompileFlags runconfig

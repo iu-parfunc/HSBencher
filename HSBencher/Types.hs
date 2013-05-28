@@ -8,7 +8,7 @@ module HSBencher.Types
          BuildResult(..), BuildMethod(..),
          
          -- * Benchmark configuration spaces
-         Benchmark2(..), BenchSpace(..), ParamSetting(..),
+         Benchmark(..), BenchSpace(..), ParamSetting(..),
          enumerateBenchSpace, compileOptsOnly, toCompileFlags, toRunFlags, toEnvVars,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
@@ -136,7 +136,7 @@ type BenchM a = ReaderT Config IO a
 
 -- | The global configuration for benchmarking:
 data Config = Config 
- { benchlist      :: [Benchmark2 DefaultParamMeaning]
+ { benchlist      :: [Benchmark DefaultParamMeaning]
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
  , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
@@ -180,7 +180,7 @@ instance Show (Strm.OutputStream a) where
 
 -- type BenchFile = [BenchStmt]
 
-data Benchmark2 a = Benchmark2
+data Benchmark a = Benchmark
  { target  :: FilePath
  , cmdargs :: [String]
  , configs :: BenchSpace a
@@ -330,6 +330,6 @@ instance Out ParamSetting
 instance Out FilePredicate
 instance Out DefaultParamMeaning
 instance Out a => Out (BenchSpace a)
-instance Out a => Out (Benchmark2 a)
+instance Out a => Out (Benchmark a)
 
 

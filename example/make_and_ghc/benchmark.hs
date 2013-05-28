@@ -18,8 +18,8 @@ main = do
   defaultMainWithBechmarks benches
 
 benches =
-  [ Benchmark2 "bench1/"          ["unused_cmdline_arg"] none
-  , Benchmark2 "bench2/Hello.hs"  []                     withthreads
+  [ Benchmark "bench1/"          ["unused_cmdline_arg"] none
+  , Benchmark "bench2/Hello.hs"  []                     withthreads
   ]
 
 -- No benchmark configuration space.

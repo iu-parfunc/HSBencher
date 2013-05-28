@@ -25,7 +25,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import Text.Printf
 import Prelude hiding (log)
 
-import HSBencher.Types hiding (env)
+import HSBencher.Types 
 import HSBencher.Logging
 import HSBencher.MeasureProcess
 
