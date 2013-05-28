@@ -144,7 +144,7 @@ data Config = Config
  , trials         :: Int    -- ^ number of runs of each configuration
  , shortrun       :: Bool
  , keepgoing      :: Bool   -- ^ keep going after error
- , paths          :: PathRegistry -- ^ Paths to executables.
+ , pathRegistry   :: PathRegistry -- ^ Paths to executables.
  , hostname       :: String
  , startTime      :: Integer -- ^ Seconds since Epoch. 
  , resultsFile    :: String -- ^ Where to put timing results.

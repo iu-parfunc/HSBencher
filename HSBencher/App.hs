@@ -258,7 +258,7 @@ getConfig cmd_line_options benches = do
            { hostname, startTime, shortrun
            , benchsetName = Nothing
 	   , trials         = read$ get "TRIALS"    "1"
-           , paths = M.empty
+           , pathRegistry   = M.empty
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
            , benchlist      = benches
@@ -292,8 +292,8 @@ getConfig cmd_line_options benches = do
            Just tid -> r2 { fusionTableID = Just tid }
            Nothing -> r2
 #endif
-      doFlag (CabalPath p) r = r { paths= M.insert "cabal" p (paths r) }
-      doFlag (GHCPath   p) r = r { paths= M.insert "ghc"   p (paths r) }
+      doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
+      doFlag (GHCPath   p) r = r { pathRegistry= M.insert "ghc"   p (pathRegistry r) }
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r
@@ -652,7 +652,7 @@ whichVariant _                      = "unknown"
 -- | Write the results header out stdout and to disk.
 printBenchrunHeader :: BenchM ()
 printBenchrunHeader = do
-  Config{trials, maxthreads, paths, 
+  Config{trials, maxthreads, pathRegistry, 
          logOut, resultsOut, stdOut, benchversion, shortrun, gitInfo=(branch,revision,depth) } <- ask
   liftIO $ do   
 --    let (benchfile, ver) = benchversion
@@ -681,7 +681,7 @@ printBenchrunHeader = do
              , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
              , e$ "#  ENV GHC_RTS=   $GHC_RTS"
              , e$ "#  ENV ENVS=      $ENVS"
-             , e$ "#  Path registry: "++show paths
+             , e$ "#  Path registry: "++show pathRegistry
              ]
     ls' <- sequence ls
     forM_ ls' $ \line -> do
