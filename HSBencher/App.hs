@@ -387,46 +387,10 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
   logT$ "Compile finished, result: "++ show x
   return x
   
-{-
-     if e then do 
-	 log "Compiling with a single GHC command: "
-         -- HACK for pinning to threads: (TODO - should probably make this for NUMA)
-         let pinobj = path ["..","dist","build","cbits","pin.o"]
-         pinObjExists <- lift $ doesFileExist pinobj
-	 let cmd = unwords [ ghc, "--make"
-                           , if pinObjExists then pinobj else ""
-                           , "-i"++containingdir
-                           , "-outputdir "++outdir
-                           , flags, hsfile, "-o "++exefile]
-
-	 log$ "  "++cmd ++"\n"
-         code <- liftIO $ do 
-           (_stdinH, stdoutH, stderrH, pid) <- runInteractiveCommand cmd
-           inS    <- Strm.lines =<< Strm.handleToInputStream stdoutH
-           errS   <- Strm.lines =<< Strm.handleToInputStream stderrH
-           merged <- Strm.concurrentMerge [inS,errS]
-  --       (out1,out2) <- Strm.tee merged
-           -- Need to TEE to send to both stdout and log....
-           -- Send out2 to logFile...
-           Strm.supply merged stdOut -- Feed interleaved LINES to stdout.
-           waitForProcess pid
-
-	 check False code ("ERROR, "++my_name++": compilation failed.")
-
-     -- else if (d && mf && diroffset /= ".") then do
-     --    log " ** Benchmark appears in a subdirectory with Makefile.  NOT supporting Makefile-building presently."
-     --    error "No makefile-based builds supported..."
-     else do 
-	log$ "ERROR, "++my_name++": File does not exist: "++hsfile
-	lift$ exitFailure
--}
-
-
 
 --------------------------------------------------------------------------------
 -- Running Benchmarks
 --------------------------------------------------------------------------------
-
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
