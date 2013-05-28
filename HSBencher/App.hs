@@ -444,10 +444,16 @@ compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
 -- used to skip straight to the execution.
 runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark2 DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
 runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do       
--- <FINISHME>
-  let numthreads = 99
-      sched = "FIXME_finish_runOne_refactoring"
--- </FINISHME>
+  let numthreads = foldl (\ acc (x,_) ->
+                           case x of
+                             Threads n -> n
+                             _         -> acc)
+                   0 runconfig
+      sched      = foldl (\ acc (x,_) ->
+                           case x of
+                             Variant s -> s
+                             _         -> acc)
+                   "none" runconfig
       
   let runFlags = toRunFlags runconfig
       envVars  = toEnvVars  runconfig

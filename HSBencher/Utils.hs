@@ -234,17 +234,17 @@ runLogged tag cmd = do
   return (res,lines)
 
 -- | Runs a command through the OS shell and returns stdout split into
--- lines.  (Ignore exit code.)
+-- lines.  (Ignore exit code and stderr.)
 runLines :: String -> IO [String]
 runLines cmd = do
   putStr$ "   * Executing: " ++ cmd 
-  (Nothing, Just outH, Nothing, ph) <- createProcess 
+  (Nothing, Just outH, Just _, ph) <- createProcess 
      CreateProcess {
        cmdspec = ShellCommand cmd,
        env = Nothing,
        std_in  = Inherit,
        std_out = CreatePipe,
-       std_err = Inherit,
+       std_err = CreatePipe,
        cwd = Nothing,
        close_fds = False,
        create_group = False
@@ -298,3 +298,34 @@ forkIOH who action =
 			throwTo tid e
 		  )
            action
+
+
+
+getCPULoad :: IO (Maybe Double)
+getCPULoad = do
+   cmd <- fmap trim $ runSL "which mpstat"
+   fmap loop $ runLines cmd
+ where
+   -- The line after the line with %idle shoud have matching entries, for example:
+   -- 10:18:05     CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest   %idle
+   -- 10:18:05     all    0.06    0.00    0.06    0.19    0.00    0.00    0.00    0.00   99.69
+   loop []  = Nothing
+   loop [_] = Nothing
+   loop (ln:nxt:tl)
+     | "%idle" `elem` words ln = parseLine ln nxt
+     | otherwise               = loop (nxt:tl)
+   parseLine ln nxt =
+     let w1 = words ln
+         w2 = words nxt
+     in if length w1 /= length w2
+        then Nothing
+        else case lookup "%idle" (zip w1 w2) of
+               Nothing -> Nothing
+               Just num ->
+                 case reads num of
+                   (n,_):_ -> Just (100 - n)
+                   _       -> Nothing
+
+
+  -- This is very fragile: 
+  -- "mpstat | grep -A 5 \"%idle\" | tail -n 1 | xargs -n1 echo | tail -n 1 | awk -F \" \" '{print 100 - $1}'"
