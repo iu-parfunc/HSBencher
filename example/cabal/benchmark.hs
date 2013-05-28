@@ -1,11 +1,21 @@
 
 
 import HSBencher
-import System.Environment (getEnvironment)
+import System.Environment (getEnvironment, getExecutablePath)
+import System.Directory   (setCurrentDirectory, getDirectoryContents, getCurrentDirectory)
 import System.IO.Unsafe   (unsafePerformIO)
 import GHC.Conc           (getNumProcessors)
 
-main =
+main = do
+  -- Hack to deal with running from cabal:
+  rightDir <- fmap ("benchmark.hs" `elem`) $ getDirectoryContents =<< getCurrentDirectory
+  if rightDir then return ()
+    else do
+      path <- getCurrentDirectory
+--      let hackD = "../../../example/cabal"
+      let hackD = "./example/cabal"
+      putStrLn$"HACK: changing from "++path++" to "++hackD
+      setCurrentDirectory hackD 
   defaultMainWithBechmarks benches
 
 benches =

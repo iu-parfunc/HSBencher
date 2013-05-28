@@ -49,7 +49,10 @@ extra-source-files:  README.md
                      example/make_and_ghc/bench1/Makefile
                      example/make_and_ghc/bench1/hello.c
                      example/make_and_ghc/bench2/Hello.hs
-
+                     example/cabal/runit.sh
+                     example/cabal/benchmark.hs
+                     example/cabal/bench1/bench1.cabal
+                     example/cabal/bench1/Hello.hs
 
 Flag fusion
   description:
@@ -101,3 +104,29 @@ Library
 --     cpp-options: -DFUSION_TABLES
 --   }
 --   default-language:    Haskell2010
+
+
+Test-suite test1
+  main-is: example/cabal/benchmark.hs
+  type: exitcode-stdio-1.0
+  build-depends:
+    -- <DUPLICATED from above>
+    base >= 4.5, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
+    hydra-print >= 0.1.0.3, io-streams >= 1.0,
+    GenericPretty >= 1.2
+    -- </DUPLICATED>
+  ghc-options: -threaded 
+  default-language:  Haskell2010
+
+
+Test-suite test2
+  main-is: example/make_and_ghc/benchmark.hs
+  type: exitcode-stdio-1.0
+  build-depends:
+    -- <DUPLICATED from above>
+    base >= 4.5, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
+    hydra-print >= 0.1.0.3, io-streams >= 1.0,
+    GenericPretty >= 1.2
+    -- </DUPLICATED>
+  ghc-options: -threaded 
+  default-language:  Haskell2010
