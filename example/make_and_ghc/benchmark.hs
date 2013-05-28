@@ -20,7 +20,7 @@ withthreads = defaultHSSettings$
               varyThreads none
 
 defaultHSSettings spc =
-  And [ Set NoMeaning (CompileParam "-threaded" "")
+  And [ Set NoMeaning (CompileParam "-threaded -rtsopts" "")
       , Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS" "")
       , spc]
 

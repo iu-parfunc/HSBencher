@@ -39,14 +39,15 @@ makeMethod = BuildMethod
      isdir <- liftIO$ doesDirectoryExist target
      let dir = if isdir then target
                else takeDirectory target
-     inDirectory dir $ do                    
+     inDirectory dir $ do
+       absolute <- liftIO getCurrentDirectory
        _ <- runSuccessful tag ("make COMPILE_ARGS='"++ unwords flags ++"'")
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
        let runit args =
              CommandDescr
              { command = ShellCommand ("make run RUN_ARGS='"++ unwords args ++"'")
              , timeout = Just 150  
-             , workingDir = Just dir
+             , workingDir = Just absolute
              , envVars = []
              }
        return (RunInPlace runit)

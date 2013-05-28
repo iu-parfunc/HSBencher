@@ -471,28 +471,26 @@ runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=ar
   -- takes a long time we don't bother doing more trials.)
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "  Running trial %d of %d" i trials
-    log "  ------------------------"    
+    log "  ------------------------"
+    let doMeasure cmddescr = do
+          SubProcess {wait,process_out,process_err} <- lift$ measureProcess cmddescr
+          err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
+          both <- lift$ Strm.concurrentMerge [process_out, err2]
+          mv <- echoStream (not shortrun) both
+          lift$ takeMVar mv
+          x <- lift wait
+          return x
     case bldres of
       StandAloneBinary binpath -> do
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
         let command = binpath++" "++unwords fullargs 
         log$ " Executing command: " ++ command
-        SubProcess {wait,process_out,process_err} <-
-          lift$ measureProcess
-                  CommandDescr{ command=ShellCommand command, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
-        err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
-        both <- lift$ Strm.concurrentMerge [process_out, err2]
-        mv <- echoStream (not shortrun) both
-        lift$ takeMVar mv
-        x <- lift wait
---        logT "Run finished!"
-        return x
+        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
       RunInPlace fn -> do
         log$ " Executing in-place benchmark run."
         let cmd = fn runFlags
         log$ " Generated in-place run command: "++show cmd
-        error "FINISHME: runOne doesn't yet support RunInPlace benchmarks..."
-     --------------------------------------------------
+        doMeasure cmd
 
   ------------------------------------------
   -- (3) Produce output to the right places:
