@@ -11,7 +11,8 @@ module HSBencher.Types
          Benchmark(..), BenchRun(..),
          Benchmark2(..), BenchSpace(..), ParamSetting(..),
          enumerateBenchSpace, compileOptsOnly, toCompileFlags, toRunFlags, toEnvVars,
-         BuildID, makeBuildID, 
+         BuildID, makeBuildID,
+         DefaultParamMeaning(..),
          
          -- * HSBench Driver Configuration
          Config(..), BenchM, Sched(..),
@@ -130,7 +131,7 @@ type BenchM a = ReaderT Config IO a
 
 -- | The global configuration for benchmarking:
 data Config = Config 
- { benchlist      :: [Benchmark2]
+ { benchlist      :: [Benchmark2 DefaultParamMeaning]
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
  , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
@@ -202,10 +203,10 @@ data Sched
 
 -- type BenchFile = [BenchStmt]
 
-data Benchmark2 = Benchmark2
+data Benchmark2 a = Benchmark2
  { target  :: FilePath
  , cmdargs :: [String]
- , configs :: BenchSpace
+ , configs :: BenchSpace a
  } deriving (Eq, Show, Ord, Generic)
 
 
@@ -213,16 +214,27 @@ data Benchmark2 = Benchmark2
 --   This is accomplished by nested conjunctions and disjunctions.
 --   For example, varying threads from 1-32 would be a 32-way Or.  Combining that
 --   with profiling on/off (product) would create a 64-config space.
-data BenchSpace = And [BenchSpace]
-                | Or  [BenchSpace]
-                | Set ParamSetting 
+--
+--   While the ParamSetting provides an *implementation* of the behavior, this
+--   datatype can also be decorated with a (more easily machine readable) meaning of
+--   the corresponding setting.  For example, indicating that the setting controls
+--   the number of threads.
+data BenchSpace meaning = And [BenchSpace meaning]
+                        | Or  [BenchSpace meaning]
+                        | Set meaning ParamSetting 
+ deriving (Show,Eq,Ord,Read, Generic)
+
+data DefaultParamMeaning
+  = Threads Int    -- ^ Set the number of threads.
+  | Variant String -- ^ Which scheduler/implementation/etc.
+  | NoMeaning
  deriving (Show,Eq,Ord,Read, Generic)
 
 -- | Exhaustively compute all configurations described by a benchmark configuration space.
-enumerateBenchSpace :: BenchSpace -> [ [ParamSetting] ] 
+enumerateBenchSpace :: BenchSpace a -> [ [(a,ParamSetting)] ] 
 enumerateBenchSpace bs =
   case bs of
-    Set p -> [ [p] ]
+    Set m p -> [ [(m,p)] ]
     Or ls -> concatMap enumerateBenchSpace ls
     And ls -> loop ls
   where
@@ -234,19 +246,20 @@ enumerateBenchSpace bs =
              , r <- loop tl ]
 
 -- 
-toCompileFlags :: [ParamSetting] -> CompileFlags
+toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
 toCompileFlags [] = []
-toCompileFlags (CompileParam s1 s2 : tl) = (s1++s2) : toCompileFlags tl
+toCompileFlags ((_,CompileParam s1 s2) : tl) = (s1++s2) : toCompileFlags tl
 toCompileFlags (_ : tl)                  =            toCompileFlags tl
 
-toRunFlags :: [ParamSetting] -> RunFlags
+toRunFlags :: [(a,ParamSetting)] -> RunFlags
 toRunFlags [] = []
-toRunFlags (RuntimeParam s1 s2 : tl) = (s1++s2) : toRunFlags tl
+toRunFlags ((_,RuntimeParam s1 s2) : tl) = (s1++s2) : toRunFlags tl
 toRunFlags (_ : tl)                  =            toRunFlags tl
 
-toEnvVars :: [ParamSetting] -> [(String,String)]
+toEnvVars :: [(a,ParamSetting)] -> [(String,String)]
 toEnvVars [] = []
-toEnvVars (RuntimeEnv s1 s2 : tl) = (s1,s2) : toEnvVars tl
+toEnvVars ((_,RuntimeEnv s1 s2)
+           : tl) = (s1,s2) : toEnvVars tl
 toEnvVars (_ : tl)                =           toEnvVars tl
 
 
@@ -267,7 +280,7 @@ makeBuildID strs =
 
 -- | Strip all runtime options, leaving only compile-time options.  This is useful
 --   for figuring out how many separate compiles need to happen.
-compileOptsOnly :: BenchSpace -> BenchSpace
+compileOptsOnly :: BenchSpace a -> BenchSpace a 
 compileOptsOnly x =
   case loop x of
     Nothing -> And []
@@ -277,14 +290,14 @@ compileOptsOnly x =
      case bs of
        And ls -> mayb$ And$ catMaybes$ map loop ls
        Or  ls -> mayb$ Or $ catMaybes$ map loop ls
-       Set (CompileParam {}) -> Just bs
-       Set _                 -> Nothing
+       Set m (CompileParam {}) -> Just bs
+       Set _ _                 -> Nothing
    mayb (And []) = Nothing
    mayb (Or  []) = Nothing
    mayb x        = Just x
 
-test1 = Or (map (Set . RuntimeEnv "CILK_NPROCS" . show) [1..32])
-test2 = Or$ map (Set . RuntimeParam "-A") ["1M", "2M"]
+test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32])
+test2 = Or$ map (Set () . RuntimeParam "-A") ["1M", "2M"]
 test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
@@ -339,9 +352,10 @@ data SubProcess =
 
 
 instance Out ParamSetting
-instance Out BenchSpace
 instance Out Sched
 instance Out FilePredicate
-instance Out Benchmark2
+instance Out DefaultParamMeaning
+instance Out a => Out (BenchSpace a)
+instance Out a => Out (Benchmark2 a)
 
 

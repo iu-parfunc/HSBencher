@@ -200,7 +200,7 @@ augmentTupleWithConfig Config{..} base = do
 
 -- Retrieve the (default) configuration from the environment, it may
 -- subsequently be tinkered with.  This procedure should be idempotent.
-getConfig :: [Flag] -> [Benchmark2] -> IO Config
+getConfig :: [Flag] -> [Benchmark2 DefaultParamMeaning] -> IO Config
 getConfig cmd_line_options benches = do
   hostname <- runSL$ "hostname -s"
   t0 <- getCurrentTime
@@ -357,7 +357,7 @@ path ls = foldl1 (</>) ls
 
 -- | Build a single benchmark in a single configuration.
 -- compileOne :: Benchmark2 -> [ParamSetting] -> BenchM (RunFlags -> CommandDescr)
-compileOne :: (Int,Int) -> Benchmark2 -> [ParamSetting] -> BenchM BuildResult
+compileOne :: (Int,Int) -> Benchmark2 DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
 compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
   Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
 
@@ -442,7 +442,7 @@ compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark2 -> [ParamSetting] -> BenchM ()
+runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark2 DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
 runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do       
 -- <FINISHME>
   let numthreads = 99
@@ -781,7 +781,7 @@ defaultMain = do
   error "FINISHME: defaultMain requires reading benchmark list from a file.  Implement it!"
   defaultMainWithBechmarks undefined
 
-defaultMainWithBechmarks :: [Benchmark2] -> IO ()
+defaultMainWithBechmarks :: [Benchmark2 DefaultParamMeaning] -> IO ()
 defaultMainWithBechmarks benches = do  
   id <- myThreadId
   writeIORef main_threadid id
