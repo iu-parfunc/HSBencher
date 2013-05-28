@@ -365,16 +365,16 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
       totalIters = 999
       flags = toCompileFlags cconf
       bldid = makeBuildID flags
-  log$ "\n--------------------------------------------------------------------------------"
+  log  "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
        ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++ show bldid
-  log$ "--------------------------------------------------------------------------------\n"
+  log  "--------------------------------------------------------------------------------\n"
 
   matches <- lift$ 
              filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
   when (null matches) $ do
        log$ "ERROR, no build method matches path: "++testPath
-       lift$ exitFailure     
+       lift exitFailure     
   log$ printf "Found %d methods that can handle %s: %s" 
          (length matches) testPath (show$ map methodName matches)
   let BuildMethod{methodName,compile,concurrentBuild} = head matches
@@ -391,8 +391,7 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
             -- TODO: In the future we'll want to move the binary somewhere for
             -- parallel builds...
             CommandDescr
-            { exeFile = pth
-            , cmdArgs = rtflags
+            { command = RawCommand pth rtflags
             , envVars = []
             , timeout = Just defaultTimeout
             , workingDir = Nothing
@@ -482,10 +481,11 @@ runOne br@(BenchRun { threads=numthreads
     log$ printf "Running trial %d of %d" i trials
     let cmdArgs = args++["+RTS"]++words rts++["-RTS"]
     log "------------------------------------------------------------"        
-    log$ " Executing command: " ++ unwords (exeFile:cmdArgs)    
+    log$ " Executing command: " ++ unwords (exeFile:cmdArgs)
+    let command = RawCommand exeFile cmdArgs
     SubProcess {wait,process_out,process_err} <-
       lift$ measureProcess
-              CommandDescr{ exeFile, cmdArgs, envVars, timeout=Just 150, workingDir=Nothing }
+              CommandDescr{ command, envVars, timeout=Just 150, workingDir=Nothing }
     err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
     both <- lift$ Strm.concurrentMerge [process_out, err2]
     mv <- echoStream (not shortrun) both

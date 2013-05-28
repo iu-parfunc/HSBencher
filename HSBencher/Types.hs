@@ -28,6 +28,7 @@ import Data.Maybe (catMaybes)
 import Control.Monad (filterM)
 import System.FilePath
 import System.Directory
+import System.Process (CmdSpec(..))
 import qualified Data.Set as Set
 import qualified Data.ByteString.Char8 as B
 import qualified System.IO.Streams as Strm
@@ -293,14 +294,19 @@ data ParamSetting
 -- System.Process.CreateProcess but slightly simpler.
 data CommandDescr =
   CommandDescr
-  { exeFile :: String                -- ^ Executable
-  , cmdArgs :: [String]           -- ^ Command line arguments
-  , envVars :: [(String, String)] -- ^ Environment variables
+  { command :: CmdSpec            -- ^ Executable and arguments
+  , envVars :: [(String, String)] -- ^ Environment variables to APPEND to current env.
   , timeout :: Maybe Double       -- ^ Optional timeout in seconds.
   , workingDir :: Maybe FilePath  -- ^ Optional working directory to switch to before
-                                  -- running command.
+                                  --   running command.
   }
  deriving (Show,Eq,Ord,Read,Generic)
+
+-- Umm... these should be defined in base:
+instance Eq   CmdSpec   
+instance Show CmdSpec
+instance Ord  CmdSpec
+instance Read CmdSpec   
 
 -- | Measured results from running a subprocess (benchmark).
 data RunResult =

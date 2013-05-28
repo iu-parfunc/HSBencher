@@ -23,6 +23,7 @@ import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 import qualified Data.ByteString.Char8 as B
+import System.Environment (getEnvironment)
 
 import HSBencher.Types
 
@@ -41,16 +42,31 @@ import HSBencher.Types
 --
 -- Note that "+RTS -s" is specific to Haskell/GHC, but the PRODUCTIVITY tag allows
 -- non-haskell processes to report garbage collector overhead.
+--
+-- This procedure is currently not threadsafe, because it changes the current working
+-- directory.
 measureProcess :: CommandDescr -> IO SubProcess
-measureProcess CommandDescr{exeFile, cmdArgs, envVars, timeout, workingDir} = do
+measureProcess CommandDescr{command, envVars, timeout, workingDir} = do
   origDir <- getCurrentDirectory
   case workingDir of
     Just d  -> setCurrentDirectory d
     Nothing -> return ()
+
+  -- Semantics of provided environment is to APPEND:
+  curEnv <- getEnvironment
   
   startTime <- getCurrentTime
-  (_inp,out,err,pid) <- Strm.runInteractiveProcess exeFile cmdArgs Nothing (Just envVars)
-  setCurrentDirectory origDir
+  (_inp,out,err,pid) <-
+    case command of
+      RawCommand exeFile cmdArgs -> Strm.runInteractiveProcess exeFile cmdArgs Nothing (Just$ envVars++curEnv)
+      ShellCommand str           ->
+        case envVars of
+          [] -> Strm.runInteractiveCommand str
+          oth ->
+            -- I was going to try something here, but it's not threadsafe: [2013.05.27]
+            -- withEnv (envVars++curEnv) $            
+            error "FINISHME: measureProcess, given shell command, but don't know how to set environment for it yet."
+  setCurrentDirectory origDir  -- Threadsafety!?!
   
   out'  <- Strm.map OutLine =<< Strm.lines out
   err'  <- Strm.map ErrLine =<< Strm.lines err
@@ -190,4 +206,17 @@ reifyEOS ins =
          Nothing | flg -> do writeIORef flag False
                              return (Just Nothing)
                  | otherwise -> return Nothing
+
+
+-- withEnv :: [(String,String)] -> IO a -> IO a
+-- withEnv ls act = do
+--   initEnv <- getEnvironment  
+--   let loop [] = act
+--       loop ((v,s):tl) = do
+--         res <- loop tl 
+--         case lookup v initEnv of
+--           Nothing   -> return ()
+--           Just orig -> setEnv.........
+--         return res  
+--   loop ls
 

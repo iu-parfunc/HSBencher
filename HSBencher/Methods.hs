@@ -19,7 +19,7 @@ import Prelude hiding (log)
 import HSBencher.Types
 import HSBencher.Logging (log)
 import HSBencher.MeasureProcess
-
+-- import HSBencher.Utils
 
 --------------------------------------------------------------------------------
 -- Some useful build methods
@@ -40,8 +40,7 @@ makeMethod = BuildMethod
      liftIO$ system "make"
      let runit args =
            CommandDescr
-           { exeFile = "make"
-           , cmdArgs = ["run","ARGS=\""++ unwords args ++"\""]
+           { command = RawCommand "make" ["run","ARGS=\""++ unwords args ++"\""]
            , timeout = Just 150  
            , workingDir = Just dir
            , envVars = []

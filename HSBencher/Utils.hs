@@ -26,6 +26,7 @@ import Prelude hiding (log)
 
 import HSBencher.Types hiding (env)
 import HSBencher.Logging
+import HSBencher.MeasureProcess
 
 ----------------------------------------------------------------------------------------------------
 -- Global constants, variables:
@@ -203,13 +204,26 @@ echoStream echoStdout outS = do
         case x of
           Nothing -> lift$ putMVar mv ()
           Just ln -> do
---            logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) (B.unpack ln)
-            lift$ B.putStrLn ln
+            logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) (B.unpack ln)
+--            lift$ B.putStrLn ln
             echoloop mv
+
+-- | Run a command and wait for all output.  Log output to the appropriate places.
+runLogged :: String -> BenchM [String]
+runLogged cmd =
+  -- log$ " Executing command: " ++ cmd
+  -- SubProcess {wait,process_out,process_err} <-
+  --   lift$ measureProcess
+  --           CommandDescr{ exeFile, cmdArgs, envVars, timeout=Just 150, workingDir=Nothing }
+  -- err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
+  -- both <- lift$ Strm.concurrentMerge [process_out, err2]
+  -- mv <- echoStream (not shortrun) both  
+  error "FINISHME - runlogged"
+
 
 
 -- | Runs a command through the OS shell and returns stdout split into
--- lines.
+-- lines.  (Ignore exit code.)
 runLines :: String -> IO [String]
 runLines cmd = do
   putStr$ "   * Executing: " ++ cmd 
@@ -230,7 +244,6 @@ runLines cmd = do
   let lns = lines str
   putStrLn$ " -->   "++show (length lns)++" line(s)"
   return (lines str)
-
 
 -- | Runs a command through the OS shell and returns the first line of
 -- output.
