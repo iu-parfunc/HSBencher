@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, NamedFieldPuns, CPP  #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, StandaloneDeriving #-}
 
 module HSBencher.Types
        (
@@ -103,7 +103,8 @@ data BuildResult =
 
 instance Show BuildResult where
   show (StandAloneBinary p) = "StandAloneBinary "++p
-  show (RunInPlace fn)      = "RunInPlace "++show (fn [])
+--  show (RunInPlace fn)      = "RunInPlace "++show (fn [])
+  show (RunInPlace fn)      = "RunInPlace <fn>"
 
 -- | A completely encapsulated method of building benchmarks.  Cabal and Makefiles
 -- are two examples of this.  The user may extend it with their own methods.
@@ -327,10 +328,22 @@ data CommandDescr =
  deriving (Show,Eq,Ord,Read,Generic)
 
 -- Umm... these should be defined in base:
-instance Eq   CmdSpec   
-instance Show CmdSpec
-instance Ord  CmdSpec
-instance Read CmdSpec   
+deriving instance Eq   CmdSpec   
+deriving instance Show CmdSpec
+deriving instance Ord  CmdSpec
+deriving instance Read CmdSpec   
+
+-- instance Show CmdSpec where
+--   show (RawCommand s1 a1) = "RawCommand "++show s1++" "++show a1
+--   show (ShellCommand s)   = "ShellCommand " ++ show s
+-- instance Eq CmdSpec where
+--   RawCommand s1 a1 == RawCommand s2 a2 = s1 == s2 && a1 == a2
+--   ShellCommand s1  == ShellCommand s2  = s1 == s2
+--   _ == _ = False
+
+-- instance Ord CmdSpec where
+
+
 
 -- | Measured results from running a subprocess (benchmark).
 data RunResult =

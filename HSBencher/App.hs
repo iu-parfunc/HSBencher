@@ -377,25 +377,9 @@ compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
   when (length matches > 1) $
     logT$ " WARNING: resolving ambiguity, picking method: "++methodName
 
-  -- TODO: might need more info here... e.g. the buildID!!
   x <- compile bldid flags testPath
   logT$ "Compile finished, result: "++ show x
   return x
-  -- case x of
-  --   StandAloneBinary pth ->
-  --     -- Here we return a simple runner:
-  --     let runner rtflags =
-  --           -- TODO: In the future we'll want to move the binary somewhere for
-  --           -- parallel builds...
-  --           CommandDescr
-  --           { command = RawCommand pth rtflags
-  --           , envVars = []
-  --           , timeout = Just defaultTimeout
-  --           , workingDir = Nothing
-  --           }
-  --     in return runner
-  --   RunInPlace fn -> return fn
-  ----------------------------------------------------------
   
 {-
      if e then do 
@@ -503,7 +487,11 @@ runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=ar
         x <- lift wait
 --        logT "Run finished!"
         return x
-      RunInPlace {} -> error "FINISHME: runOne doesn't yet support RunInPlace benchmarks..."
+      RunInPlace fn -> do
+        log$ " Executing in-place benchmark run."
+        let cmd = fn runFlags
+        log$ " Generated in-place run command: "++show cmd
+        error "FINISHME: runOne doesn't yet support RunInPlace benchmarks..."
      --------------------------------------------------
 
   ------------------------------------------
