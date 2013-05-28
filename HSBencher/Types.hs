@@ -9,7 +9,7 @@ module HSBencher.Types
          
          -- * Benchmark configuration spaces
          Benchmark(..), BenchSpace(..), ParamSetting(..),
-         enumerateBenchSpace, compileOptsOnly,
+         enumerateBenchSpace, compileOptsOnly, isCompileTime,
          toCompileFlags, toRunFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
@@ -227,11 +227,17 @@ enumerateBenchSpace bs =
       [ c++r | c <- confs
              , r <- loop tl ]
 
--- 
+-- | Is it a setting that affects compile time?
+isCompileTime :: ParamSetting -> Bool
+isCompileTime CompileParam{} = True
+isCompileTime CmdPath     {} = True
+isCompileTime RuntimeParam{} = False
+isCompileTime RuntimeEnv  {} = False
+
 toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
 toCompileFlags [] = []
-toCompileFlags ((_,CompileParam s1) : tl) = (s1) : toCompileFlags tl
-toCompileFlags (_ : tl)                  =            toCompileFlags tl
+toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl
+toCompileFlags (_ : tl)                   =      toCompileFlags tl
 
 toRunFlags :: [(a,ParamSetting)] -> RunFlags
 toRunFlags [] = []

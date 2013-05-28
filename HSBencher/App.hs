@@ -815,14 +815,12 @@ defaultMainWithBechmarks benches = do
             benches' = map (\ b -> b { configs= compileOptsOnly (configs b) })
                        benchlist
             cccfgs = map (enumerateBenchSpace . configs) benches' -- compile configs
-            allcompiles = concat $
-                          zipWith (\ b cs -> map (b,) cs) benches' cccfgs
             cclengths = map length cccfgs
-            total = sum cclengths
+            totalcomps = sum cclengths
             
         log$ "\n--------------------------------------------------------------------------------"
         logT$ "Running all benchmarks for all settings ..."
-        logT$ "Compiling: "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
+        logT$ "Compiling: "++show totalcomps++" total configurations of "++ show (length benchlist)++" benchmarks"
         let indent n str = unlines $ map (replicate n ' ' ++) $ lines str
             printloop _ [] = return ()
             printloop mp (Benchmark{target,cmdargs,configs} :tl) = do
@@ -861,56 +859,63 @@ defaultMainWithBechmarks benches = do
                (strms,barrier) <- parForM numProcs (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                   outStrm' <- Strm.unlines outStrm
                   let conf' = conf { stdOut = outStrm' }
-                  runReaderT (runOne bench (confnum,total)) conf'
+                  runReaderT (runOne bench (confnum,totalcomps)) conf'
                catParallelOutput strms stdOut
                _ <- barrier
                return ()
 	     else do
                -- Non-shortrun's NEVER run multiple benchmarks at once:
 	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-		    runOne bench (confnum,total)
+		    runOne bench (confnum,totalcomps)
                return ()
 -}
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
-          runners <- 
-            forM (zip3 benches' cccfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
-              forM (zip allCompileCfgs [1..]) $ \ (cfg, localidx) -> 
-                let bldid    = makeBuildID$ toCompileFlags cfg
-                    base     = fetchBaseName (target bench)
-                    dfltdest = globalBinDir </> base ++"_"++bldid in
-                if recomp then do                  
-                  res <- compileOne (offset + localidx,total) bench cfg
-                  case res of 
-                    StandAloneBinary p -> do 
-                                             logT$ "Moving resulting binary to: "++dfltdest
-                                             lift$ renameFile p dfltdest
-                                             return (bldid, StandAloneBinary dfltdest)
-                    RunInPlace {}      -> return (bldid, res)
-                else do 
-                  logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
-                  return (bldid, StandAloneBinary dfltdest)
-
-          -- After this point, binaries exist in the right place or inplace
-          -- benchmarks are ready to run (repeatedly).
-
           -- TODO: make this a foldlM:
           let allruns = map (enumerateBenchSpace . configs) benches              
               allrunsLens = map length allruns
               totalruns = sum allrunsLens
-          forM_ (zip3 (scanl (+) 0 allrunsLens) runners benches) $ \ (offset, compiles, b2@Benchmark{configs}) -> do 
-            let bidMap = M.fromList compiles
-            forM_ (zip (enumerateBenchSpace configs) [1..])  $ \ (runconfig, localidx) -> do 
-              let bid = makeBuildID$ toCompileFlags runconfig
-              case M.lookup bid bidMap of 
-                Nothing -> error$ "HSBencher: Cannot find compiler output for: "++show bid
-                Just bldres -> runOne (offset + localidx,totalruns) bid bldres b2 runconfig
-              return ()
-            return ()
-          return ()
-          -- forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
-          --     runOne bench (confnum,total)
+          let 
+              -- Here we lazily compile benchmarks as they become required by run configurations.
+              runloop :: Int 
+                      -> M.Map BuildID (Int, Maybe BuildResult)
+                      -> [(Benchmark DefaultParamMeaning, [(DefaultParamMeaning,ParamSetting)])]
+                      -> BenchM ()
+              runloop _ _ [] = return ()
+              runloop !iter !board (nextrun:rest) = do
+                let (bench,params) = nextrun
+                    ccflags = toCompileFlags params
+                    bid = makeBuildID ccflags
+                case M.lookup bid board of 
+                  Nothing -> error$ "HSBencher: Internal error: Cannot find entry in map for build ID: "++show bid
+                  Just (ccnum, Nothing) -> do 
+                    res <- compileOne (ccnum,totalcomps) bench params
+                    let board' = M.insert bid (ccnum, Just res) board
+                    runloop iter board' (nextrun:rest)
+                  Just (ccnum, Just bldres) -> do
+                    runOne (iter,totalruns) bid bldres bench params
+                    runloop (iter+1) board rest
+
+              -- TODO: Populate
+              initBoard _ [] acc = acc 
+              initBoard !iter ((bench,params):rest) acc = 
+                let bid = makeBuildID $ toCompileFlags params 
+                    base = fetchBaseName (target bench)
+                    dfltdest = globalBinDir </> base ++"_"++bid in
+                case M.lookup bid acc of
+                  Just _  -> initBoard iter rest acc
+                  Nothing -> 
+                    let elm = if recomp 
+                              then (iter, Nothing)
+                              else (iter, Just (StandAloneBinary dfltdest))
+                    in
+                    initBoard (iter+1) rest (M.insert bid elm acc)
+
+              zippedruns = (concat$ zipWith (\ b cfs -> map (b,) cfs) benches allruns)
+
+          unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
+          runloop 1 (initBoard 1 zippedruns M.empty) zippedruns
 
 {-
         do Config{logOut, resultsOut, stdOut} <- ask
