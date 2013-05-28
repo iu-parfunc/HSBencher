@@ -969,4 +969,21 @@ didComplete _              = False
 logT str = log$hsbencher_tag++str
 hsbencher_tag = " [hsbencher] "
 
+-- Compute a cut-down version of a benchmark's args list that will do
+-- a short (quick) run.  The way this works is that benchmarks are
+-- expected to run and do something quick if they are invoked with no
+-- arguments.  (A proper benchmarking run, therefore, requires larger
+-- numeric arguments be supplied.)
+-- 
+shortArgs :: [String] -> [String]
+shortArgs [] = []
+
+-- DISABLING:
+-- HOWEVER: there's a further hack here which is that leading
+-- non-numeric arguments are considered qualitative (e.g. "monad" vs
+-- "sparks") rather than quantitative and are not pruned by this
+-- function.
+-- shortArgs (h:tl) | isNumber h = []
+-- 		 | otherwise  = h : shortArgs tl
+
 ----------------------------------------------------------------------------------------------------
