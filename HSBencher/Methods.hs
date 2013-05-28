@@ -55,21 +55,27 @@ ghcMethod = BuildMethod
   { methodName = "ghc"
   , canBuild = WithExtension ".hs"
   , concurrentBuild = True -- Only if we use hermetic build directories.
-  , compile = \ bldid  flags target -> liftIO$ 
+  , compile = \ bldid flags target -> do
      let dir  = takeDirectory target
-         file = takeBaseName target in 
+         file = takeBaseName target
+         suffix = "_"++bldid
+     log$ tag++" Building target with GHC method: "++show target  
      inDirectory dir $ do
        let buildD = "buildoutput_" ++ bldid
-
+       liftIO$ createDirectoryIfMissing True buildD
 -- 	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
      -- code1 <- lift$ system$ "mkdir -p "++outdir
      -- code2 <- lift$ system$ "mkdir -p "++exedir
 --       args = if shortrun then shortArgs args_ else args_           
-              
-       system$ printf "ghc %S -outputdir ./%s %s"
-               target buildD (unwords flags)
-       return (StandAloneBinary$ dir </> buildD </> file)
+
+       let dest = buildD </> file ++ suffix
+       runSuccessful " [ghc] " $
+         printf "ghc %s -outputdir ./%s -o %s %s"
+         file buildD dest (unwords flags)
+       return (StandAloneBinary$ dir </> dest)
   }
+ where
+  tag = " [ghcMethod] "
 
 -- | Build with cabal.
 cabalMethod :: BuildMethod
