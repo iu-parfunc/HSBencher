@@ -20,14 +20,14 @@ withthreads = defaultHSSettings$
               varyThreads none
 
 defaultHSSettings spc =
-  And [ Set NoMeaning (CompileParam "-threaded -rtsopts" "")
-      , Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS" "")
+  And [ Set NoMeaning (CompileParam "-threaded -rtsopts")
+      , Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS")
       , spc]
 
 varyThreads :: BenchSpace DefaultParamMeaning -> BenchSpace DefaultParamMeaning
 varyThreads conf = And [ conf, Or (map fn threadSelection) ]
  where
-   fn n = Set (Threads n) $ RuntimeParam "" ("+RTS -N"++ show n++" -RTS")
+   fn n = Set (Threads n) $ RuntimeParam ("+RTS -N"++ show n++" -RTS")
 
 threadSelection :: [Int]
 threadSelection = unsafePerformIO $ do

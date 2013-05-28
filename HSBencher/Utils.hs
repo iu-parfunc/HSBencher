@@ -17,7 +17,7 @@ import qualified System.IO.Streams.Concurrent as Strm
 
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
-import System.Environment (getArgs, getEnv, getEnvironment, getExecutablePath)
+import System.Environment (getArgs, getEnv, getEnvironment)
 import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
                   IOMode(..), BufferMode(..), hSetBuffering)
 import System.Exit

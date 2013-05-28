@@ -249,12 +249,12 @@ enumerateBenchSpace bs =
 -- 
 toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
 toCompileFlags [] = []
-toCompileFlags ((_,CompileParam s1 s2) : tl) = (s1++s2) : toCompileFlags tl
+toCompileFlags ((_,CompileParam s1) : tl) = (s1) : toCompileFlags tl
 toCompileFlags (_ : tl)                  =            toCompileFlags tl
 
 toRunFlags :: [(a,ParamSetting)] -> RunFlags
 toRunFlags [] = []
-toRunFlags ((_,RuntimeParam s1 s2) : tl) = (s1++s2) : toRunFlags tl
+toRunFlags ((_,RuntimeParam s1) : tl) = (s1) : toRunFlags tl
 toRunFlags (_ : tl)                  =            toRunFlags tl
 
 toEnvVars :: [(a,ParamSetting)] -> [(String,String)]
@@ -298,13 +298,13 @@ compileOptsOnly x =
    mayb x        = Just x
 
 test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32])
-test2 = Or$ map (Set () . RuntimeParam "-A") ["1M", "2M"]
+test2 = Or$ map (Set () . RuntimeParam . ("-A"++)) ["1M", "2M"]
 test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
 data ParamSetting 
-  = RuntimeParam String String -- ^ These two strings are concattenated to make the option.
-  | CompileParam String String -- ^ These two strings are concattenated to make the option.
+  = RuntimeParam String -- ^ String contains runtime options, expanded and tokenized by the shell.
+  | CompileParam String -- ^ String contains compile-time options, expanded and tokenized by the shell.
   | RuntimeEnv   String String -- ^ The name of the env var and its value, respectively.
                                --   For now Env Vars ONLY affect runtime.
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
