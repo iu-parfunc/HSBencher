@@ -38,10 +38,9 @@ license:             BSD3
 license-file:        LICENSE
 author:              Ryan Newton
 maintainer:          rrnewton@gmail.com
--- copyright:           
+copyright:           (c) Ryan Newton 2013
 category:            Development
 build-type:          Simple
--- extra-source-files:  
 cabal-version:       >=1.10
 
 Flag fusion
@@ -49,8 +48,11 @@ Flag fusion
       Add support for Google Fusion Table upload of benchmark data.
   default: False  
 
-
 Library 
+  source-repository head
+    type:  git
+    location: https://github.com/rrnewton/HSBenchScaling.git
+
   exposed-modules: HSBencher.MeasureProcess
                    HSBencher.App
                    HSBencher.Types
@@ -66,20 +68,27 @@ Library
       GenericPretty >= 1.2
   default-language:    Haskell2010
 
-Executable hsbencher
-  main-is: Main.hs
-  -- other-modules:       
-  build-depends:
-      -- <DUPLICATED from above>
-      base >= 4.5, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
-      hydra-print >= 0.1.0.3, io-streams >= 1.0,
-      GenericPretty >= 1.2
-      -- </DUPLICATED>
-
-  ghc-options: -threaded 
-
   if flag(fusion) {
     build-depends: handa-gdata >= 0.6.2
     cpp-options: -DFUSION_TABLES
   }
-  default-language:    Haskell2010
+
+-- [2013.05.28] This will come back later when the new ASCII benchmark file format is finished:
+-----------------------------------------------------------------------------------------------
+-- Executable hsbencher
+--   main-is: Main.hs
+--   -- other-modules:       
+--   build-depends:
+--       -- <DUPLICATED from above>
+--       base >= 4.5, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
+--       hydra-print >= 0.1.0.3, io-streams >= 1.0,
+--       GenericPretty >= 1.2
+--       -- </DUPLICATED>
+
+--   ghc-options: -threaded 
+
+--   if flag(fusion) {
+--     build-depends: handa-gdata >= 0.6.2
+--     cpp-options: -DFUSION_TABLES
+--   }
+--   default-language:    Haskell2010

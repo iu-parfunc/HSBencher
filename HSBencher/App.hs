@@ -41,7 +41,7 @@ straight .hs files buildable by "ghc --make".
 
 -}
 
-module HSBencher.App (defaultMain, defaultMainWithBechmarks) where 
+module HSBencher.App (defaultMainWithBechmarks, Flag(..), all_cli_options) where 
 
 ----------------------------
 -- Standard library imports
@@ -218,8 +218,6 @@ getConfig cmd_line_options benches = do
       get v x = case lookup v env of 
 		  Nothing -> x
 		  Just  s -> s
-
---      benchF = get "BENCHLIST" "benchlist.txt"
       logFile = "bench_" ++ hostname ++ ".log"
       resultsFile = "results_" ++ hostname ++ ".dat"      
       shortrun = strBool (get "SHORTRUN"  "0")
@@ -463,6 +461,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=ar
   -- (1) Gather contextual information
   ----------------------------------------  
   let args = if shortrun then shortArgs args_ else args_
+      fullargs = args ++ runFlags
       (_,testRoot) = splitFileName testPath
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters 
@@ -480,11 +479,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=ar
   logT$ "Who_Output: "++ unwords (filter (/= user) whos')
 
   -- If numthreads == 0, that indicates a serial run:
-  let 
-      rts = gc_stats_flag ++" "++
-            case numthreads of
-	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
-	     _ -> ghc_RTS  ++" -N"++show numthreads
+
   ----------------------------------------
   -- (2) Now execute N trials:
   ----------------------------------------
@@ -492,14 +487,15 @@ runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=ar
   -- takes a long time we don't bother doing more trials.)
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "  Running trial %d of %d" i trials
-    let cmdArgs = args++["+RTS"]++words rts++["-RTS"]
     log "  ------------------------"    
     case bldres of
       StandAloneBinary binpath -> do
-        log$ " Executing command: " ++ binpath++" "++unwords args_
+        -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
+        let command = binpath++" "++unwords fullargs 
+        log$ " Executing command: " ++ command
         SubProcess {wait,process_out,process_err} <-
           lift$ measureProcess
-                  CommandDescr{ command=RawCommand binpath args_, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
+                  CommandDescr{ command=ShellCommand command, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
         err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
         both <- lift$ Strm.concurrentMerge [process_out, err2]
         mv <- echoStream (not shortrun) both
@@ -507,6 +503,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=ar
         x <- lift wait
 --        logT "Run finished!"
         return x
+      RunInPlace {} -> error "FINISHME: runOne doesn't yet support RunInPlace benchmarks..."
      --------------------------------------------------
 
   ------------------------------------------
@@ -543,7 +540,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=ar
 
       logOn [ResultsFile]$ 
         printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
-                                (padr 7$ show sched) (padr 3$ show numthreads) formatted
+                                (padr 8$ sched) (padr 3$ show numthreads) formatted
       return (t1,t2,t3,p1,p2,p3)
 #ifdef FUSION_TABLES
   when doFusionUpload $ do
@@ -784,8 +781,10 @@ fusion_cli_options =
 -- | TODO: Eventually this will be parameterized.
 defaultMain :: IO ()
 defaultMain = do
+  --      benchF = get "BENCHLIST" "benchlist.txt"
+--  putStrLn$ hsbencher_tag ++ " Reading benchmark list from file: "
   error "FINISHME: defaultMain requires reading benchmark list from a file.  Implement it!"
-  defaultMainWithBechmarks undefined
+--  defaultMainWithBechmarks undefined
 
 defaultMainWithBechmarks :: [Benchmark2 DefaultParamMeaning] -> IO ()
 defaultMainWithBechmarks benches = do  
@@ -794,7 +793,8 @@ defaultMainWithBechmarks benches = do
 
   cli_args <- getArgs
   let (options,args,errs) = getOpt Permute (concat$ map snd all_cli_options) cli_args
-
+  let recomp  = NoRecomp `notElem` options
+  
   when (ShowVersion `elem` options) $ do
     putStrLn$ "hsbencher version "++
       (concat$ intersperse "." $ map show $ versionBranch version) ++
@@ -821,21 +821,21 @@ defaultMainWithBechmarks benches = do
     (do
         logT$"Beginning benchmarking, root directory: "++rootDir
         let globalBinDir = rootDir </> "bin"
-        logT$"Clearing any preexisting files in ./bin/"
-        lift$ do
-          -- runSimple "rm -f ./bin/*"
-          -- Yes... it's posix dependent.  But right now I don't see a good way to
-          -- delete the contents a dir without (1) following symlinks or (2) assuming
-          -- either the unix package or unix shell support (rm).
-          --- Ok, what the heck, deleting recursively:
-          dde <- doesDirectoryExist globalBinDir
-          when dde $ removeDirectoryRecursive globalBinDir
-          createDirectoryIfMissing True globalBinDir 
+        when recomp $ do
+          logT$"Clearing any preexisting files in ./bin/"
+          lift$ do
+            -- runSimple "rm -f ./bin/*"
+            -- Yes... it's posix dependent.  But right now I don't see a good way to
+            -- delete the contents a dir without (1) following symlinks or (2) assuming
+            -- either the unix package or unix shell support (rm).
+            --- Ok, what the heck, deleting recursively:
+            dde <- doesDirectoryExist globalBinDir
+            when dde $ removeDirectoryRecursive globalBinDir
+        lift$ createDirectoryIfMissing True globalBinDir 
      
 	logT "Writing header for result data file:"
 	printBenchrunHeader
      
-        let recomp  = NoRecomp `notElem` options
 {-     
             doclean = (NoCabal `notElem` options) && recomp
         when doclean $ 
@@ -915,19 +915,21 @@ defaultMainWithBechmarks benches = do
         --------------------------------------------------------------------------------
         -- Serial version:
           runners <- 
-            if recomp then
-              forM (zip3 benches' cfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
-                forM (zip allCompileCfgs [1..]) $ \ (cfg, localidx) -> do
-                  let bldid = makeBuildID$ toCompileFlags cfg
+            forM (zip3 benches' cfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
+              forM (zip allCompileCfgs [1..]) $ \ (cfg, localidx) -> 
+                let bldid    = makeBuildID$ toCompileFlags cfg
+                    dfltdest = globalBinDir </> takeBaseName (target bench) ++"_"++bldid in
+                if recomp then do                  
                   res <- compileOne (offset + localidx,total) bench cfg
                   case res of 
-                    StandAloneBinary p -> do let dest= globalBinDir </> takeBaseName (target bench) ++"_"++bldid
-                                             logT$ "Moving resulting binary to: "++dest
-                                             lift$ renameFile p dest
-                                             return (bldid, StandAloneBinary dest)
+                    StandAloneBinary p -> do 
+                                             logT$ "Moving resulting binary to: "++dfltdest
+                                             lift$ renameFile p dfltdest
+                                             return (bldid, StandAloneBinary dfltdest)
                     RunInPlace {}      -> return (bldid, res)
---                mapM (compileOne bench) allCompileCfgs
-            else error "FINISHME -- App.hs, handle non-recomp case"
+                else do 
+                  logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
+                  return (bldid, StandAloneBinary dfltdest)
 
           -- After this point, binaries exist in the right place or inplace
           -- benchmarks are ready to run (repeatedly).
@@ -1003,6 +1005,7 @@ didComplete RunCompleted{} = True
 didComplete _              = False
 
 -- Shorthand for tagged version:
-logT str = log$" [hsbencher] "++str
+logT str = log$hsbencher_tag++str
+hsbencher_tag = " [hsbencher] "
 
 ----------------------------------------------------------------------------------------------------
