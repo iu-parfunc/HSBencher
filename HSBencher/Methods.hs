@@ -59,7 +59,7 @@ ghcMethod = BuildMethod
      let dir  = takeDirectory target
          file = takeBaseName target in 
      inDirectory dir $ do
-       let buildD = "buildoutput_" ++ makeBuildID flags
+       let buildD = "buildoutput_" ++ bldid
 
 -- 	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
      -- code1 <- lift$ system$ "mkdir -p "++outdir
@@ -79,12 +79,13 @@ cabalMethod = BuildMethod
                InDirectoryWithExactlyOne dotcab
   , concurrentBuild = True
   , compile = \ bldid flags target -> do
+     let suffix = "_"++bldid
      dir <- liftIO$ getDir target
      inDirectory dir $ do 
        -- Ugh... how could we separate out args to the different phases of cabal?
        log$ tag++" Switched to "++dir++", clearing binary target dir... "
        _ <- runSuccessful tag "rm -rf ./bin/*"
-       let cmd = "cabal install --bindir=./bin/ ./ "++unwords flags
+       let cmd = "cabal install --bindir=./bin/ ./ --program-suffix="++suffix++" "++unwords flags
        log$ tag++"Running cabal command: "++cmd
        _ <- runSuccessful " [cabal] " cmd
        ls <- liftIO$ filesInDir "./bin/"
@@ -93,8 +94,6 @@ cabalMethod = BuildMethod
          [f] -> return (StandAloneBinary$ dir </> "bin" </> f)
          _   -> error$"Multiple binaries were produced from building cabal file!:"
                        ++show ls ++" In: "++show dir
-                       
---                             , "--program-suffix='_" ++ show sched ++ "_threaded.exe'"
                        
   }
  where

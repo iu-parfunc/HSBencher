@@ -68,7 +68,7 @@ import System.Directory
 import System.Posix.Env (setEnv)
 import System.Random (randomIO)
 import System.Exit
-import System.FilePath (splitFileName, (</>), takeDirectory)
+import System.FilePath (splitFileName, (</>), takeDirectory, takeBaseName)
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
 import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
@@ -356,7 +356,8 @@ path ls = foldl1 (</>) ls
 --------------------------------------------------------------------------------
 
 -- | Build a single benchmark in a single configuration.
-compileOne :: Benchmark2 -> [ParamSetting] -> BenchM (RunFlags -> CommandDescr)
+-- compileOne :: Benchmark2 -> [ParamSetting] -> BenchM (RunFlags -> CommandDescr)
+compileOne :: Benchmark2 -> [ParamSetting] -> BenchM BuildResult
 compileOne Benchmark2{target=testPath,cmdargs} cconf = do
   Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
 
@@ -383,21 +384,22 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
 
   -- TODO: might need more info here... e.g. the buildID!!
   x <- compile bldid flags testPath
-  log$ "Compile finished, result: "++ show x
-  case x of
-    StandAloneBinary pth ->
-      -- Here we return a simple runner:
-      let runner rtflags =
-            -- TODO: In the future we'll want to move the binary somewhere for
-            -- parallel builds...
-            CommandDescr
-            { command = RawCommand pth rtflags
-            , envVars = []
-            , timeout = Just defaultTimeout
-            , workingDir = Nothing
-            }
-      in return runner
-    RunInPlace fn -> return fn
+  logT$ "Compile finished, result: "++ show x
+  return x
+  -- case x of
+  --   StandAloneBinary pth ->
+  --     -- Here we return a simple runner:
+  --     let runner rtflags =
+  --           -- TODO: In the future we'll want to move the binary somewhere for
+  --           -- parallel builds...
+  --           CommandDescr
+  --           { command = RawCommand pth rtflags
+  --           , envVars = []
+  --           , timeout = Just defaultTimeout
+  --           , workingDir = Nothing
+  --           }
+  --     in return runner
+  --   RunInPlace fn -> return fn
 
 {-
      if e then do 
@@ -797,12 +799,25 @@ defaultMainWithBechmarks benches = do
   cabalFile   <- runLines "ls *.cabal"
   let hasCabalFile = (cabalFile /= []) &&
                      not (NoCabal `elem` options)
-
+  rootDir <- getCurrentDirectory  
   runReaderT 
-    (do         
-	log "Writing header for result data file:"
-	printBenchrunHeader 
-
+    (do
+        logT$"Beginning benchmarking, root directory: "++rootDir
+        let globalBinDir = rootDir </> "bin"
+        logT$"Clearing any preexisting files in ./bin/"
+        lift$ do
+          -- runSimple "rm -f ./bin/*"
+          -- Yes... it's posix dependent.  But right now I don't see a good way to
+          -- delete the contents a dir without (1) following symlinks or (2) assuming
+          -- either the unix package or unix shell support (rm).
+          --- Ok, what the heck, deleting recursively:
+          dde <- doesDirectoryExist globalBinDir
+          when dde $ removeDirectoryRecursive globalBinDir
+          createDirectoryIfMissing True globalBinDir 
+     
+	logT "Writing header for result data file:"
+	printBenchrunHeader
+     
         let recomp  = NoRecomp `notElem` options
 {-     
             doclean = (NoCabal `notElem` options) && recomp
@@ -829,8 +844,8 @@ defaultMainWithBechmarks benches = do
             total = sum $ map length cfgs
             
         log$ "\n--------------------------------------------------------------------------------"
-        log$ "Running all benchmarks for all settings ..."
-        log$ "Compiling: "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
+        logT$ "Running all benchmarks for all settings ..."
+        logT$ "Compiling: "++show total++" total configurations of "++ show (length benchlist)++" benchmarks"
         let indent n str = unlines $ map (replicate n ' ' ++) $ lines str
             printloop _ [] = return ()
             printloop mp (Benchmark2{target,cmdargs,configs} :tl) = do
@@ -882,10 +897,26 @@ defaultMainWithBechmarks benches = do
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
-          when recomp $ 
-            forM_ (zip benches' cfgs) $ \ (bench, allcfgs) -> 
-              forM_ allcfgs $ \ cfg -> 
-                compileOne bench cfg -- confnum -- (confnum,length pruned)
+          runners <- 
+            if recomp then
+              forM (zip benches' cfgs) $ \ (bench, allCompileCfgs) -> 
+                forM allCompileCfgs $ \ cfg -> do
+                  let bldid = makeBuildID$ toCompileFlags cfg
+                  res <- compileOne bench cfg
+                  case res of 
+                    StandAloneBinary p -> do let dest= globalBinDir </> takeBaseName (target bench) ++"_"++bldid
+                                             logT$ "Moving resulting binary to: "++dest
+                                             lift$ renameFile p dest
+                                             return (bldid, StandAloneBinary dest)
+                    RunInPlace {}      -> return (bldid, res)
+--                mapM (compileOne bench) allCompileCfgs
+            else error "FINISHME -- App.hs"
+          -- After this point, binaries exist in the right place or inplace
+          -- benchmarks are ready to run (repeatedly).
+
+          forM_ (zip [1..] runners) $ \ (confnum, ls) -> do
+            -- (bldid,runFn)
+            error "FINISHME - runit"
 
           -- forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
           --     runOne bench (confnum,total)
@@ -942,5 +973,8 @@ collapsePrefix old new str =
 
 didComplete RunCompleted{} = True
 didComplete _              = False
+
+-- Shorthand for tagged version:
+logT str = log$" [hsbencher] "++str
 
 ----------------------------------------------------------------------------------------------------
