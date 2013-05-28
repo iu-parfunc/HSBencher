@@ -121,6 +121,10 @@ data BuildMethod =
   , concurrentBuild :: Bool -- ^ More than one build can happen at once.  This
                             -- implies that compile always returns StandAloneBinary.
   , compile :: PathRegistry -> BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
+  , clean   :: PathRegistry -> FilePath -> BenchM () -- ^ Clean any left-over build results.
+  , setThreads :: Maybe (Int -> [ParamSetting])
+                  -- ^ Synthesize a list of compile/runtime settings that
+                  -- will control the number of threads.
   }
 
 instance Show BuildMethod where

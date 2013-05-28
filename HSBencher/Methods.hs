@@ -36,14 +36,15 @@ makeMethod = BuildMethod
                `PredOr`
                InDirectoryWithExactlyOne (IsExactly "Makefile")
   , concurrentBuild = False
+  , setThreads      = Nothing
+  , clean = \ pathMap target -> do
+     doMake pathMap target $ \ makePath -> do
+       _ <- runSuccessful subtag (makePath++" clean")
+       return ()
   , compile = \ pathMap bldid flags target -> do
-     isdir <- liftIO$ doesDirectoryExist target
-     let dir = if isdir then target
-               else takeDirectory target
-         makePath = M.findWithDefault "make" "make" pathMap
-     inDirectory dir $ do
+     doMake pathMap target $ \ makePath -> do
        absolute <- liftIO getCurrentDirectory
-       _ <- runSuccessful tag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'")
+       _ <- runSuccessful subtag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'")
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
        let runit args =
              CommandDescr
@@ -56,6 +57,14 @@ makeMethod = BuildMethod
   }
  where
   tag = " [makeMethod] "
+  subtag = " [make] "
+  doMake pathMap target action = do
+     isdir <- liftIO$ doesDirectoryExist target
+     let dir = if isdir then target
+               else takeDirectory target
+         makePath = M.findWithDefault "make" "make" pathMap
+     inDirectory dir (action makePath)
+
 
 -- | Build with GHC directly.
 ghcMethod :: BuildMethod
@@ -63,6 +72,11 @@ ghcMethod = BuildMethod
   { methodName = "ghc"
   , canBuild = WithExtension ".hs"
   , concurrentBuild = True -- Only if we use hermetic build directories.
+  , setThreads = Just $ \ n -> [ CompileParam "-threaded -rtsopts"
+                               , RuntimeParam ("+RTS -N"++ show n++" -RTS")]
+  -- , needsInPlace = False
+  , clean = \ pathMap target -> do
+     return ()                      
   , compile = \ pathMap bldid flags target -> do
      let dir  = takeDirectory target
          file = takeBaseName target
@@ -82,6 +96,7 @@ ghcMethod = BuildMethod
  where
   tag = " [ghcMethod] "
 
+
 -- | Build with cabal.
 cabalMethod :: BuildMethod
 cabalMethod = BuildMethod
@@ -89,6 +104,10 @@ cabalMethod = BuildMethod
   , canBuild = dotcab `PredOr`
                InDirectoryWithExactlyOne dotcab
   , concurrentBuild = True
+  , setThreads = Just $ \ n -> [ CompileParam "--ghc-option='-threaded' --ghc-option='-rtsopts'"
+                               , RuntimeParam ("+RTS -N"++ show n++" -RTS")]
+  , clean = \ pathMap target -> do
+     return ()
   , compile = \ pathMap bldid flags target -> do
      let suffix = "_"++bldid
          cabalPath = M.findWithDefault "cabal" "cabal" pathMap

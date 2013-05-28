@@ -375,12 +375,15 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
        lift exitFailure     
   logT$ printf "Found %d methods that can handle %s: %s" 
          (length matches) testPath (show$ map methodName matches)
-  let BuildMethod{methodName,compile,concurrentBuild} = head matches
+  let BuildMethod{methodName,clean,compile,concurrentBuild} = head matches
   when (length matches > 1) $
     logT$ " WARNING: resolving ambiguity, picking method: "++methodName
 
+  let pathR = (M.union (M.fromList paths) pathRegistry)
+  x <- clean pathR testPath
+
   -- Prefer the benchmark-local path definitions:
-  x <- compile (M.union (M.fromList paths) pathRegistry) bldid flags testPath
+  x <- compile pathR bldid flags testPath
   logT$ "Compile finished, result: "++ show x
   return x
   

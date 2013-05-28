@@ -1,8 +1,10 @@
 
 
-[2013.05.27]
+[2013.05.27] .. [2013.05.28]
 
- * fix config numbers
+ * Handle multiple configs for in-place build
+ * add cleaning step
+
  * fix shortargs story
  * prune suffixes, while retaining uniqueness
  * restore parallelism
