@@ -3,16 +3,14 @@
 [2013.05.27] .. [2013.05.28]
 
  * Handle multiple configs for in-place build
- * add cleaning step
-
- * fix shortargs story
- * prune suffixes, while retaining uniqueness
- * restore parallelism
- * do path-based locking
-
- * finish normalizing command line args.
 
  * On mac OS the productivities look like they're being read back in wrong.
+ * prune suffixes, while retaining uniqueness
+ 
+ * restore parallelism
+   * do path-based locking
+
+ * Add CPU load sanity check to fusion table schema
 
 Longer term:
 
