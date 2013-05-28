@@ -357,7 +357,7 @@ path ls = foldl1 (</>) ls
 -- | Build a single benchmark in a single configuration.
 compileOne :: (Int,Int) -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
 compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
-  Config{shortrun, resultsOut, stdOut, buildMethods} <- ask
+  Config{shortrun, resultsOut, stdOut, buildMethods, pathRegistry} <- ask
 
   let (diroffset,testRoot) = splitFileName testPath
       flags = toCompileFlags cconf
@@ -378,7 +378,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
   when (length matches > 1) $
     logT$ " WARNING: resolving ambiguity, picking method: "++methodName
 
-  x <- compile bldid flags testPath
+  x <- compile pathRegistry bldid flags testPath
   logT$ "Compile finished, result: "++ show x
   return x
   

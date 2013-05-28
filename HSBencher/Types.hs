@@ -119,8 +119,7 @@ data BuildMethod =
   , canBuild    :: FilePredicate  -- ^ Can this method build a given file/directory?
   , concurrentBuild :: Bool -- ^ More than one build can happen at once.  This
                             -- implies that compile always returns StandAloneBinary.
-  , compile :: -- PathRegistry ->
-     BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
+  , compile :: PathRegistry -> BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
   }
 
 instance Show BuildMethod where

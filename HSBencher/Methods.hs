@@ -11,6 +11,7 @@ import Control.Monad
 import Control.Monad.Reader
 import Control.Exception (bracket)
 import qualified Data.ByteString.Char8 as B
+import qualified Data.Map as M
 -- import Control.Monad.IO.Class (liftIO, MonadIO)
 import System.Process
 import System.Directory
@@ -35,17 +36,18 @@ makeMethod = BuildMethod
                `PredOr`
                InDirectoryWithExactlyOne (IsExactly "Makefile")
   , concurrentBuild = False
-  , compile = \ bldid flags target -> do
+  , compile = \ pathMap bldid flags target -> do
      isdir <- liftIO$ doesDirectoryExist target
      let dir = if isdir then target
                else takeDirectory target
+         makePath = M.findWithDefault "make" "make" pathMap
      inDirectory dir $ do
        absolute <- liftIO getCurrentDirectory
-       _ <- runSuccessful tag ("make COMPILE_ARGS='"++ unwords flags ++"'")
+       _ <- runSuccessful tag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'")
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
        let runit args =
              CommandDescr
-             { command = ShellCommand ("make run RUN_ARGS='"++ unwords args ++"'")
+             { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
              , timeout = Just 150  
              , workingDir = Just absolute
              , envVars = []
@@ -61,23 +63,20 @@ ghcMethod = BuildMethod
   { methodName = "ghc"
   , canBuild = WithExtension ".hs"
   , concurrentBuild = True -- Only if we use hermetic build directories.
-  , compile = \ bldid flags target -> do
+  , compile = \ pathMap bldid flags target -> do
      let dir  = takeDirectory target
          file = takeBaseName target
          suffix = "_"++bldid
+         ghcPath = M.findWithDefault "ghc" "ghc" pathMap
      log$ tag++" Building target with GHC method: "++show target  
      inDirectory dir $ do
        let buildD = "buildoutput_" ++ bldid
        liftIO$ createDirectoryIfMissing True buildD
--- 	 flags = flags_ ++ " -fforce-recomp -DPARSCHED=\""++ (schedToModule sched) ++ "\""         
-     -- code1 <- lift$ system$ "mkdir -p "++outdir
-     -- code2 <- lift$ system$ "mkdir -p "++exedir
---       args = if shortrun then shortArgs args_ else args_           
-
        let dest = buildD </> file ++ suffix
        runSuccessful " [ghc] " $
-         printf "ghc %s -outputdir ./%s -o %s %s"
-         file buildD dest (unwords flags)
+         printf "%s %s -outputdir ./%s -o %s %s"
+           ghcPath file buildD dest (unwords flags)
+       -- Consider... -fforce-recomp  
        return (StandAloneBinary$ dir </> dest)
   }
  where
@@ -90,14 +89,20 @@ cabalMethod = BuildMethod
   , canBuild = dotcab `PredOr`
                InDirectoryWithExactlyOne dotcab
   , concurrentBuild = True
-  , compile = \ bldid flags target -> do
+  , compile = \ pathMap bldid flags target -> do
      let suffix = "_"++bldid
+         cabalPath = M.findWithDefault "cabal" "cabal" pathMap
+         ghcPath   = M.findWithDefault "ghc" "ghc" pathMap
      dir <- liftIO$ getDir target
      inDirectory dir $ do 
        -- Ugh... how could we separate out args to the different phases of cabal?
        log$ tag++" Switched to "++dir++", clearing binary target dir... "
        _ <- runSuccessful tag "rm -rf ./bin/*"
-       let cmd = "cabal install --bindir=./bin/ ./ --program-suffix="++suffix++" "++unwords flags
+       let extra_args  = "--bindir=./bin/ ./ --program-suffix="++suffix
+           extra_args' = if ghcPath /= "ghc"
+                         then extra_args -- ++ " --with-ghc='"++ghcPath++"'"
+                         else extra_args
+       let cmd = cabalPath++" install "++ extra_args' ++" "++unwords flags
        log$ tag++"Running cabal command: "++cmd
        _ <- runSuccessful " [cabal] " cmd
        ls <- liftIO$ filesInDir "./bin/"
@@ -160,6 +165,6 @@ runSuccessful :: String -> String -> BenchM [B.ByteString]
 runSuccessful tag cmd = do
   (res,lines) <- runLogged tag cmd
   case res of
-    ExitError code  -> error$ "expected command to succeed! But it exited with code "++show code++ ": "++ cmd
+    ExitError code  -> error$ "expected this command to succeed! But it exited with code "++show code++ ":\n  "++ cmd
     TimeOut {}      -> error "Methods.hs/runSuccessful - internal error!"
     RunCompleted {} -> return lines
