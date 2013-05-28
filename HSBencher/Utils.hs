@@ -22,12 +22,15 @@ import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIs
                   IOMode(..), BufferMode(..), hSetBuffering)
 import System.Exit
 import System.IO.Unsafe (unsafePerformIO)
+import System.FilePath (dropTrailingPathSeparator, takeBaseName)
 import Text.Printf
 import Prelude hiding (log)
 
 import HSBencher.Types 
 import HSBencher.Logging
 import HSBencher.MeasureProcess
+
+import Debug.Trace
 
 ----------------------------------------------------------------------------------------------------
 -- Global constants, variables:
@@ -236,3 +239,15 @@ getCPULoad = do
 
   -- This is very fragile: 
   -- "mpstat | grep -A 5 \"%idle\" | tail -n 1 | xargs -n1 echo | tail -n 1 | awk -F \" \" '{print 100 - $1}'"
+
+
+-- | A more persistent version of `takeBaseName`.
+fetchBaseName :: FilePath -> FilePath
+fetchBaseName path =
+  trace ("base name of "++path) $ 
+  takeBaseName $ dropTrailingPathSeparator path
+  -- trybase  = takeBaseName (target bench)
+  --            if trybase == ""
+  --            then takeBaseName (takeDirectory (target bench))
+  --            else trybase
+

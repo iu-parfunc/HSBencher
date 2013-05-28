@@ -12,6 +12,8 @@
 
  * finish normalizing command line args.
 
+ * On mac OS the productivities look like they're being read back in wrong.
+
 Longer term:
 
  * enable idempotent benchmarking + ctrl-C (i.e. fill in the holes)

@@ -70,7 +70,7 @@ import System.Directory
 import System.Posix.Env (setEnv)
 import System.Random (randomIO)
 import System.Exit
-import System.FilePath (splitFileName, (</>), takeDirectory, takeBaseName)
+import System.FilePath (splitFileName, (</>), takeDirectory)
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
 import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
@@ -426,7 +426,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
   ----------------------------------------  
   let args = if shortrun then shortArgs args_ else args_
       fullargs = args ++ runFlags
-      (_,testRoot) = splitFileName testPath
+      testRoot = fetchBaseName testPath
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters 
 --       ++": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
@@ -878,10 +878,7 @@ defaultMainWithBechmarks benches = do
             forM (zip3 benches' cccfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
               forM (zip allCompileCfgs [1..]) $ \ (cfg, localidx) -> 
                 let bldid    = makeBuildID$ toCompileFlags cfg
-                    trybase  = takeBaseName (target bench)
-                    base     = if trybase == ""
-                               then takeBaseName (takeDirectory (target bench))
-                               else trybase
+                    base     = fetchBaseName (target bench)
                     dfltdest = globalBinDir </> base ++"_"++bldid in
                 if recomp then do                  
                   res <- compileOne (offset + localidx,total) bench cfg
