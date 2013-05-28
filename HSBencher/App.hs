@@ -256,6 +256,7 @@ getConfig cmd_line_options benches = do
       base_conf = Config 
            { hostname, startTime
            , shortrun       = False
+           , doClean        = True
            , benchsetName   = Nothing
 	   , trials         = read$ get "TRIALS"    "1"
            , pathRegistry   = M.empty
@@ -301,7 +302,7 @@ getConfig cmd_line_options benches = do
       doFlag ShowVersion r = r
       doFlag NoRecomp r = r
       doFlag NoCabal  r = r
-      doFlag NoClean  r = r
+      doFlag NoClean  r = r { doClean = False }
       doFlag ParBench r = r
       --------------------
       conf = foldr ($) base_conf (map doFlag cmd_line_options)
@@ -359,7 +360,7 @@ path ls = foldl1 (</>) ls
 -- | Build a single benchmark in a single configuration.
 compileOne :: (Int,Int) -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
 compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
-  Config{shortrun, resultsOut, stdOut, buildMethods, pathRegistry} <- ask
+  Config{shortrun, resultsOut, stdOut, buildMethods, pathRegistry, doClean} <- ask
 
   let (diroffset,testRoot) = splitFileName testPath
       flags = toCompileFlags cconf
@@ -382,7 +383,8 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
     logT$ " WARNING: resolving ambiguity, picking method: "++methodName
 
   let pathR = (M.union (M.fromList paths) pathRegistry)
-  x <- clean pathR testPath
+  
+  when doClean $ clean pathR testPath
 
   -- Prefer the benchmark-local path definitions:
   x <- compile pathR bldid flags testPath
@@ -797,19 +799,6 @@ defaultMainWithBechmarks benches = do
 	logT "Writing header for result data file:"
 	printBenchrunHeader
      
-{-     
-            doclean = (NoCabal `notElem` options) && recomp
-        when doclean $ 
-          let cleanit cmd = when (NoClean `notElem` options) $ do
-                log$ "Before testing, first '"++ cmd ++"' for hygiene."
-                code <- lift$ system$ cmd++" &> clean_output.tmp"
-                check False code "ERROR: cleaning failed."
-	        log " -> Cleaning Succeeded."
-                liftIO$ removeFile "clean_output.tmp"
-          in      if hasMakefile  then cleanit "make clean"
-             else if hasCabalFile then cleanit (cabalPath conf++" clean")
-             else    return ()
--}
         unless recomp $ log "[!!!] Skipping benchmark recompilation!"
 
         let

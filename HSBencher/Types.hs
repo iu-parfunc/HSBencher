@@ -147,6 +147,7 @@ data Config = Config
  , maxthreads     :: Int
  , trials         :: Int    -- ^ number of runs of each configuration
  , shortrun       :: Bool
+ , doClean        :: Bool
  , keepgoing      :: Bool   -- ^ keep going after error
  , pathRegistry   :: PathRegistry -- ^ Paths to executables.
  , hostname       :: String
