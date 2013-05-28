@@ -333,18 +333,6 @@ deriving instance Show CmdSpec
 deriving instance Ord  CmdSpec
 deriving instance Read CmdSpec   
 
--- instance Show CmdSpec where
---   show (RawCommand s1 a1) = "RawCommand "++show s1++" "++show a1
---   show (ShellCommand s)   = "ShellCommand " ++ show s
--- instance Eq CmdSpec where
---   RawCommand s1 a1 == RawCommand s2 a2 = s1 == s2 && a1 == a2
---   ShellCommand s1  == ShellCommand s2  = s1 == s2
---   _ == _ = False
-
--- instance Ord CmdSpec where
-
-
-
 -- | Measured results from running a subprocess (benchmark).
 data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.

@@ -44,14 +44,9 @@ makeMethod = BuildMethod
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
        let runit args =
              CommandDescr
-             -- { command = ShellCommand ("make run RUN_ARGS='"++ unwords args ++"'")
-             -- , timeout = Just 150  
-             -- , workingDir = Just dir
-             -- , envVars = []
-             -- }
-             { command = ShellCommand "hello"
-             , timeout = Nothing
-             , workingDir = Nothing
+             { command = ShellCommand ("make run RUN_ARGS='"++ unwords args ++"'")
+             , timeout = Just 150  
+             , workingDir = Just dir
              , envVars = []
              }
        return (RunInPlace runit)
