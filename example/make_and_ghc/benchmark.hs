@@ -19,8 +19,8 @@ main = do
   defaultMainWithBechmarks benches
 
 benches =
-  [ Benchmark "bench1/"          ["unused_cmdline_arg"] none         M.empty
-  , Benchmark "bench2/Hello.hs"  []                     withthreads  M.empty
+  [ Benchmark "bench1/"          ["unused_cmdline_arg"] none         
+  , Benchmark "bench2/Hello.hs"  []                     withthreads  
   ]
 
 -- No benchmark configuration space.
@@ -33,6 +33,7 @@ defaultHSSettings spc =
   And [
         Set NoMeaning (CompileParam "-threaded -rtsopts")
       , Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS")
+      , Set NoMeaning (CmdPath      "ghc" "ghc-7.6.3") -- Does nothing.
       , spc]
 
 varyThreads :: BenchSpace DefaultParamMeaning -> BenchSpace DefaultParamMeaning

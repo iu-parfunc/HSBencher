@@ -9,7 +9,8 @@ module HSBencher.Types
          
          -- * Benchmark configuration spaces
          Benchmark(..), BenchSpace(..), ParamSetting(..),
-         enumerateBenchSpace, compileOptsOnly, toCompileFlags, toRunFlags, toEnvVars,
+         enumerateBenchSpace, compileOptsOnly,
+         toCompileFlags, toRunFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
          
@@ -183,7 +184,6 @@ data Benchmark a = Benchmark
  { target  :: FilePath      -- ^ The target file or direcotry.
  , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
  , configs :: BenchSpace a  -- ^ The configration space to iterate over.
- , pathReg :: PathRegistry  -- ^ Path settings private to this benchmark.
  } deriving (Eq, Show, Ord, Generic)
 
 
@@ -233,6 +233,12 @@ toRunFlags [] = []
 toRunFlags ((_,RuntimeParam s1) : tl) = (s1) : toRunFlags tl
 toRunFlags (_ : tl)                  =            toRunFlags tl
 
+toCmdPaths :: [(a,ParamSetting)] -> [(String,String)]
+toCmdPaths = catMaybes . map fn
+ where
+   fn (_,CmdPath c p) = Just (c,p)
+   fn _               = Nothing
+
 toEnvVars :: [(a,ParamSetting)] -> [(String,String)]
 toEnvVars [] = []
 toEnvVars ((_,RuntimeEnv s1 s2)
@@ -268,6 +274,7 @@ compileOptsOnly x =
        And ls -> mayb$ And$ catMaybes$ map loop ls
        Or  ls -> mayb$ Or $ catMaybes$ map loop ls
        Set m (CompileParam {}) -> Just bs
+       Set m (CmdPath      {}) -> Just bs -- These affect compilation also...
        Set _ _                 -> Nothing
    mayb (And []) = Nothing
    mayb (Or  []) = Nothing
@@ -283,9 +290,8 @@ data ParamSetting
   | CompileParam String -- ^ String contains compile-time options, expanded and tokenized by the shell.
   | RuntimeEnv   String String -- ^ The name of the env var and its value, respectively.
                                --   For now Env Vars ONLY affect runtime.
-    
---  | PathSetting String String -- ^ Takes CMD PATH, and establishes a benchmark-private setting to use PATH for CMD.
-                              --   For example `PathSetting "ghc" "ghc-7.6.3"`.
+  | CmdPath      String String -- ^ Takes CMD PATH, and establishes a benchmark-private setting to use PATH for CMD.
+                               --   For example `CmdPath "ghc" "ghc-7.6.3"`.
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
  deriving (Show, Eq, Read, Ord, Generic)

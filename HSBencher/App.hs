@@ -361,6 +361,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
 
   let (diroffset,testRoot) = splitFileName testPath
       flags = toCompileFlags cconf
+      paths = toCmdPaths     cconf
       bldid = makeBuildID flags
   log  "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
@@ -378,7 +379,8 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
   when (length matches > 1) $
     logT$ " WARNING: resolving ambiguity, picking method: "++methodName
 
-  x <- compile pathRegistry bldid flags testPath
+  -- Prefer the benchmark-local path definitions:
+  x <- compile (M.union (M.fromList paths) pathRegistry) bldid flags testPath
   logT$ "Compile finished, result: "++ show x
   return x
   
@@ -842,10 +844,10 @@ defaultMainWithBechmarks benches = do
         let
             benches' = map (\ b -> b { configs= compileOptsOnly (configs b) })
                        benchlist
-            cfgs = map (enumerateBenchSpace . configs) benches' -- compile configs
+            cccfgs = map (enumerateBenchSpace . configs) benches' -- compile configs
             allcompiles = concat $
-                          zipWith (\ b cs -> map (b,) cs) benches' cfgs
-            cclengths = map length cfgs
+                          zipWith (\ b cs -> map (b,) cs) benches' cccfgs
+            cclengths = map length cccfgs
             total = sum cclengths
             
         log$ "\n--------------------------------------------------------------------------------"
@@ -903,7 +905,7 @@ defaultMainWithBechmarks benches = do
         --------------------------------------------------------------------------------
         -- Serial version:
           runners <- 
-            forM (zip3 benches' cfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
+            forM (zip3 benches' cccfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
               forM (zip allCompileCfgs [1..]) $ \ (cfg, localidx) -> 
                 let bldid    = makeBuildID$ toCompileFlags cfg
                     trybase  = takeBaseName (target bench)
