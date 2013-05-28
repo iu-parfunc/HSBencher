@@ -904,7 +904,11 @@ defaultMainWithBechmarks benches = do
             forM (zip3 benches' cfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
               forM (zip allCompileCfgs [1..]) $ \ (cfg, localidx) -> 
                 let bldid    = makeBuildID$ toCompileFlags cfg
-                    dfltdest = globalBinDir </> takeBaseName (target bench) ++"_"++bldid in
+                    trybase  = takeBaseName (target bench)
+                    base     = if trybase == ""
+                               then takeBaseName (takeDirectory (target bench))
+                               else trybase
+                    dfltdest = globalBinDir </> base ++"_"++bldid in
                 if recomp then do                  
                   res <- compileOne (offset + localidx,total) bench cfg
                   case res of 

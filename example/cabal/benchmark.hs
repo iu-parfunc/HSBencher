@@ -9,20 +9,15 @@ main =
   defaultMainWithBechmarks benches
 
 benches =
-  [ Benchmark2 "bench1/"          ["unused_cmdline_arg"] none
-  , Benchmark2 "bench2/Hello.hs"  []                     withthreads
+  [ Benchmark2 "bench1/" ["unused_cmdline_arg"] withthreads
   ]
 
--- No benchmark configuration space.
-none = And []
-
 withthreads = defaultHSSettings$
-              varyThreads none
+              varyThreads (And[])
 
 defaultHSSettings spc =
-  And [
-     -- Set NoMeaning (CompileParam "-threaded -rtsopts")
-        Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS")
+  And [ Set NoMeaning (CompileParam "--ghc-option='-threaded' --ghc-option='-rtsopts'")
+      , Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS")
       , spc]
 
 varyThreads :: BenchSpace DefaultParamMeaning -> BenchSpace DefaultParamMeaning

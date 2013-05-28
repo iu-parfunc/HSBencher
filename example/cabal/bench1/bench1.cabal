@@ -1,0 +1,10 @@
+
+name:                bench1
+version:             0.1
+build-type:          Simple
+cabal-version: >= 1.2
+
+Executable bench1_cabal
+  main-is: Hello.hs
+  build-depends:  base >= 4.5
+--   ghc-options: -threaded -rtsopts
