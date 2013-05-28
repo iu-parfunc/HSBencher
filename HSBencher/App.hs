@@ -374,13 +374,13 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
   matches <- lift$ 
              filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
   when (null matches) $ do
-       log$ "ERROR, no build method matches path: "++testPath
+       logT$ "ERROR, no build method matches path: "++testPath
        lift exitFailure     
-  log$ printf "Found %d methods that can handle %s: %s" 
+  logT$ printf "Found %d methods that can handle %s: %s" 
          (length matches) testPath (show$ map methodName matches)
   let BuildMethod{methodName,compile,concurrentBuild} = head matches
   when (length matches > 1) $
-    log$ "WARNING: resolving ambiguity, picking method: "++methodName
+    logT$ " WARNING: resolving ambiguity, picking method: "++methodName
 
   -- TODO: might need more info here... e.g. the buildID!!
   x <- compile bldid flags testPath
@@ -441,10 +441,35 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
 -- Running Benchmarks
 --------------------------------------------------------------------------------
 
+
+-- runOne :: BenchRun -> (Int,Int) -> BenchM ()
+runOne bid bldres runconfig =
+  --------------------------------------------------  
+  case bldres of
+    StandAloneBinary binpath -> do
+      let runFlags = toRunFlags runconfig
+          envVars  = toEnvVars  runconfig
+          iterNum  = 999
+          totalIters= 999          
+
+      log$ "\n--------------------------------------------------------------------------------"
+      log$ "  Running Config "++show iterNum++" of "++show totalIters
+--           ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
+--           "  threads "++show numthreads++" (Env="++show envVars++")"
+      log$ "--------------------------------------------------------------------------------\n"
+
+      SubProcess {wait,process_out,process_err} <-
+        lift$ measureProcess
+                CommandDescr{ command=RawCommand binpath [], envVars, timeout=Just defaultTimeout, workingDir=Nothing }
+      runres <- lift wait
+      error$ "FINISHME - runone "++ show runres
+   --------------------------------------------------
+      
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-runOne :: BenchRun -> (Int,Int) -> BenchM ()
-runOne br@(BenchRun { threads=numthreads
+
+runOne0 :: BenchRun -> (Int,Int) -> BenchM ()
+runOne0 br@(BenchRun { threads=numthreads
                     , sched
                     , bench=(Benchmark testPath _ args_)
                     , env=envVars })
@@ -482,8 +507,9 @@ runOne br@(BenchRun { threads=numthreads
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "Running trial %d of %d" i trials
     let cmdArgs = args++["+RTS"]++words rts++["-RTS"]
-    log "------------------------------------------------------------"        
+    log "------------------------------------------------------------"    
     log$ " Executing command: " ++ unwords (exeFile:cmdArgs)
+    
     let command = RawCommand exeFile cmdArgs
     SubProcess {wait,process_out,process_err} <-
       lift$ measureProcess
@@ -553,7 +579,6 @@ runOne br@(BenchRun { threads=numthreads
     return ()           
 #endif
   return ()     
-
 
 
 
@@ -911,13 +936,19 @@ defaultMainWithBechmarks benches = do
                     RunInPlace {}      -> return (bldid, res)
 --                mapM (compileOne bench) allCompileCfgs
             else error "FINISHME -- App.hs"
+
           -- After this point, binaries exist in the right place or inplace
           -- benchmarks are ready to run (repeatedly).
-
-          forM_ (zip [1..] runners) $ \ (confnum, ls) -> do
-            -- (bldid,runFn)
-            error "FINISHME - runit"
-
+          forM_ (zip3 [1..] runners benches) $ \ (cconfnum, compiles, Benchmark2{configs}) -> do 
+            let bidMap = M.fromList compiles
+            forM_ (enumerateBenchSpace configs) $ \ runconfig -> do 
+              let bid = makeBuildID$ toCompileFlags runconfig
+              case M.lookup bid bidMap of 
+                Nothing -> error$ "HSBencher: Cannot find compiler output for: "++show bid
+                Just bldres -> runOne bid bldres runconfig
+              return ()
+            return ()
+          return ()
           -- forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
           --     runOne bench (confnum,total)
 

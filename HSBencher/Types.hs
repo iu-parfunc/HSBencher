@@ -10,7 +10,7 @@ module HSBencher.Types
          -- * Benchmark configuration spaces
          Benchmark(..), BenchRun(..),
          Benchmark2(..), BenchSpace(..), ParamSetting(..),
-         enumerateBenchSpace, compileOptsOnly, toCompileFlags,
+         enumerateBenchSpace, compileOptsOnly, toCompileFlags, toRunFlags, toEnvVars,
          BuildID, makeBuildID, 
          
          -- * HSBench Driver Configuration
@@ -238,6 +238,17 @@ toCompileFlags :: [ParamSetting] -> CompileFlags
 toCompileFlags [] = []
 toCompileFlags (CompileParam s1 s2 : tl) = (s1++s2) : toCompileFlags tl
 toCompileFlags (_ : tl)                  =            toCompileFlags tl
+
+toRunFlags :: [ParamSetting] -> RunFlags
+toRunFlags [] = []
+toRunFlags (RuntimeParam s1 s2 : tl) = (s1++s2) : toRunFlags tl
+toRunFlags (_ : tl)                  =            toRunFlags tl
+
+toEnvVars :: [ParamSetting] -> [(String,String)]
+toEnvVars [] = []
+toEnvVars (RuntimeEnv s1 s2 : tl) = (s1,s2) : toEnvVars tl
+toEnvVars (_ : tl)                =           toEnvVars tl
+
 
 -- | A BuildID should uniquely identify a particular (compile-time) configuration,
 -- but consist only of characters that would be reasonable to put in a filename.
