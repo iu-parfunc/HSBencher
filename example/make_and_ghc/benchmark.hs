@@ -1,6 +1,7 @@
 
 
 import HSBencher
+import qualified Data.Map as M
 import System.Environment (getEnvironment, getExecutablePath)
 import System.Directory   (setCurrentDirectory, getDirectoryContents, getCurrentDirectory)
 import System.IO.Unsafe   (unsafePerformIO)
@@ -18,8 +19,8 @@ main = do
   defaultMainWithBechmarks benches
 
 benches =
-  [ Benchmark "bench1/"          ["unused_cmdline_arg"] none
-  , Benchmark "bench2/Hello.hs"  []                     withthreads
+  [ Benchmark "bench1/"          ["unused_cmdline_arg"] none         M.empty
+  , Benchmark "bench2/Hello.hs"  []                     withthreads  M.empty
   ]
 
 -- No benchmark configuration space.

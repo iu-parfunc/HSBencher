@@ -180,9 +180,10 @@ instance Show (Strm.OutputStream a) where
 -- type BenchFile = [BenchStmt]
 
 data Benchmark a = Benchmark
- { target  :: FilePath
- , cmdargs :: [String]
- , configs :: BenchSpace a
+ { target  :: FilePath      -- ^ The target file or direcotry.
+ , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
+ , configs :: BenchSpace a  -- ^ The configration space to iterate over.
+ , pathReg :: PathRegistry  -- ^ Path settings private to this benchmark.
  } deriving (Eq, Show, Ord, Generic)
 
 
@@ -282,6 +283,9 @@ data ParamSetting
   | CompileParam String -- ^ String contains compile-time options, expanded and tokenized by the shell.
   | RuntimeEnv   String String -- ^ The name of the env var and its value, respectively.
                                --   For now Env Vars ONLY affect runtime.
+    
+--  | PathSetting String String -- ^ Takes CMD PATH, and establishes a benchmark-private setting to use PATH for CMD.
+                              --   For example `PathSetting "ghc" "ghc-7.6.3"`.
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
  deriving (Show, Eq, Read, Ord, Generic)
@@ -331,4 +335,7 @@ instance Out DefaultParamMeaning
 instance Out a => Out (BenchSpace a)
 instance Out a => Out (Benchmark a)
 
+instance (Out k, Out v) => Out (M.Map k v) where
+  docPrec n m = docPrec n $ M.toList m
+  doc         = docPrec 0 
 
