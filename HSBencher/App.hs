@@ -442,47 +442,24 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
 --------------------------------------------------------------------------------
 
 
-runOne :: BuildID -> BuildResult -> Benchmark2 -> [ParamSetting] -> BenchM ()
-runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do 
---   --------------------------------------------------  
---   case bldres of
---     StandAloneBinary binpath -> do
---       let runFlags = toRunFlags runconfig
---           envVars  = toEnvVars  runconfig
---           iterNum  = 999
---           totalIters= 999          
-
---       log$ "\n--------------------------------------------------------------------------------"
---       log$ "  Running Config "++show iterNum++" of "++show totalIters
--- --           ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
--- --           "  threads "++show numthreads++" (Env="++show envVars++")"
---       log$ "--------------------------------------------------------------------------------\n"
-
---       SubProcess {wait,process_out,process_err} <-
---         lift$ measureProcess
---                 CommandDescr{ command=RawCommand binpath [], envVars, timeout=Just defaultTimeout, workingDir=Nothing }
---       runres <- lift wait
---       error$ "FINISHME - runone "++ show runres
---    --------------------------------------------------
-      
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-
-
+runOne :: BuildID -> BuildResult -> Benchmark2 -> [ParamSetting] -> BenchM ()
+runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do       
+-- <FINISHME>
   let iterNum    = 999
       totalIters = 999
       numthreads = 1
+      sched = "FIXME - finish runOne refactoring"
+-- </FINISHME>
+      
   let runFlags = toRunFlags runconfig
       envVars  = toEnvVars  runconfig
-      sched = "FIXME - finish runOne refactoring"
-  
--- runOne0 :: BenchRun -> (Int,Int) -> BenchM ()
--- runOne0 br@(BenchRun { threads=numthreads
---                     , sched
---                     , bench=(Benchmark testPath _ args_)
---                     , env=envVars })
---           (iterNum,totalIters) = do
   conf@Config{..} <- ask
+
+  ----------------------------------------
+  -- (1) Gather contextual information
+  ----------------------------------------  
   let args = if shortrun then shortArgs args_ else args_
       (_,testRoot) = splitFileName testPath
   log$ "\n--------------------------------------------------------------------------------"
@@ -500,14 +477,14 @@ runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do
   user <- lift$ getEnv "USER"
   log$ "Who_Output: "++ unwords (filter (/= user) whos')
 
-  -- numthreads == 0 indicates a serial run:
+  -- If numthreads == 0, that indicates a serial run:
   let 
       rts = gc_stats_flag ++" "++
             case numthreads of
 	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
 	     _ -> ghc_RTS  ++" -N"++show numthreads
   ----------------------------------------
-  -- Now execute N trials:
+  -- (2) Now execute N trials:
   ----------------------------------------
   -- (One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.)
@@ -531,6 +508,9 @@ runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do
 --        error$ "FINISHME - runone "++ show runres
      --------------------------------------------------
 
+  ------------------------------------------
+  -- (3) Produce output to the right places:
+  ------------------------------------------
   (t1,t2,t3,p1,p2,p3) <-
     if not (all didComplete nruns) then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got ERRORS: " ++show nruns
