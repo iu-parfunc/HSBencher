@@ -442,45 +442,53 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
 --------------------------------------------------------------------------------
 
 
--- runOne :: BenchRun -> (Int,Int) -> BenchM ()
-runOne bid bldres runconfig =
-  --------------------------------------------------  
-  case bldres of
-    StandAloneBinary binpath -> do
-      let runFlags = toRunFlags runconfig
-          envVars  = toEnvVars  runconfig
-          iterNum  = 999
-          totalIters= 999          
+runOne :: BuildID -> BuildResult -> Benchmark2 -> [ParamSetting] -> BenchM ()
+runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do 
+--   --------------------------------------------------  
+--   case bldres of
+--     StandAloneBinary binpath -> do
+--       let runFlags = toRunFlags runconfig
+--           envVars  = toEnvVars  runconfig
+--           iterNum  = 999
+--           totalIters= 999          
 
-      log$ "\n--------------------------------------------------------------------------------"
-      log$ "  Running Config "++show iterNum++" of "++show totalIters
---           ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
---           "  threads "++show numthreads++" (Env="++show envVars++")"
-      log$ "--------------------------------------------------------------------------------\n"
+--       log$ "\n--------------------------------------------------------------------------------"
+--       log$ "  Running Config "++show iterNum++" of "++show totalIters
+-- --           ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
+-- --           "  threads "++show numthreads++" (Env="++show envVars++")"
+--       log$ "--------------------------------------------------------------------------------\n"
 
-      SubProcess {wait,process_out,process_err} <-
-        lift$ measureProcess
-                CommandDescr{ command=RawCommand binpath [], envVars, timeout=Just defaultTimeout, workingDir=Nothing }
-      runres <- lift wait
-      error$ "FINISHME - runone "++ show runres
-   --------------------------------------------------
+--       SubProcess {wait,process_out,process_err} <-
+--         lift$ measureProcess
+--                 CommandDescr{ command=RawCommand binpath [], envVars, timeout=Just defaultTimeout, workingDir=Nothing }
+--       runres <- lift wait
+--       error$ "FINISHME - runone "++ show runres
+--    --------------------------------------------------
       
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
 
-runOne0 :: BenchRun -> (Int,Int) -> BenchM ()
-runOne0 br@(BenchRun { threads=numthreads
-                    , sched
-                    , bench=(Benchmark testPath _ args_)
-                    , env=envVars })
-          (iterNum,totalIters) = do
+
+  let iterNum    = 999
+      totalIters = 999
+      numthreads = 1
+  let runFlags = toRunFlags runconfig
+      envVars  = toEnvVars  runconfig
+      sched = "FIXME - finish runOne refactoring"
+  
+-- runOne0 :: BenchRun -> (Int,Int) -> BenchM ()
+-- runOne0 br@(BenchRun { threads=numthreads
+--                     , sched
+--                     , bench=(Benchmark testPath _ args_)
+--                     , env=envVars })
+--           (iterNum,totalIters) = do
   conf@Config{..} <- ask
   let args = if shortrun then shortArgs args_ else args_
       (_,testRoot) = splitFileName testPath
   log$ "\n--------------------------------------------------------------------------------"
-  log$ "  Running Config "++show iterNum++" of "++show totalIters++
-       ": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
-       "  threads "++show numthreads++" (Env="++show envVars++")"
+  log$ "  Running Config "++show iterNum++" of "++show totalIters 
+--       ++": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
+--       "  threads "++show numthreads++" (Env="++show envVars++")"
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
   log$ "(In directory "++ pwd ++")"
@@ -498,7 +506,6 @@ runOne0 br@(BenchRun { threads=numthreads
             case numthreads of
 	     0 -> unwords (pruneThreadedOpts (words ghc_RTS))
 	     _ -> ghc_RTS  ++" -N"++show numthreads
-      exeFile = exedir </> testRoot ++ uniqueSuffix br ++ ".exe"
   ----------------------------------------
   -- Now execute N trials:
   ----------------------------------------
@@ -508,17 +515,21 @@ runOne0 br@(BenchRun { threads=numthreads
     log$ printf "Running trial %d of %d" i trials
     let cmdArgs = args++["+RTS"]++words rts++["-RTS"]
     log "------------------------------------------------------------"    
-    log$ " Executing command: " ++ unwords (exeFile:cmdArgs)
-    
-    let command = RawCommand exeFile cmdArgs
-    SubProcess {wait,process_out,process_err} <-
-      lift$ measureProcess
-              CommandDescr{ command, envVars, timeout=Just 150, workingDir=Nothing }
-    err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
-    both <- lift$ Strm.concurrentMerge [process_out, err2]
-    mv <- echoStream (not shortrun) both
-    lift$ takeMVar mv
-    lift wait
+    case bldres of
+      StandAloneBinary binpath -> do
+        log$ " Executing command: " ++ binpath
+        SubProcess {wait,process_out,process_err} <-
+          lift$ measureProcess
+                  CommandDescr{ command=RawCommand binpath [], envVars, timeout=Just defaultTimeout, workingDir=Nothing }
+        err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
+        both <- lift$ Strm.concurrentMerge [process_out, err2]
+        mv <- echoStream (not shortrun) both
+        lift$ takeMVar mv
+        x <- lift wait
+        log "Run finished!"
+        return x
+--        error$ "FINISHME - runone "++ show runres
+     --------------------------------------------------
 
   (t1,t2,t3,p1,p2,p3) <-
     if not (all didComplete nruns) then do
@@ -939,13 +950,13 @@ defaultMainWithBechmarks benches = do
 
           -- After this point, binaries exist in the right place or inplace
           -- benchmarks are ready to run (repeatedly).
-          forM_ (zip3 [1..] runners benches) $ \ (cconfnum, compiles, Benchmark2{configs}) -> do 
+          forM_ (zip3 [1..] runners benches) $ \ (cconfnum, compiles, b2@Benchmark2{configs}) -> do 
             let bidMap = M.fromList compiles
             forM_ (enumerateBenchSpace configs) $ \ runconfig -> do 
               let bid = makeBuildID$ toCompileFlags runconfig
               case M.lookup bid bidMap of 
                 Nothing -> error$ "HSBencher: Cannot find compiler output for: "++show bid
-                Just bldres -> runOne bid bldres runconfig
+                Just bldres -> runOne bid bldres b2 runconfig
               return ()
             return ()
           return ()
