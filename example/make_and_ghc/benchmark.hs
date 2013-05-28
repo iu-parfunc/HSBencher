@@ -33,7 +33,7 @@ defaultHSSettings spc =
   And [
         Set NoMeaning (CompileParam "-threaded -rtsopts")
       , Set NoMeaning (RuntimeParam "+RTS -s -qa -RTS")
-      , Set NoMeaning (CmdPath      "ghc" "ghc-7.6.3") -- Does nothing.
+      , Set NoMeaning (CmdPath      "ghc" "ghc") -- Does nothing.
       , spc]
 
 varyThreads :: BenchSpace DefaultParamMeaning -> BenchSpace DefaultParamMeaning
