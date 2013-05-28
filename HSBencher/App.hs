@@ -357,13 +357,11 @@ path ls = foldl1 (</>) ls
 
 -- | Build a single benchmark in a single configuration.
 -- compileOne :: Benchmark2 -> [ParamSetting] -> BenchM (RunFlags -> CommandDescr)
-compileOne :: Benchmark2 -> [ParamSetting] -> BenchM BuildResult
-compileOne Benchmark2{target=testPath,cmdargs} cconf = do
+compileOne :: (Int,Int) -> Benchmark2 -> [ParamSetting] -> BenchM BuildResult
+compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
   Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
 
   let (diroffset,testRoot) = splitFileName testPath
-      iterNum = 999
-      totalIters = 999
       flags = toCompileFlags cconf
       bldid = makeBuildID flags
   log  "\n--------------------------------------------------------------------------------"
@@ -444,12 +442,10 @@ compileOne Benchmark2{target=testPath,cmdargs} cconf = do
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-runOne :: BuildID -> BuildResult -> Benchmark2 -> [ParamSetting] -> BenchM ()
-runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do       
+runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark2 -> [ParamSetting] -> BenchM ()
+runOne (iterNum, totalIters) bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do       
 -- <FINISHME>
-  let iterNum    = 999
-      totalIters = 999
-      numthreads = 99
+  let numthreads = 99
       sched = "FIXME_finish_runOne_refactoring"
 -- </FINISHME>
       
@@ -489,9 +485,9 @@ runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do
   -- (One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.)
   nruns <- forM [1..trials] $ \ i -> do 
-    logT$ printf "Running trial %d of %d" i trials
+    log$ printf "  Running trial %d of %d" i trials
     let cmdArgs = args++["+RTS"]++words rts++["-RTS"]
-    log "------------------------------------------------------------"    
+    log "  ------------------------"    
     case bldres of
       StandAloneBinary binpath -> do
         log$ " Executing command: " ++ binpath++" "++unwords args_
@@ -503,9 +499,8 @@ runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do
         mv <- echoStream (not shortrun) both
         lift$ takeMVar mv
         x <- lift wait
-        logT "Run finished!"
+--        logT "Run finished!"
         return x
---        error$ "FINISHME - runone "++ show runres
      --------------------------------------------------
 
   ------------------------------------------
@@ -853,11 +848,11 @@ defaultMainWithBechmarks benches = do
         let
             benches' = map (\ b -> b { configs= compileOptsOnly (configs b) })
                        benchlist
-            cfgs = map (enumerateBenchSpace . configs) benches'
+            cfgs = map (enumerateBenchSpace . configs) benches' -- compile configs
             allcompiles = concat $
                           zipWith (\ b cs -> map (b,) cs) benches' cfgs
-            
-            total = sum $ map length cfgs
+            cclengths = map length cfgs
+            total = sum cclengths
             
         log$ "\n--------------------------------------------------------------------------------"
         logT$ "Running all benchmarks for all settings ..."
@@ -915,10 +910,10 @@ defaultMainWithBechmarks benches = do
         -- Serial version:
           runners <- 
             if recomp then
-              forM (zip benches' cfgs) $ \ (bench, allCompileCfgs) -> 
-                forM allCompileCfgs $ \ cfg -> do
+              forM (zip3 benches' cfgs (scanl (+) 0 cclengths)) $ \ (bench, allCompileCfgs, offset) -> 
+                forM (zip allCompileCfgs [1..]) $ \ (cfg, localidx) -> do
                   let bldid = makeBuildID$ toCompileFlags cfg
-                  res <- compileOne bench cfg
+                  res <- compileOne (offset + localidx,total) bench cfg
                   case res of 
                     StandAloneBinary p -> do let dest= globalBinDir </> takeBaseName (target bench) ++"_"++bldid
                                              logT$ "Moving resulting binary to: "++dest
@@ -926,17 +921,22 @@ defaultMainWithBechmarks benches = do
                                              return (bldid, StandAloneBinary dest)
                     RunInPlace {}      -> return (bldid, res)
 --                mapM (compileOne bench) allCompileCfgs
-            else error "FINISHME -- App.hs"
+            else error "FINISHME -- App.hs, handle non-recomp case"
 
           -- After this point, binaries exist in the right place or inplace
           -- benchmarks are ready to run (repeatedly).
-          forM_ (zip3 [1..] runners benches) $ \ (cconfnum, compiles, b2@Benchmark2{configs}) -> do 
+
+          -- TODO: make this a foldlM:
+          let allruns = map (enumerateBenchSpace . configs) benches              
+              allrunsLens = map length allruns
+              totalruns = sum allrunsLens
+          forM_ (zip3 (scanl (+) 0 allrunsLens) runners benches) $ \ (offset, compiles, b2@Benchmark2{configs}) -> do 
             let bidMap = M.fromList compiles
-            forM_ (enumerateBenchSpace configs) $ \ runconfig -> do 
+            forM_ (zip (enumerateBenchSpace configs) [1..])  $ \ (runconfig, localidx) -> do 
               let bid = makeBuildID$ toCompileFlags runconfig
               case M.lookup bid bidMap of 
                 Nothing -> error$ "HSBencher: Cannot find compiler output for: "++show bid
-                Just bldres -> runOne bid bldres b2 runconfig
+                Just bldres -> runOne (offset + localidx,totalruns) bid bldres b2 runconfig
               return ()
             return ()
           return ()
