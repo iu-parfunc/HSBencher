@@ -9,6 +9,7 @@ module HSBencher.Methods
 
 import Control.Monad
 import Control.Monad.Reader
+import Control.Exception (bracket)
 import qualified Data.ByteString.Char8 as B
 -- import Control.Monad.IO.Class (liftIO, MonadIO)
 import System.Process
@@ -38,16 +39,20 @@ makeMethod = BuildMethod
      isdir <- liftIO$ doesDirectoryExist target
      let dir = if isdir then target
                else takeDirectory target
-     _ <- runSuccessful " [make] " "make"
-     let runit args =
-           CommandDescr
-           { command = RawCommand "make" ["run","ARGS=\""++ unwords args ++"\""]
-           , timeout = Just 150  
-           , workingDir = Just dir
-           , envVars = []
-           }
-     return (RunInPlace runit)
+     inDirectory dir $ do                    
+       _ <- runSuccessful tag ("make COMPILE_ARGS='"++ unwords flags ++"'")
+       log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
+       let runit args =
+             CommandDescr
+             { command = ShellCommand ("make run RUN_ARGS='"++ unwords args ++"'")
+             , timeout = Just 150  
+             , workingDir = Just dir
+             , envVars = []
+             }
+       return (RunInPlace runit)
   }
+ where
+  tag = " [makeMethod] "
 
 -- | Build with GHC directly.
 ghcMethod :: BuildMethod
@@ -133,6 +138,12 @@ inDirectory dir act = do
   x <- act
   liftIO$ setCurrentDirectory orig
   return x
+-- TODO: Use bracket, but it's only IO, not generalized:
+  -- bracket (do o <- liftIO getCurrentDirectory
+  --             setCurrentDirectory dir
+  --             return o)
+  --         (\orig -> liftIO$ setCurrentDirectory orig)
+  --         (\_ -> act)
   
 -- Returns actual files only
 filesInDir :: FilePath -> IO [FilePath]

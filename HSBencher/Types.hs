@@ -238,7 +238,7 @@ enumerateBenchSpace bs =
     Or ls -> concatMap enumerateBenchSpace ls
     And ls -> loop ls
   where
-    loop [] = []
+    loop [] = [ [] ]  -- And [] => one config
     loop [lst] = enumerateBenchSpace lst
     loop (hd:tl) =
       let confs = enumerateBenchSpace hd in
