@@ -354,7 +354,6 @@ path ls = foldl1 (</>) ls
 --------------------------------------------------------------------------------
 
 -- | Build a single benchmark in a single configuration.
--- compileOne :: Benchmark2 -> [ParamSetting] -> BenchM (RunFlags -> CommandDescr)
 compileOne :: (Int,Int) -> Benchmark2 DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
 compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
   Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
@@ -396,7 +395,8 @@ compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
   --           }
   --     in return runner
   --   RunInPlace fn -> return fn
-
+  ----------------------------------------------------------
+  
 {-
      if e then do 
 	 log "Compiling with a single GHC command: "

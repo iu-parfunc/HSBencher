@@ -42,6 +42,7 @@ copyright:           (c) Ryan Newton 2013
 category:            Development
 build-type:          Simple
 cabal-version:       >=1.10
+extra-source-files:  README.md
 
 Flag fusion
   description:
