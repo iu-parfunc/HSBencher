@@ -449,8 +449,8 @@ runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do
 -- <FINISHME>
   let iterNum    = 999
       totalIters = 999
-      numthreads = 1
-      sched = "FIXME - finish runOne refactoring"
+      numthreads = 99
+      sched = "FIXME_finish_runOne_refactoring"
 -- </FINISHME>
       
   let runFlags = toRunFlags runconfig
@@ -468,14 +468,14 @@ runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do
 --       "  threads "++show numthreads++" (Env="++show envVars++")"
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
-  log$ "(In directory "++ pwd ++")"
+  logT$ "(In directory "++ pwd ++")"
 
-  log$ "Next run 'who', reporting users other than the current user.  This may help with detectivework."
+  logT$ "Next run 'who', reporting users other than the current user.  This may help with detectivework."
 --  whos <- lift$ run "who | awk '{ print $1 }' | grep -v $USER"
   whos <- lift$ runLines$ "who"
   let whos' = map ((\ (h:_)->h) . words) whos
   user <- lift$ getEnv "USER"
-  log$ "Who_Output: "++ unwords (filter (/= user) whos')
+  logT$ "Who_Output: "++ unwords (filter (/= user) whos')
 
   -- If numthreads == 0, that indicates a serial run:
   let 
@@ -489,21 +489,21 @@ runOne bldid bldres Benchmark2{target=testPath, cmdargs=args_} runconfig = do
   -- (One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.)
   nruns <- forM [1..trials] $ \ i -> do 
-    log$ printf "Running trial %d of %d" i trials
+    logT$ printf "Running trial %d of %d" i trials
     let cmdArgs = args++["+RTS"]++words rts++["-RTS"]
     log "------------------------------------------------------------"    
     case bldres of
       StandAloneBinary binpath -> do
-        log$ " Executing command: " ++ binpath
+        log$ " Executing command: " ++ binpath++" "++unwords args_
         SubProcess {wait,process_out,process_err} <-
           lift$ measureProcess
-                  CommandDescr{ command=RawCommand binpath [], envVars, timeout=Just defaultTimeout, workingDir=Nothing }
+                  CommandDescr{ command=RawCommand binpath args_, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
         err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
         both <- lift$ Strm.concurrentMerge [process_out, err2]
         mv <- echoStream (not shortrun) both
         lift$ takeMVar mv
         x <- lift wait
-        log "Run finished!"
+        logT "Run finished!"
         return x
 --        error$ "FINISHME - runone "++ show runres
      --------------------------------------------------
