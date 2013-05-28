@@ -118,9 +118,9 @@ usageStr = unlines $
    "\n ENV VARS:",
    "   These environment variables control the behavior of the benchmark script:",
    "",
+#ifndef DISABLED
    "     SHORTRUN=1 to get a shorter run for testing rather than benchmarking.",
    "",
-#ifndef DISABLED
    "     THREADS=\"1 2 4\" to run with # threads = 1, 2, or 4.",
    "",
    "     BENCHLIST=foo.txt to select the benchmarks and their arguments",
@@ -229,7 +229,6 @@ getConfig cmd_line_options benches = do
 		  Just  s -> s
       logFile = "bench_" ++ hostname ++ ".log"
       resultsFile = "results_" ++ hostname ++ ".dat"      
-      shortrun = strBool (get "SHORTRUN"  "0")
 
   case get "GENERIC" "" of 
     "" -> return ()
@@ -255,8 +254,9 @@ getConfig cmd_line_options benches = do
       --         []    -> 0
       -- This is our starting point BEFORE processing command line flags:
       base_conf = Config 
-           { hostname, startTime, shortrun
-           , benchsetName = Nothing
+           { hostname, startTime
+           , shortrun       = False
+           , benchsetName   = Nothing
 	   , trials         = read$ get "TRIALS"    "1"
            , pathRegistry   = M.empty
 --	   , benchlist      = parseBenchList benchstr
@@ -294,6 +294,8 @@ getConfig cmd_line_options benches = do
 #endif
       doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
       doFlag (GHCPath   p) r = r { pathRegistry= M.insert "ghc"   p (pathRegistry r) }
+
+      doFlag ShortRun r = r { shortrun= True }
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r
@@ -458,7 +460,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
         doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
       RunInPlace fn -> do
         log$ " Executing in-place benchmark run."
-        let cmd = fn runFlags
+        let cmd = fn fullargs
         log$ " Generated in-place run command: "++show cmd
         doMeasure cmd
 
@@ -676,8 +678,8 @@ printBenchrunHeader = do
 data Flag = ParBench 
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
-          | CabalPath String
-          | GHCPath String
+          | ShortRun
+          | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion
 #ifdef FUSION_TABLES
           | FusionTables (Maybe TableId)
@@ -698,9 +700,11 @@ core_cli_options =
 #endif        
         Option [] ["no-recomp"] (NoArg NoRecomp)
         "Don't perform any compilation of benchmark executables.  Implies -no-clean."
-#ifndef DISABLED 
       , Option [] ["no-clean"] (NoArg NoClean)
         "Do not clean pre-existing executables before beginning."
+      , Option [] ["shortrun"] (NoArg ShortRun)
+        "Elide command line args to benchmarks to perform a testing rather than benchmarking run."
+#ifndef DISABLED 
       , Option [] ["no-cabal"] (NoArg NoCabal)
         "A shortcut to remove Cabal from the BuildMethods"
 #endif
@@ -976,8 +980,9 @@ hsbencher_tag = " [hsbencher] "
 -- numeric arguments be supplied.)
 -- 
 shortArgs :: [String] -> [String]
-shortArgs [] = []
+shortArgs _ls = []
 
+-- shortArgs [] = []
 -- DISABLING:
 -- HOWEVER: there's a further hack here which is that leading
 -- non-numeric arguments are considered qualitative (e.g. "monad" vs
