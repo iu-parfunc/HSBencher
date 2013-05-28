@@ -44,7 +44,12 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 extra-source-files:  README.md
---                   example/Makefile example/README example/benchlist.txt example/example.hs
+                     example/make_and_ghc/runit.sh
+                     example/make_and_ghc/benchmark.hs
+                     example/make_and_ghc/bench1/Makefile
+                     example/make_and_ghc/bench1/hello.c
+                     example/make_and_ghc/bench2/Hello.hs
+
 
 Flag fusion
   description:
