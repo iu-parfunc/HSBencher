@@ -20,6 +20,13 @@ end user obey the following conventions:
 
  * Coming soon -- compile time timing and multi-phase timing (e.g. for Accelerate) 
 
+ * "shortrun" -- all benchmarks should run and do SOMETHING even if
+   given no runtime arguments.  The convention is for quick tests
+   (correctness, not performance) to run in this way.  HSBencher
+   supports a `--shortrun` mode that enables this.  Note that it still
+   passes in environment variables and "parameters", it elides only
+   the `cmdargs` field of the `Benchmark` record.
+
 Benchmarks using the builtin 'make' BuildMethod
 -----------------------------------------------
 

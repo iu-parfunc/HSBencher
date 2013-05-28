@@ -8,14 +8,13 @@ module HSBencher.Types
          BuildResult(..), BuildMethod(..),
          
          -- * Benchmark configuration spaces
-         Benchmark(..), BenchRun(..),
          Benchmark2(..), BenchSpace(..), ParamSetting(..),
          enumerateBenchSpace, compileOptsOnly, toCompileFlags, toRunFlags, toEnvVars,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
          
          -- * HSBench Driver Configuration
-         Config(..), BenchM, Sched(..),
+         Config(..), BenchM, 
 
          -- * Subprocesses and system commands
          CommandDescr(..), RunResult(..), SubProcess(..)
@@ -25,6 +24,7 @@ module HSBencher.Types
 import Control.Monad.Reader
 import Data.Char
 import Data.List
+import qualified Data.Map as M
 import Data.Maybe (catMaybes)
 import Control.Monad (filterM)
 import System.FilePath
@@ -48,6 +48,9 @@ import Network.Google.FusionTables (TableId)
 
 type RunFlags     = [String]
 type CompileFlags = [String]
+
+-- | Maps canonical command names, e.g. 'ghc', to absolute system paths.
+type PathRegistry = M.Map String String
 
 -- | A description of a set of files.  The description may take one of multiple
 -- forms.
@@ -116,7 +119,8 @@ data BuildMethod =
   , canBuild    :: FilePredicate  -- ^ Can this method build a given file/directory?
   , concurrentBuild :: Bool -- ^ More than one build can happen at once.  This
                             -- implies that compile always returns StandAloneBinary.
-  , compile :: BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
+  , compile :: -- PathRegistry ->
+     BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
   }
 
 instance Show BuildMethod where
@@ -140,18 +144,13 @@ data Config = Config
  , trials         :: Int    -- ^ number of runs of each configuration
  , shortrun       :: Bool
  , keepgoing      :: Bool   -- ^ keep going after error
- , ghc            :: String -- ^ ghc compiler path
- , cabalPath      :: String   
- , ghc_pkg        :: String
- , ghc_flags      :: String
- , ghc_RTS        :: String -- ^ +RTS flags
- , scheds         :: Set.Set Sched -- ^ subset of schedulers to test.
+ , paths          :: PathRegistry -- ^ Paths to executables.
  , hostname       :: String
  , startTime      :: Integer -- ^ Seconds since Epoch. 
  , resultsFile    :: String -- ^ Where to put timing results.
  , logFile        :: String -- ^ Where to put more verbose testing output.
 
- , gitInfo        :: (String,String,Int)
+ , gitInfo        :: (String,String,Int) -- ^ Branch, revision hash, depth.
 
  , buildMethods   :: [BuildMethod] -- ^ Starts with cabal/make/ghc, can be extended by user.
    
@@ -178,29 +177,6 @@ instance Show (Strm.OutputStream a) where
 ----------------------------------------------------------------------------------------------------
 -- Configuration Spaces
 ----------------------------------------------------------------------------------------------------
-
--- Represents a configuration of an individual run.
---  (number of
--- threads, other flags, etc):
-data BenchRun = BenchRun
- { threads :: Int
- , sched   :: Sched 
- , bench   :: Benchmark
- , env     :: [(String, String)] -- ADDITIONAL bindings for the environment
- } deriving (Eq, Show, Ord)
-
-data Benchmark = Benchmark
- { name :: String
- , compatScheds :: [Sched]
- , args :: [String]
- } deriving (Eq, Show, Ord)
-
--- TEMP: Remove this:
-data Sched 
-   = Trace | Direct | Sparks | ContFree | SMP | NUMA
-   | None
- deriving (Eq, Show, Read, Ord, Enum, Bounded, Generic)
-
 
 -- type BenchFile = [BenchStmt]
 
@@ -350,10 +326,7 @@ data SubProcess =
   , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
   }
 
-
-
 instance Out ParamSetting
-instance Out Sched
 instance Out FilePredicate
 instance Out DefaultParamMeaning
 instance Out a => Out (BenchSpace a)

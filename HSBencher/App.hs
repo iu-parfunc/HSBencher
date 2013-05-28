@@ -7,7 +7,9 @@
 --   benchmark.run: bench_hive.log: openFile: resource busy (file is locked)
 
 --------------------------------------------------------------------------------
- 
+
+-- Disabling some stuff until we can bring it back up after the big transition [2013.05.28]:
+#define DISABLED
 
 {- |
    
@@ -118,11 +120,8 @@ usageStr = unlines $
    "",
    "     SHORTRUN=1 to get a shorter run for testing rather than benchmarking.",
    "",
+#ifndef DISABLED
    "     THREADS=\"1 2 4\" to run with # threads = 1, 2, or 4.",
-   "",
-   "     KEEPGOING=1 to keep going after the first error.",
-   "",
-   "     TRIALS=N to control the number of times each benchmark is run.",
    "",
    "     BENCHLIST=foo.txt to select the benchmarks and their arguments",
    "               (uses benchlist.txt by default)",
@@ -132,11 +131,17 @@ usageStr = unlines $
    "     GENERIC=1 to go through the generic (type class) monad par",
    "               interface instead of using each scheduler directly",
    "",
+#endif
+   "     KEEPGOING=1 to keep going after the first error.",
+   "",
+   "     TRIALS=N to control the number of times each benchmark is run.",
+   "",
 #ifdef FUSION_TABLES   
    "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
    "               client ID and secret can be provided by env vars OR command line options. ",
 #endif
    " ",
+#ifndef DISABLED
    "     ENVS='[[(\"KEY1\", \"VALUE1\")], [(\"KEY1\", \"VALUE2\")]]' to set",
    "     different configurations of environment variables to be set *at",
    "     runtime*. Useful for NUMA_TOPOLOGY, for example.  Note that this",
@@ -147,7 +152,11 @@ usageStr = unlines $
    "   environment variables $GHC_FLAGS and $GHC_RTS.  It will also use",
    "   $GHC or $CABAL, if available, to select the executable paths.", 
    "   ",
-   "   Command line arguments take precedence over environment variables, if both apply."
+#endif
+   "   Command line arguments take precedence over environment variables, if both apply.",
+   "   ",   
+   "   Many of these options can redundantly be set either when the benchmark driver is run,",
+   "   or in the benchmark descriptions themselves.  E.g. --with-ghc is just for convenience."
  ]
 
 ----------------------------------------------------------------------------------------------------
@@ -165,8 +174,8 @@ exedir = "./bin"
 -- | Fill in "static" fields of a FusionTable row based on the `Config` data.
 augmentTupleWithConfig :: Config -> [(String,String)] -> IO [(String,String)]
 augmentTupleWithConfig Config{..} base = do
-  ghcVer <- runSL$ ghc ++ " -V"
-  let ghcVer' = collapsePrefix "The Glorious Glasgow Haskell Compilation System," "GHC" ghcVer
+  -- ghcVer <- runSL$ ghc ++ " -V"
+  -- let ghcVer' = collapsePrefix "The Glorious Glasgow Haskell Compilation System," "GHC" ghcVer
   datetime <- getCurrentTime
   uname    <- runSL "uname -a"
   lspci    <- runLines "lspci"
@@ -174,9 +183,9 @@ augmentTupleWithConfig Config{..} base = do
   let runID = (hostname ++ "_" ++ show startTime)
   let (branch,revision,depth) = gitInfo
   return $ 
-    addit "COMPILER"       ghcVer'   $
-    addit "COMPILE_FLAGS"  ghc_flags $
-    addit "RUNTIME_FLAGS"  ghc_RTS   $
+  --  addit "COMPILER"       ghcVer'   $
+    -- addit "COMPILE_FLAGS"  ghc_flags $
+    -- addit "RUNTIME_FLAGS"  ghc_RTS   $
     addit "HOSTNAME"       hostname $
     addit "RUNID"          runID $ 
     addit "DATETIME"       (show datetime) $
@@ -221,9 +230,6 @@ getConfig cmd_line_options benches = do
       logFile = "bench_" ++ hostname ++ ".log"
       resultsFile = "results_" ++ hostname ++ ".dat"      
       shortrun = strBool (get "SHORTRUN"  "0")
-  let scheds = case get "SCHEDS" "" of 
-		"" -> defaultSchedSet
-		s  -> Set.fromList (map read (words s))
 
   case get "GENERIC" "" of 
     "" -> return ()
@@ -249,15 +255,10 @@ getConfig cmd_line_options benches = do
       --         []    -> 0
       -- This is our starting point BEFORE processing command line flags:
       base_conf = Config 
-           { hostname, startTime, scheds, shortrun
+           { hostname, startTime, shortrun
            , benchsetName = Nothing
-	   , ghc        =       get "GHC"       "ghc"
-	   , cabalPath  =       get "CABAL"     "cabal"
-           , ghc_pkg    =       get "GHC_PKG"   "ghc-pkg"
-	   , ghc_RTS    =       get "GHC_RTS"   ("-qa " ++ gc_stats_flag) -- Default RTS flags.
-  	   , ghc_flags  = (get "GHC_FLAGS" (if shortrun then "" else "-O2"))
-	                  ++ " -rtsopts" -- Always turn on rts opts.
 	   , trials         = read$ get "TRIALS"    "1"
+           , paths = M.empty
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
            , benchlist      = benches
@@ -291,8 +292,8 @@ getConfig cmd_line_options benches = do
            Just tid -> r2 { fusionTableID = Just tid }
            Nothing -> r2
 #endif
-      doFlag (CabalPath p) r = r { cabalPath=p }
-      doFlag (GHCPath   p) r = r { ghc=p }
+      doFlag (CabalPath p) r = r { paths= M.insert "cabal" p (paths r) }
+      doFlag (GHCPath   p) r = r { paths= M.insert "ghc"   p (paths r) }
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r
@@ -356,7 +357,7 @@ path ls = foldl1 (</>) ls
 -- | Build a single benchmark in a single configuration.
 compileOne :: (Int,Int) -> Benchmark2 DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
 compileOne (iterNum,totalIters) Benchmark2{target=testPath,cmdargs} cconf = do
-  Config{ghc, ghc_flags, shortrun, resultsOut, stdOut, buildMethods} <- ask
+  Config{shortrun, resultsOut, stdOut, buildMethods} <- ask
 
   let (diroffset,testRoot) = splitFileName testPath
       flags = toCompileFlags cconf
@@ -651,7 +652,7 @@ whichVariant _                      = "unknown"
 -- | Write the results header out stdout and to disk.
 printBenchrunHeader :: BenchM ()
 printBenchrunHeader = do
-  Config{ghc, trials, ghc_flags, ghc_RTS, maxthreads,
+  Config{trials, maxthreads, paths, 
          logOut, resultsOut, stdOut, benchversion, shortrun, gitInfo=(branch,revision,depth) } <- ask
   liftIO $ do   
 --    let (benchfile, ver) = benchversion
@@ -662,11 +663,8 @@ printBenchrunHeader = do
              , e$ "# `uname -a`" 
              , e$ "# Ran by: `whoami` " 
              , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
-             , e$ "# `"++ghc++" -V`" 
              , e$ "# "                                                                
              , e$ "# Running each test for "++show trials++" trial(s)."
-             , e$ "#  ... with compiler options: " ++ ghc_flags
-             , e$ "#  ... with runtime options: " ++ ghc_RTS
 --             , e$ "# Benchmarks_File: " ++ benchfile
 --             , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
 --             , e$ "# Benchmarks_Version: " ++ show ver
@@ -678,12 +676,12 @@ printBenchrunHeader = do
              , e$ "#  ENV THREADS=   $THREADS"
              , e$ "#  ENV TRIALS=    $TRIALS"
              , e$ "#  ENV SHORTRUN=  $SHORTRUN"
-             , e$ "#  ENV SCHEDS=    $SCHEDS"
              , e$ "#  ENV KEEPGOING= $KEEPGOING"
              , e$ "#  ENV GHC=       $GHC"
              , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
              , e$ "#  ENV GHC_RTS=   $GHC_RTS"
              , e$ "#  ENV ENVS=      $ENVS"
+             , e$ "#  Path registry: "++show paths
              ]
     ls' <- sequence ls
     forM_ ls' $ \line -> do
@@ -724,19 +722,23 @@ data Flag = ParBench
 core_cli_options :: (String, [OptDescr Flag])
 core_cli_options = 
      ("\n Command Line Options:",
-      [ Option ['p'] ["par"] (NoArg ParBench) 
+      [
+#ifndef DISABLED        
+        Option ['p'] ["par"] (NoArg ParBench) 
         "Build benchmarks in parallel (run in parallel too if SHORTRUN=1)."
-      , Option [] ["no-recomp"] (NoArg NoRecomp)
+#endif        
+        Option [] ["no-recomp"] (NoArg NoRecomp)
         "Don't perform any compilation of benchmark executables.  Implies -no-clean."
+#ifndef DISABLED 
       , Option [] ["no-clean"] (NoArg NoClean)
         "Do not clean pre-existing executables before beginning."
       , Option [] ["no-cabal"] (NoArg NoCabal)
-        "Build directly through GHC even if .cabal file is present."
-
+        "A shortcut to remove Cabal from the BuildMethods"
+#endif
       , Option [] ["with-cabal-install"] (ReqArg CabalPath "PATH")
-        "Set the version of cabal-install to use, default 'cabal'."
+        "Set the version of cabal-install to use for the cabal BuildMethod."
       , Option [] ["with-ghc"] (ReqArg GHCPath "PATH")
-        "Set the path of the ghc compiler, default 'ghc'."
+        "Set the path of the ghc compiler for the ghc BuildMethod."
 
       , Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
@@ -796,7 +798,7 @@ defaultMainWithBechmarks benches = do
     putStrLn$ usageStr
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
-  conf@Config{scheds,envs,benchlist,stdOut,threadsettings} <- getConfig options benches
+  conf@Config{envs,benchlist,stdOut,threadsettings} <- getConfig options benches
         
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
