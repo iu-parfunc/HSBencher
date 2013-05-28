@@ -115,6 +115,9 @@ import Paths_hsbencher (version) -- Thanks, cabal!
 usageStr :: String
 usageStr = unlines $
  [
+   "   ",         
+   " Many of these options can redundantly be set either when the benchmark driver is run,",
+   " or in the benchmark descriptions themselves.  E.g. --with-ghc is just for convenience.",
    "\n ENV VARS:",
    "   These environment variables control the behavior of the benchmark script:",
    "",
@@ -131,11 +134,11 @@ usageStr = unlines $
    "     GENERIC=1 to go through the generic (type class) monad par",
    "               interface instead of using each scheduler directly",
    "",
-#endif
    "     KEEPGOING=1 to keep going after the first error.",
    "",
    "     TRIALS=N to control the number of times each benchmark is run.",
    "",
+#endif
 #ifdef FUSION_TABLES   
    "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
    "               client ID and secret can be provided by env vars OR command line options. ",
@@ -153,10 +156,7 @@ usageStr = unlines $
    "   $GHC or $CABAL, if available, to select the executable paths.", 
    "   ",
 #endif
-   "   Command line arguments take precedence over environment variables, if both apply.",
-   "   ",   
-   "   Many of these options can redundantly be set either when the benchmark driver is run,",
-   "   or in the benchmark descriptions themselves.  E.g. --with-ghc is just for convenience."
+   "   Command line arguments take precedence over environment variables, if both apply."
  ]
 
 ----------------------------------------------------------------------------------------------------
@@ -258,7 +258,8 @@ getConfig cmd_line_options benches = do
            , shortrun       = False
            , doClean        = True
            , benchsetName   = Nothing
-	   , trials         = read$ get "TRIALS"    "1"
+--	   , trials         = read$ get "TRIALS"    "1"
+	   , trials         = 1
            , pathRegistry   = M.empty
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
@@ -266,7 +267,7 @@ getConfig cmd_line_options benches = do
 	   , benchversion   = ("",0)
 	   , maxthreads     = maxthreads
 	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
-	   , keepgoing      = strBool (get "KEEPGOING" "0")
+	   , keepgoing      = False
 	   , resultsFile, logFile, logOut, resultsOut, stdOut         
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
@@ -296,7 +297,12 @@ getConfig cmd_line_options benches = do
       doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
       doFlag (GHCPath   p) r = r { pathRegistry= M.insert "ghc"   p (pathRegistry r) }
 
-      doFlag ShortRun r = r { shortrun= True }
+      doFlag ShortRun  r = r { shortrun= True }
+      doFlag KeepGoing r = r { keepgoing= True }
+      doFlag (NumTrials s) r = r { trials=
+                                    case reads s of
+                                      (n,_):_ -> n
+                                      [] -> error$ "--trials given bad argument: "++s }
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r
@@ -644,16 +650,16 @@ printBenchrunHeader = do
              , e$ "# Git_Branch: " ++ branch
              , e$ "# Git_Hash: "   ++ revision
              , e$ "# Git_Depth: "  ++ show depth
-             , e$ "# Using the following settings from environment variables:" 
-             , e$ "#  ENV BENCHLIST=$BENCHLIST"
-             , e$ "#  ENV THREADS=   $THREADS"
-             , e$ "#  ENV TRIALS=    $TRIALS"
-             , e$ "#  ENV SHORTRUN=  $SHORTRUN"
-             , e$ "#  ENV KEEPGOING= $KEEPGOING"
-             , e$ "#  ENV GHC=       $GHC"
-             , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
-             , e$ "#  ENV GHC_RTS=   $GHC_RTS"
-             , e$ "#  ENV ENVS=      $ENVS"
+             -- , e$ "# Using the following settings from environment variables:" 
+             -- , e$ "#  ENV BENCHLIST=$BENCHLIST"
+             -- , e$ "#  ENV THREADS=   $THREADS"
+             -- , e$ "#  ENV TRIALS=    $TRIALS"
+             -- , e$ "#  ENV SHORTRUN=  $SHORTRUN"
+             -- , e$ "#  ENV KEEPGOING= $KEEPGOING"
+             -- , e$ "#  ENV GHC=       $GHC"
+             -- , e$ "#  ENV GHC_FLAGS= $GHC_FLAGS"
+             -- , e$ "#  ENV GHC_RTS=   $GHC_RTS"
+             -- , e$ "#  ENV ENVS=      $ENVS"
              , e$ "#  Path registry: "++show pathRegistry
              ]
     ls' <- sequence ls
@@ -680,7 +686,7 @@ printBenchrunHeader = do
 data Flag = ParBench 
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
-          | ShortRun
+          | ShortRun | KeepGoing | NumTrials String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion
 #ifdef FUSION_TABLES
@@ -706,6 +712,8 @@ core_cli_options =
         "Do not clean pre-existing executables before beginning."
       , Option [] ["shortrun"] (NoArg ShortRun)
         "Elide command line args to benchmarks to perform a testing rather than benchmarking run."
+      , Option ['k'] ["keepgoing"] (NoArg KeepGoing)
+        "Keep executing even after a build or run fails."
 #ifndef DISABLED 
       , Option [] ["no-cabal"] (NoArg NoCabal)
         "A shortcut to remove Cabal from the BuildMethods"
@@ -715,6 +723,8 @@ core_cli_options =
       , Option [] ["with-ghc"] (ReqArg GHCPath "PATH")
         "Set the path of the ghc compiler for the ghc BuildMethod."
 
+      , Option [] ["trials"] (ReqArg NumTrials "NUM")
+        "The number of times to run each benchmark."
       , Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
 
