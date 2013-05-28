@@ -2,7 +2,7 @@
 
 import HSBencher
 import qualified Data.Map as M
-import System.Environment (getEnvironment, getExecutablePath)
+import System.Environment (getEnvironment)
 import System.Directory   (setCurrentDirectory, getDirectoryContents, getCurrentDirectory)
 import System.IO.Unsafe   (unsafePerformIO)
 import GHC.Conc           (getNumProcessors)
