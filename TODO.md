@@ -2,8 +2,6 @@
 
 [2013.05.27] .. [2013.05.28]
 
- * Handle multiple configs for in-place build
-
  * On mac OS the productivities look like they're being read back in wrong.
  * prune suffixes, while retaining uniqueness
  
