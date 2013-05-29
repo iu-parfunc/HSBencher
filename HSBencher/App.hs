@@ -390,7 +390,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
 
   let pathR = (M.union (M.fromList paths) pathRegistry)
   
-  when doClean $ clean pathR testPath
+  when doClean $ clean pathR bldid testPath
 
   -- Prefer the benchmark-local path definitions:
   x <- compile pathR bldid flags testPath
@@ -464,12 +464,12 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
       StandAloneBinary binpath -> do
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
         let command = binpath++" "++unwords fullargs 
-        log$ " Executing command: " ++ command
+        logT$ " Executing command: " ++ command
         doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
       RunInPlace fn -> do
-        log$ " Executing in-place benchmark run."
+--        logT$ " Executing in-place benchmark run."
         let cmd = fn fullargs
-        log$ " Generated in-place run command: "++show cmd
+        logT$ " Generated in-place run command: "++show cmd
         doMeasure cmd
 
   ------------------------------------------
@@ -880,24 +880,44 @@ defaultMainWithBechmarks benches = do
               -- Here we lazily compile benchmarks as they become required by run configurations.
               runloop :: Int 
                       -> M.Map BuildID (Int, Maybe BuildResult)
+                      -> M.Map FilePath BuildID -- (S.Set ParamSetting)
                       -> [(Benchmark DefaultParamMeaning, [(DefaultParamMeaning,ParamSetting)])]
                       -> BenchM ()
-              runloop _ _ [] = return ()
-              runloop !iter !board (nextrun:rest) = do
+              runloop _ _ _ [] = return ()
+              runloop !iter !board !lastConfigured (nextrun:rest) = do
+                -- lastConfigured keeps track of what configuration was last built in
+                -- a directory that is used for `RunInPlace` builds.
                 let (bench,params) = nextrun
                     ccflags = toCompileFlags params
                     bid = makeBuildID ccflags
                 case M.lookup bid board of 
                   Nothing -> error$ "HSBencher: Internal error: Cannot find entry in map for build ID: "++show bid
                   Just (ccnum, Nothing) -> do 
-                    res <- compileOne (ccnum,totalcomps) bench params
+                    res  <- compileOne (ccnum,totalcomps) bench params                    
                     let board' = M.insert bid (ccnum, Just res) board
-                    runloop iter board' (nextrun:rest)
-                  Just (ccnum, Just bldres) -> do
-                    runOne (iter,totalruns) bid bldres bench params
-                    runloop (iter+1) board rest
+                        lastC' = M.insert (target bench) bid lastConfigured
 
-              -- TODO: Populate
+                    -- runloop iter board' (nextrun:rest)
+                    runOne (iter,totalruns) bid res bench params
+                    runloop (iter+1) board' lastC' rest
+
+                  Just (ccnum, Just bldres) -> 
+                    let proceed = do runOne (iter,totalruns) bid bldres bench params
+                                     runloop (iter+1) board lastConfigured rest 
+                    in
+                    case bldres of 
+                      StandAloneBinary _ -> proceed
+                      RunInPlace _ -> 
+                        -- Here we know that some previous compile with the same BuildID inserted this here.
+                        -- But the relevant question is whether some other config has stomped on it in the meantime.
+                        case M.lookup (target bench) lastConfigured of 
+                          Nothing -> error$"HSBencher: Internal error, RunInPlace in the board but not lastConfigured!: "++(target bench)
+                          Just bid2 ->
+                           if bid == bid2 
+                           then do logT$ "Skipping rebuild of in-place benchmark: "++bid
+                                   proceed 
+                           else runloop iter (M.insert bid (ccnum,Nothing) board) lastConfigured (nextrun:rest)
+
               initBoard _ [] acc = acc 
               initBoard !iter ((bench,params):rest) acc = 
                 let bid = makeBuildID $ toCompileFlags params 
@@ -915,7 +935,7 @@ defaultMainWithBechmarks benches = do
               zippedruns = (concat$ zipWith (\ b cfs -> map (b,) cfs) benches allruns)
 
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
-          runloop 1 (initBoard 1 zippedruns M.empty) zippedruns
+          runloop 1 (initBoard 1 zippedruns M.empty) M.empty zippedruns
 
 {-
         do Config{logOut, resultsOut, stdOut} <- ask

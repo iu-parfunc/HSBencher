@@ -244,7 +244,6 @@ getCPULoad = do
 -- | A more persistent version of `takeBaseName`.
 fetchBaseName :: FilePath -> FilePath
 fetchBaseName path =
-  trace ("base name of "++path) $ 
   takeBaseName $ dropTrailingPathSeparator path
   -- trybase  = takeBaseName (target bench)
   --            if trybase == ""

@@ -19,12 +19,22 @@ main = do
   defaultMainWithBechmarks benches
 
 benches =
-  [ Benchmark "bench1/"          ["unused_cmdline_arg"] none         
-  , Benchmark "bench2/Hello.hs"  []                     withthreads  
+  [ Benchmark "bench1/"          ["unused_cmdline_arg"] envExample
+--  , Benchmark "bench2/Hello.hs"  []                     withthreads  
   ]
 
 -- No benchmark configuration space.
 none = And []
+
+envExample =
+  Or [ And [ Set NoMeaning   (CompileParam "-DNOTHREADING")
+           , Set (Threads 1) (RuntimeEnv "CILK_NPROCS" "1") ]
+     , And [ Set NoMeaning   (CompileParam "-DTHREADING")
+           , Or [ Set (Threads 3) (RuntimeEnv "CILK_NPROCS" "3")
+                , Set (Threads 4) (RuntimeEnv "CILK_NPROCS" "4")
+                ]
+           ]
+     ]
 
 withthreads = defaultHSSettings$
               varyThreads none

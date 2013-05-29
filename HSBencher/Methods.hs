@@ -37,7 +37,7 @@ makeMethod = BuildMethod
                InDirectoryWithExactlyOne (IsExactly "Makefile")
   , concurrentBuild = False
   , setThreads      = Nothing
-  , clean = \ pathMap target -> do
+  , clean = \ pathMap _ target -> do
      doMake pathMap target $ \ makePath -> do
        _ <- runSuccessful subtag (makePath++" clean")
        return ()
@@ -75,8 +75,11 @@ ghcMethod = BuildMethod
   , setThreads = Just $ \ n -> [ CompileParam "-threaded -rtsopts"
                                , RuntimeParam ("+RTS -N"++ show n++" -RTS")]
   -- , needsInPlace = False
-  , clean = \ pathMap target -> do
-     return ()                      
+  , clean = \ pathMap bldid target -> do
+     let buildD = "buildoutput_" ++ bldid
+     liftIO$ do b <- doesDirectoryExist buildD
+                when b$ removeDirectoryRecursive buildD
+     return ()
   , compile = \ pathMap bldid flags target -> do
      let dir  = takeDirectory target
          file = takeBaseName target
@@ -106,7 +109,7 @@ cabalMethod = BuildMethod
   , concurrentBuild = True
   , setThreads = Just $ \ n -> [ CompileParam "--ghc-option='-threaded' --ghc-option='-rtsopts'"
                                , RuntimeParam ("+RTS -N"++ show n++" -RTS")]
-  , clean = \ pathMap target -> do
+  , clean = \ pathMap _ target -> do
      return ()
   , compile = \ pathMap bldid flags target -> do
      let suffix = "_"++bldid
