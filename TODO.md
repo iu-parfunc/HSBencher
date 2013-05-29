@@ -2,6 +2,8 @@
 
 [2013.05.27] .. [2013.05.28]
 
+ * BUG: Env vars aren't getting through with the Make method.
+
  * On mac OS the productivities look like they're being read back in wrong.
  * prune suffixes, while retaining uniqueness
  
@@ -18,7 +20,5 @@ Longer term:
  
  ? move over to bytestring IO completely
  
- 
-
- 
- 
+ * Further enable packing up a benchmark set to run on a machine
+   without GHC (as with Haskell Cnc).

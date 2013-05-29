@@ -11,36 +11,7 @@
 -- Disabling some stuff until we can bring it back up after the big transition [2013.05.28]:
 #define DISABLED
 
-{- |
-   
-This program runs a set of benchmarks contained in the current
-directory.  It produces two files as output:
-
-    results_HOSTNAME.dat
-    bench_HOSTNAME.log
-
-
-            ASSUMPTIONS -- about directory and file organization
-            ----------------------------------------------------
-
-This benchmark harness can run either cabalized benchmarks, or
-straight .hs files buildable by "ghc --make".
-
-
-   
----------------------------------------------------------------------------
-                                << TODO >>
- ---------------------------------------------------------------------------
-
- * Replace environment variable argument passing with proper flags/getopt.
-
-   <Things that worked at one time but need to be cleaned up:>
-     
-     * Further enable packing up a benchmark set to run on a machine
-       without GHC (as with Haskell Cnc)
-     
-     * Clusterbench -- adding an additional layer of parameter variation.
-
+{- | The Main module defining the HSBencher driver.
 -}
 
 module HSBencher.App (defaultMainWithBechmarks, Flag(..), all_cli_options) where 

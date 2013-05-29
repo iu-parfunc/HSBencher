@@ -10,7 +10,7 @@ description: Benchmark frameworks are usually very specific to the
   host language/environment.  Hence they are usually about as reusable
   as compiler passes (that is, not).
  .
-  Nevertheless, hsbencher is an attempt at a reusable benchmark
+  Nevertheless, `hsbencher` is an attempt at a reusable benchmark
   framework.  It knows fairly little about what the benchmarks do, and
   is mostly concerned with defining and iterating through
   configuration spaces (e.g. varying the number of threads), and
@@ -20,9 +20,9 @@ description: Benchmark frameworks are usually very specific to the
   uploaded to Google Fusion Tables.
   -- TODO: Describe clusterbench functionality when it's ready.
  .
-  hsbencher attempts to stradle the divide between language-specific
+  `hsbencher` attempts to stradle the divide between language-specific
   and language-agnostic by having an extensible set of `BuildMethod`s.
-  As shipped, hsbencher knows a little about cabal, ghc, and less
+  As shipped, `hsbencher` knows a little about cabal, ghc, and less
   about Make, but it can be taught more.
  .
   The general philosophy is to have benchmarks follow a simple
@@ -31,7 +31,26 @@ description: Benchmark frameworks are usually very specific to the
   run long enough to run in their own process.  This is typical of
   parallelism benchmarks and different than the fine grained
   benchmarks that are well supported by "Criterion".
-
+ .
+ .
+ `hsbencher` is used by creating a script or executable that imports `HSBencher` 
+  and provides a list of benchmarks, each of which is decorated with its 
+  parameter space.  Below is a minimal example that creates a two-configuration 
+  parameter space:
+ .
+ @
+ import HSBencher
+ main = defaultMainWithBechmarks
+ .      [ Benchmark "bench1/bench1.cabal" ["1000"] $
+ .        Or [ Set NoMeaning (RuntimeParam "+RTS -qa -RTS")
+ .            , Set NoMeaning (RuntimeEnv "HELLO" "yes") ] ]
+ @
+ .
+ The output would appear as in this gist:
+   <https://gist.github.com/rrnewton/5667800>
+ .
+ More examples can be found here:
+   <https://github.com/rrnewton/HSBencher/tree/master/example>
 
 license:             BSD3
 license-file:        LICENSE
