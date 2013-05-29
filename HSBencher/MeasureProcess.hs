@@ -8,16 +8,16 @@ module HSBencher.MeasureProcess
        (measureProcess)
        where
 
-import Data.IORef
-import System.Exit
-import System.Directory
-import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
-                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
 import qualified Control.Concurrent.Async as A
-
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Chan
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import Data.IORef
+import System.Exit
+import System.Directory
+import System.IO (hClose)
+import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
+                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
@@ -54,18 +54,12 @@ measureProcess CommandDescr{command, envVars, timeout, workingDir} = do
 
   -- Semantics of provided environment is to APPEND:
   curEnv <- getEnvironment
-  
   startTime <- getCurrentTime
   (_inp,out,err,pid) <-
     case command of
       RawCommand exeFile cmdArgs -> Strm.runInteractiveProcess exeFile cmdArgs Nothing (Just$ envVars++curEnv)
-      ShellCommand str           ->
-        case envVars of
-          [] -> Strm.runInteractiveCommand str
-          oth ->
-            -- I was going to try something here, but it's not threadsafe: [2013.05.27]
-            -- withEnv (envVars++curEnv) $            
-            error "FINISHME: measureProcess, given shell command, but don't know how to set environment for it yet."
+      ShellCommand str           -> runInteractiveCommandWithEnv str (envVars++curEnv)
+
   setCurrentDirectory origDir  -- Threadsafety!?!
   
   out'  <- Strm.map OutLine =<< Strm.lines out
@@ -207,16 +201,33 @@ reifyEOS ins =
                              return (Just Nothing)
                  | otherwise -> return Nothing
 
-
--- withEnv :: [(String,String)] -> IO a -> IO a
--- withEnv ls act = do
---   initEnv <- getEnvironment  
---   let loop [] = act
---       loop ((v,s):tl) = do
---         res <- loop tl 
---         case lookup v initEnv of
---           Nothing   -> return ()
---           Just orig -> setEnv.........
---         return res  
---   loop ls
-
+-- | Alternatioe to the io-streams version which does not allow setting the
+-- environment.
+runInteractiveCommandWithEnv :: String
+                      -> [(String,String)]
+                      -> IO (Strm.OutputStream B.ByteString,
+                             Strm.InputStream  B.ByteString,
+                             Strm.InputStream  B.ByteString,
+                             ProcessHandle)
+runInteractiveCommandWithEnv scmd env = do
+    (Just hin, Just hout, Just herr, ph) <- createProcess 
+       CreateProcess {
+         cmdspec = ShellCommand scmd,
+         env = Just env,
+         std_in  = CreatePipe,
+         std_out = CreatePipe,
+         std_err = CreatePipe,
+         cwd = Nothing,
+         close_fds = False,
+         create_group = False
+       }    
+    sIn  <- Strm.handleToOutputStream hin >>=
+            Strm.atEndOfOutput (hClose hin) >>=
+            Strm.lockingOutputStream
+    sOut <- Strm.handleToInputStream hout >>=
+            Strm.atEndOfInput (hClose hout) >>=
+            Strm.lockingInputStream
+    sErr <- Strm.handleToInputStream herr >>=
+            Strm.atEndOfInput (hClose herr) >>=
+            Strm.lockingInputStream
+    return (sIn, sOut, sErr, ph)
