@@ -2,8 +2,6 @@
 
 [2013.05.27] .. [2013.05.28]
 
- * BUG: Env vars aren't getting through with the Make method.
-
  * On mac OS the productivities look like they're being read back in wrong.
  * prune suffixes, while retaining uniqueness
  

@@ -46,12 +46,12 @@ makeMethod = BuildMethod
        absolute <- liftIO getCurrentDirectory
        _ <- runSuccessful subtag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'")
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
-       let runit args =
+       let runit args envVars =
              CommandDescr
              { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
              , timeout = Just 150  
              , workingDir = Just absolute
-             , envVars = []
+             , envVars
              }
        return (RunInPlace runit)
   }

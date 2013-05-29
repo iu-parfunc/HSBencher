@@ -439,7 +439,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
         doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
       RunInPlace fn -> do
 --        logT$ " Executing in-place benchmark run."
-        let cmd = fn fullargs
+        let cmd = fn fullargs envVars
         logT$ " Generated in-place run command: "++show cmd
         doMeasure cmd
 

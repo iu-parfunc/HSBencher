@@ -47,6 +47,7 @@ import Network.Google.FusionTables (TableId)
 -- Benchmark Build Methods
 ----------------------------------------------------------------------------------------------------
 
+type EnvVars      = [(String,String)]
 type RunFlags     = [String]
 type CompileFlags = [String]
 
@@ -101,13 +102,13 @@ filePredCheck pred path =
 -- | The result of doing a build.  Note that `compile` can will throw an exception if compilation fails.
 data BuildResult =
     StandAloneBinary FilePath -- ^ This binary can be copied and executed whenever.
-  | RunInPlace (RunFlags -> CommandDescr)
+  | RunInPlace (RunFlags -> EnvVars -> CommandDescr)
     -- ^ In this case the build return what you need to do the benchmark run, but the
     -- directory contents cannot be touched until after than run is finished.
 
 instance Show BuildResult where
   show (StandAloneBinary p) = "StandAloneBinary "++p
---  show (RunInPlace fn)      = "RunInPlace "++show (fn [])
+--  show (RunInPlace fn)      = "RunInPlace "++show (fn [] [])
   show (RunInPlace fn)      = "RunInPlace <fn>"
 
 -- | A completely encapsulated method of building benchmarks.  Cabal and Makefiles
