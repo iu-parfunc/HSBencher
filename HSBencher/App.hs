@@ -438,8 +438,8 @@ defaultMainModifyConfig modConfig = do
     putStrLn$ usageStr
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
-  conf0@Config{envs,benchlist,stdOut,threadsettings} <- getConfig options []
-  let conf1 = modConfig conf0
+  conf0 <- getConfig options []
+  let conf1@Config{envs,benchlist,stdOut,threadsettings} = modConfig conf0
 
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
