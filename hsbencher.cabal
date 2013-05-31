@@ -2,10 +2,10 @@
 name:                hsbencher
 version:             1.2
 -- CHANGELOG:
--- 1.0 : Initial release, new flexible benchmark format.
--- 1.1 : Change interface to RunInPlace
+-- 1.0   : Initial release, new flexible benchmark format.
+-- 1.1   : Change interface to RunInPlace
 -- 1.1.1 : add defaultMainModifyConfig
--- 1.2 : Significant interface changes.
+-- 1.2   : Significant interface changes.
 
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
