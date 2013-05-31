@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables #-}
 
 -- | Code pertaining to Google Fusion Table upload.
 --   Built conditionally based on the -ffusion flag.
@@ -11,13 +11,15 @@ module HSBencher.Fusion
        where
 
 import Control.Monad.Reader
+import Control.Concurrent (threadDelay)
+import qualified Control.Exception as E
 import Data.Maybe (isJust, fromJust, catMaybes)
 import qualified Data.ByteString.Char8 as B
-import Network.Google (retryIORequest)
+-- import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
                                     TableId, CellType(..), TableMetadata(..))
-
+import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
 import HSBencher.Logging (log)
 import Prelude hiding (log)
@@ -47,6 +49,28 @@ stdRetry msg client toks action = do
         return ()
                                  ) conf
   liftIO$ retryIORequest action retryHook [1,2,4,8,16,32,64]
+
+
+-- | Takes an idempotent IO action that includes a network request.  Catches
+-- `HttpException`s and tries a gain a certain number of times.  The second argument
+-- is a callback to invoke every time a retry occurs.
+-- 
+-- Takes a list of *seconds* to wait between retries.  A null list means no retries,
+-- an infinite list will retry indefinitely.  The user can choose whatever temporal
+-- pattern they desire (e.g. exponential backoff).
+--
+-- Once the retry list runs out, the last attempt may throw `HttpException`
+-- exceptions that escape this function.
+retryIORequest :: IO a -> (HttpException -> IO ()) -> [Double] -> IO a
+retryIORequest req retryHook times = loop times
+  where
+    loop [] = req
+    loop (delay:tl) = 
+      E.catch req $ \ (exn::HttpException) -> do 
+        retryHook exn
+        threadDelay (round$ delay * 1000 * 1000) -- Microseconds
+        loop tl
+
 
 -- | Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
