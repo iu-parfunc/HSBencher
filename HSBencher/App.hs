@@ -482,7 +482,46 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
       logOn [ResultsFile]$ 
         printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
                                 (padr 8$ sched) (padr 3$ show numthreads) formatted
+
+      let result =
+            BenchmarkResult
+            { _PROGNAME = testRoot
+            , _VARIANT  = show sched
+            , _ARGS     = args
+            , _HOSTNAME = ""
+            , _RUNID    = ""
+            , _THREADS  = numthreads
+            , _DATETIME = "" 
+            , _MINTIME    =  realtime minR
+            , _MEDIANTIME =  realtime medianR
+            , _MAXTIME    =  realtime maxR
+            -- , _MINTIME_PRODUCTIVITY    = if p1 /= "" then Just p1 else Nothing
+            -- , _MEDIANTIME_PRODUCTIVITY = if p2 /= "" then Just p1 else Nothing
+            -- , _MAXTIME_PRODUCTIVITY    = if p3 /= "" then Just p1 else Nothing
+            , _MINTIME_PRODUCTIVITY    = productivity minR
+            , _MEDIANTIME_PRODUCTIVITY = productivity medianR
+            , _MAXTIME_PRODUCTIVITY    = productivity maxR
+            , _ALLTIMES      =  unwords$ map (show . realtime) nruns
+            , _TRIALS        =  trials
+            , _COMPILER      = ""
+            , _COMPILE_FLAGS = ""
+            , _RUNTIME_FLAGS = ""
+            , _ENV_VARS      = ""
+            , _BENCH_VERSION =  ""
+            , _BENCH_FILE =  ""
+            , _UNAME      = ""
+            , _PROCESSOR  = ""
+            , _TOPOLOGY   = ""
+            , _GIT_BRANCH = ""
+            , _GIT_HASH   = ""
+            , _GIT_DEPTH  = -1
+            , _WHO        = ""
+            , _ETC_ISSUE  = ""
+            , _LSPCI      = ""
+            , _FULL_LOG   = ""
+            }
       return (t1,t2,t3,p1,p2,p3)
+      
 #ifdef FUSION_TABLES
   when doFusionUpload $ do
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
