@@ -85,7 +85,6 @@ Library
   exposed-modules: HSBencher
                    HSBencher.App
                    HSBencher.Types
-                   HSBencher.Config
                    HSBencher.Logging
                    HSBencher.Methods
                    HSBencher.Utils
