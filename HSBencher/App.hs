@@ -147,8 +147,8 @@ exedir = "./bin"
 --------------------------------------------------------------------------------
 
 -- | Fill in "static" fields of a FusionTable row based on the `Config` data.
-augmentTupleWithConfig :: Config -> [(String,String)] -> IO [(String,String)]
-augmentTupleWithConfig Config{..} base = do
+augmentResultWithConfig :: Config -> BenchmarkResult -> IO BenchmarkResult
+augmentResultWithConfig Config{..} base = do
   -- ghcVer <- runSL$ ghc ++ " -V"
   -- let ghcVer' = collapsePrefix "The Glorious Glasgow Haskell Compilation System," "GHC" ghcVer
   datetime <- getCurrentTime
@@ -157,30 +157,22 @@ augmentTupleWithConfig Config{..} base = do
   whos     <- runLines "who"
   let runID = (hostname ++ "_" ++ show startTime)
   let (branch,revision,depth) = gitInfo
-  return $ 
-  --  addit "COMPILER"       ghcVer'   $
-    -- addit "COMPILE_FLAGS"  ghc_flags $
-    -- addit "RUNTIME_FLAGS"  ghc_RTS   $
-    addit "HOSTNAME"       hostname $
-    addit "RUNID"          runID $ 
-    addit "DATETIME"       (show datetime) $
-    addit "TRIALS"         (show trials) $
-    addit "ENV_VARS"       (show envs) $
-    addit "BENCH_VERSION"  (show$ snd benchversion) $
-    addit "BENCH_FILE"     (fst benchversion) $
-    addit "UNAME"          uname $
---    addit "LSPCI"          (unlines lspci) $
-    addit "GIT_BRANCH"     branch   $
-    addit "GIT_HASH"       revision $
-    addit "GIT_DEPTH"      (show depth) $
-    addit "WHO"            (unlines whos) $ 
+  return $
     base
-  where
-    addit :: String -> String -> [(String,String)] -> [(String,String)]
-    addit key val als =
-      case lookup key als of
-        Just b -> error$"augmentTupleWithConfig: cannot add field "++key++", already present!: "++b
-        Nothing -> (key,val) : als
+    { _HOSTNAME      = hostname
+    , _RUNID         = runID  
+    , _DATETIME      = show datetime
+    , _TRIALS        = trials
+    , _ENV_VARS      = show envs 
+    , _BENCH_VERSION = show$ snd benchversion
+    , _BENCH_FILE    = fst benchversion
+    , _UNAME         = uname 
+--    , LSPCI        =  (unlines lspci)  -- Blows URL size.
+    , _GIT_BRANCH    = branch   
+    , _GIT_HASH      = revision 
+    , _GIT_DEPTH     = depth
+    , _WHO           = unlines whos
+    }
 
 -- Retrieve the (default) configuration from the environment, it may
 -- subsequently be tinkered with.  This procedure should be idempotent.
@@ -504,9 +496,9 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
             , _ALLTIMES      =  unwords$ map (show . realtime) nruns
             , _TRIALS        =  trials
             }
---    result' <- liftIO$ augmentResultWithConfig conf tuple
+      result' <- liftIO$ augmentResultWithConfig conf result
 #ifdef FUSION_TABLES
-      when doFusionUpload $ uploadBenchResult result
+      when doFusionUpload $ uploadBenchResult result'
 #endif      
       return (t1,t2,t3,p1,p2,p3)
       
