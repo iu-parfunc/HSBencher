@@ -31,7 +31,6 @@ import qualified System.IO.Streams.Combinators as Strm
 
 
 #ifdef FUSION_TABLES
-import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
                                     TableId, CellType(..), TableMetadata(..))
