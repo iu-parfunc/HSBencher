@@ -23,6 +23,7 @@ import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIs
 import System.Exit
 import System.IO.Unsafe (unsafePerformIO)
 import System.FilePath (dropTrailingPathSeparator, takeBaseName)
+import System.Directory
 import Text.Printf
 import Prelude hiding (log)
 
@@ -250,3 +251,14 @@ fetchBaseName path =
   --            then takeBaseName (takeDirectory (target bench))
   --            else trybase
 
+
+-- | Create a backup copy of existing results_HOST.dat files.
+backupResults :: String -> String -> IO ()
+backupResults resultsFile logFile = do 
+  e    <- doesFileExist resultsFile
+  date <- runSL "date +%Y%m%d_%s"
+  when e $ do
+    renameFile resultsFile (resultsFile ++"."++date++".bak")
+  e2   <- doesFileExist logFile
+  when e2 $ do
+    renameFile logFile     (logFile     ++"."++date++".bak")
