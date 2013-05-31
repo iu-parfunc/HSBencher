@@ -298,14 +298,16 @@ toEnvVars (_ : tl)                =           toEnvVars tl
 type BuildID = String
 
 -- | Performs a simple reformatting (stripping disallowed characters) to create a
--- build ID corresponding to a set of compile flags.
-makeBuildID :: CompileFlags -> BuildID
-makeBuildID strs =
-  intercalate "_" $
-  map (filter charAllowed) strs
+-- build ID corresponding to a set of compile flags.  To make it unique we also
+-- append the target path.
+makeBuildID :: FilePath -> CompileFlags -> BuildID
+makeBuildID target strs =
+  encodedTarget ++ 
+  (intercalate "_" $
+   map (filter charAllowed) strs)
  where
   charAllowed = isAlphaNum
-
+  encodedTarget = map (\ c -> if charAllowed c then c else '_') target
 
 -- | Strip all runtime options, leaving only compile-time options.  This is useful
 --   for figuring out how many separate compiles need to happen.

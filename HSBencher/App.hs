@@ -172,7 +172,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
   let (diroffset,testRoot) = splitFileName testPath
       flags = toCompileFlags cconf
       paths = toCmdPaths     cconf
-      bldid = makeBuildID flags
+      bldid = makeBuildID testPath flags
   log  "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
        ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++ show bldid
@@ -552,7 +552,7 @@ defaultMainModifyConfig modConfig = do
                 -- a directory that is used for `RunInPlace` builds.
                 let (bench,params) = nextrun
                     ccflags = toCompileFlags params
-                    bid = makeBuildID ccflags
+                    bid = makeBuildID (target bench) ccflags
                 case M.lookup bid board of 
                   Nothing -> error$ "HSBencher: Internal error: Cannot find entry in map for build ID: "++show bid
                   Just (ccnum, Nothing) -> do 
@@ -574,7 +574,8 @@ defaultMainModifyConfig modConfig = do
                         -- Here we know that some previous compile with the same BuildID inserted this here.
                         -- But the relevant question is whether some other config has stomped on it in the meantime.
                         case M.lookup (target bench) lastConfigured of 
-                          Nothing -> error$"HSBencher: Internal error, RunInPlace in the board but not lastConfigured!: "++(target bench)
+                          Nothing -> error$"HSBencher: Internal error, RunInPlace in the board but not lastConfigured!: "
+                                       ++(target bench)++ " build id "++show bid
                           Just bid2 ->
                            if bid == bid2 
                            then do logT$ "Skipping rebuild of in-place benchmark: "++bid
@@ -583,7 +584,7 @@ defaultMainModifyConfig modConfig = do
 
               initBoard _ [] acc = acc 
               initBoard !iter ((bench,params):rest) acc = 
-                let bid = makeBuildID $ toCompileFlags params 
+                let bid = makeBuildID (target bench) $ toCompileFlags params 
                     base = fetchBaseName (target bench)
                     dfltdest = globalBinDir </> base ++"_"++bid in
                 case M.lookup bid acc of
