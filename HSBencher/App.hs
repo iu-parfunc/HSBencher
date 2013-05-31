@@ -251,22 +251,27 @@ getConfig cmd_line_options benches = do
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
            , doFusionUpload = False                              
 #ifdef FUSION_TABLES
-           , fusionTableID  = Nothing 
-           , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" env
-           , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
-#endif                              
+           , fusionConfig = FusionConfig 
+              { fusionTableID  = Nothing 
+              , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" env
+              , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
+              }
+#endif
 	   }
 
   -- Process command line arguments to add extra cofiguration information:
   let 
 #ifdef FUSION_TABLES
       doFlag (BenchsetName name) r     = r { benchsetName= Just name }
-      doFlag (ClientID cid)   r = r { fusionClientID     = Just cid }
-      doFlag (ClientSecret s) r = r { fusionClientSecret = Just s }
+      doFlag (ClientID cid)   r = let r2 = fusionConfig r in
+                                  r { fusionConfig= r2 { fusionClientID = Just cid } }
+      doFlag (ClientSecret s) r = let r2 = fusionConfig r in
+                                  r { fusionConfig= r2 { fusionClientSecret = Just s } }
       doFlag (FusionTables m) r = 
          let r2 = r { doFusionUpload = True } in
          case m of 
-           Just tid -> r2 { fusionTableID = Just tid }
+           Just tid -> let r3 = fusionConfig r in
+                       r2 { fusionConfig= r3 { fusionTableID = Just tid } }
            Nothing -> r2
 #endif
       doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
@@ -290,15 +295,16 @@ getConfig cmd_line_options benches = do
 
 #ifdef FUSION_TABLES
   finalconf <- if not (doFusionUpload conf) then return conf else
-               case (benchsetName conf, fusionTableID conf) of
+               let fconf = fusionConfig conf in   
+               case (benchsetName conf, fusionTableID fconf) of
                 (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
                 (_, Just tid) -> return conf
                 (Just name,_) -> do
-                  case (fusionClientID conf, fusionClientSecret conf) of
+                  case (fusionClientID fconf, fusionClientSecret fconf) of
                     (Just cid, Just sec ) -> do
                       let auth = OAuth2Client { clientId=cid, clientSecret=sec }
                       tid <- runReaderT (getTableId auth name) conf
-                      return conf{fusionTableID= Just tid}
+                      return conf{ fusionConfig= fconf { fusionTableID= Just tid }}
                     (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required (or equiv ENV vars)"
 #else
   let finalconf = conf      
@@ -484,69 +490,26 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
                                 (padr 8$ sched) (padr 3$ show numthreads) formatted
 
       let result =
-            BenchmarkResult
+            emptyBenchmarkResult
             { _PROGNAME = testRoot
             , _VARIANT  = show sched
             , _ARGS     = args
-            , _HOSTNAME = ""
-            , _RUNID    = ""
             , _THREADS  = numthreads
-            , _DATETIME = "" 
             , _MINTIME    =  realtime minR
             , _MEDIANTIME =  realtime medianR
             , _MAXTIME    =  realtime maxR
-            -- , _MINTIME_PRODUCTIVITY    = if p1 /= "" then Just p1 else Nothing
-            -- , _MEDIANTIME_PRODUCTIVITY = if p2 /= "" then Just p1 else Nothing
-            -- , _MAXTIME_PRODUCTIVITY    = if p3 /= "" then Just p1 else Nothing
             , _MINTIME_PRODUCTIVITY    = productivity minR
             , _MEDIANTIME_PRODUCTIVITY = productivity medianR
             , _MAXTIME_PRODUCTIVITY    = productivity maxR
             , _ALLTIMES      =  unwords$ map (show . realtime) nruns
             , _TRIALS        =  trials
-            , _COMPILER      = ""
-            , _COMPILE_FLAGS = ""
-            , _RUNTIME_FLAGS = ""
-            , _ENV_VARS      = ""
-            , _BENCH_VERSION =  ""
-            , _BENCH_FILE =  ""
-            , _UNAME      = ""
-            , _PROCESSOR  = ""
-            , _TOPOLOGY   = ""
-            , _GIT_BRANCH = ""
-            , _GIT_HASH   = ""
-            , _GIT_DEPTH  = -1
-            , _WHO        = ""
-            , _ETC_ISSUE  = ""
-            , _LSPCI      = ""
-            , _FULL_LOG   = ""
             }
+--    result' <- liftIO$ augmentResultWithConfig conf tuple
+#ifdef FUSION_TABLES
+      when doFusionUpload $ uploadBenchResult result
+#endif      
       return (t1,t2,t3,p1,p2,p3)
       
-#ifdef FUSION_TABLES
-  when doFusionUpload $ do
-    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
-        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
-    -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
-    toks  <- liftIO$ getCachedTokens authclient
-    let         
-        tuple =          
-          [("PROGNAME",testRoot),("ARGS", unwords args),("THREADS",show numthreads),
-           ("MINTIME",t1),("MEDIANTIME",t2),("MAXTIME",t3),
-           ("MINTIME_PRODUCTIVITY",p1),("MEDIANTIME_PRODUCTIVITY",p2),("MAXTIME_PRODUCTIVITY",p3),
-           ("VARIANT", show sched)]
-    tuple' <- liftIO$ augmentTupleWithConfig conf tuple
-    let (cols,vals) = unzip tuple'
-    log$ " [fusiontable] Uploading row with "++show (length cols)++
-         " columns containing "++show (sum$ map length vals)++" characters of data"
-    -- 
-    -- FIXME: It's easy to blow the URL size; we need the bulk import version.
-    stdRetry "insertRows" authclient toks $
-      insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
-    log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple')
-         ++ " date "++ (fromJust$ lookup "DATETIME" tuple')
---       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
-    return ()           
-#endif
   return ()     
 
 

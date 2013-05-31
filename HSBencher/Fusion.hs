@@ -1,15 +1,17 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns, RecordWildCards #-}
 
 -- | Code pertaining to Google Fusion Table upload.
 --   Built conditionally based on the -ffusion flag.
 
 module HSBencher.Fusion
-       ( stdRetry, getTableId
+       ( FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
+       , uploadBenchResult
        )
        where
 
 import Control.Monad.Reader
+import Data.Maybe (isJust, fromJust, catMaybes)
 import qualified Data.ByteString.Char8 as B
 import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
@@ -19,6 +21,9 @@ import Network.Google.FusionTables (createTable, listTables, listColumns, insert
 import HSBencher.Types
 import HSBencher.Logging (log)
 import Prelude hiding (log)
+
+----------------------------------------------------------------------------------------------------
+
 
 ----------------------------------------------------------------------------------------------------
 
@@ -66,6 +71,30 @@ getTableId auth tablename = do
     [t] -> do log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show (tab_tableId t)
               return (tab_tableId t)
     ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
+
+
+
+uploadBenchResult :: BenchmarkResult -> BenchM ()
+uploadBenchResult  br@BenchmarkResult{..} = do
+    Config{fusionConfig} <- ask
+    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig
+    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+    -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
+    toks  <- liftIO$ getCachedTokens authclient
+    let tuple = resultToTuple br
+    let (cols,vals) = unzip tuple
+    log$ " [fusiontable] Uploading row with "++show (length cols)++
+         " columns containing "++show (sum$ map length vals)++" characters of data"
+    -- 
+    -- FIXME: It's easy to blow the URL size; we need the bulk import version.
+    stdRetry "insertRows" authclient toks $
+      insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
+    log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple)
+         ++ " date "++ (fromJust$ lookup "DATETIME" tuple)
+--       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
+    return ()           
+
 
 -- | A representaton used for creating tables.  Must be isomorphic to
 -- `BenchmarkResult`.  This could perhaps be generated automatically.
@@ -143,4 +172,3 @@ resultToTuple r =
   , ("FULL_LOG", _FULL_LOG r)
   ]
   
-

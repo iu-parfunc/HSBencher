@@ -15,7 +15,10 @@ module HSBencher.Types
          DefaultParamMeaning(..),
          
          -- * HSBench Driver Configuration
-         Config(..), BenchM, 
+         Config(..), BenchM,
+#ifdef FUSION_TABLES
+         FusionConfig(..),
+#endif
 
          -- * Subprocesses and system commands
          CommandDescr(..), RunResult(..), SubProcess(..),
@@ -174,13 +177,21 @@ data Config = Config
 
  , doFusionUpload :: Bool
 #ifdef FUSION_TABLES
- , fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
- , fusionClientID :: Maybe String
- , fusionClientSecret :: Maybe String
---  , fusionUpload   :: Maybe FusionInfo
+ , fusionConfig   :: FusionConfig
 #endif
  }
  deriving Show
+
+#ifdef FUSION_TABLES
+data FusionConfig = 
+  FusionConfig
+  { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
+  , fusionClientID :: Maybe String
+  , fusionClientSecret :: Maybe String
+--  , fusionUpload   :: Maybe FusionInfo
+  }
+  deriving Show
+#endif
 
 instance Show (Strm.OutputStream a) where
   show _ = "<OutputStream>"
