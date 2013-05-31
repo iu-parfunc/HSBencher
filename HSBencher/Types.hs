@@ -18,7 +18,10 @@ module HSBencher.Types
          Config(..), BenchM, 
 
          -- * Subprocesses and system commands
-         CommandDescr(..), RunResult(..), SubProcess(..)
+         CommandDescr(..), RunResult(..), SubProcess(..),
+
+         -- * Benchmark outputs for upload
+         BenchmarkResult(..), emptyBenchmarkResult
        )
        where
 
@@ -41,6 +44,8 @@ import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
 #ifdef FUSION_TABLES
 import Network.Google.FusionTables (TableId)
+import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
+                                    TableId, CellType(..), TableMetadata(..))
 #endif
 
 ----------------------------------------------------------------------------------------------------
@@ -191,6 +196,13 @@ data Benchmark a = Benchmark
  , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
  , configs :: BenchSpace a  -- ^ The configration space to iterate over.
  } deriving (Eq, Show, Ord, Generic)
+
+
+-- | Make a Benchmark data structure given the core, required set of fields, and uses
+-- defaults to fill in the rest.  Takes target, cmdargs, configs.
+mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a 
+mkBenchmark  target  cmdargs configs = 
+  Benchmark {target, cmdargs, configs}
 
 
 -- | A datatype for describing (generating) benchmark configuration spaces.
@@ -356,4 +368,83 @@ instance Out a => Out (Benchmark a)
 instance (Out k, Out v) => Out (M.Map k v) where
   docPrec n m = docPrec n $ M.toList m
   doc         = docPrec 0 
+
+
+----------------------------------------------------------------------------------------------------
+-- Benchmark Results Upload
+----------------------------------------------------------------------------------------------------
+
+-- | This contains all the contextual information for a single benchmark run, which
+--   makes up a "row" in a table of benchmark results.
+--   Note that multiple "trials" (actual executions) go into a single BenchmarkResult
+data BenchmarkResult =
+  BenchmarkResult
+  { _PROGNAME :: String
+  , _VARIANT  :: String
+  , _ARGS     :: [String]
+  , _HOSTNAME :: String
+  , _RUNID    :: String
+  , _THREADS  :: Int
+  , _DATETIME :: String -- Datetime
+  , _MINTIME    ::  Double
+  , _MEDIANTIME ::  Double
+  , _MAXTIME    ::  Double
+  , _MINTIME_PRODUCTIVITY    ::  Maybe Double
+  , _MEDIANTIME_PRODUCTIVITY ::  Maybe Double
+  , _MAXTIME_PRODUCTIVITY    ::  Maybe Double
+  , _ALLTIMES      ::  String
+  , _TRIALS        ::  Int
+  , _COMPILER      :: String
+  , _COMPILE_FLAGS :: String
+  , _RUNTIME_FLAGS :: String
+  , _ENV_VARS      :: String
+  , _BENCH_VERSION ::  String
+  , _BENCH_FILE ::  String
+  , _UNAME      :: String
+  , _PROCESSOR  :: String
+  , _TOPOLOGY   :: String
+  , _GIT_BRANCH :: String
+  , _GIT_HASH   :: String
+  , _GIT_DEPTH  :: Int
+  , _WHO        :: String
+  , _ETC_ISSUE  :: String
+  , _LSPCI      :: String
+  , _FULL_LOG   :: String
+  }
+
+-- | A default value, useful for filling in only the fields that are relevant to a particular benchmark.
+emptyBenchmarkResult :: BenchmarkResult
+emptyBenchmarkResult = BenchmarkResult
+  { _PROGNAME = ""
+  , _VARIANT  = ""
+  , _ARGS     = []
+  , _HOSTNAME = ""
+  , _RUNID    = ""
+  , _THREADS  = 0
+  , _DATETIME = "" 
+  , _MINTIME    =  0.0
+  , _MEDIANTIME =  0.0
+  , _MAXTIME    =  0.0
+  , _MINTIME_PRODUCTIVITY    =  Nothing
+  , _MEDIANTIME_PRODUCTIVITY =  Nothing
+  , _MAXTIME_PRODUCTIVITY    =  Nothing
+  , _ALLTIMES      =  ""
+  , _TRIALS        =  1
+  , _COMPILER      = ""
+  , _COMPILE_FLAGS = ""
+  , _RUNTIME_FLAGS = ""
+  , _ENV_VARS      = ""
+  , _BENCH_VERSION =  ""
+  , _BENCH_FILE =  ""
+  , _UNAME      = ""
+  , _PROCESSOR  = ""
+  , _TOPOLOGY   = ""
+  , _GIT_BRANCH = ""
+  , _GIT_HASH   = ""
+  , _GIT_DEPTH  = -1
+  , _WHO        = ""
+  , _ETC_ISSUE  = ""
+  , _LSPCI      = ""
+  , _FULL_LOG   = ""
+  }
 

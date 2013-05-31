@@ -14,7 +14,10 @@
 {- | The Main module defining the HSBencher driver.
 -}
 
-module HSBencher.App (defaultMainWithBechmarks, Flag(..), all_cli_options) where 
+module HSBencher.App
+       (defaultMainWithBechmarks, defaultMainModifyConfig,
+        Flag(..), all_cli_options)
+       where 
 
 ----------------------------
 -- Standard library imports
@@ -63,6 +66,7 @@ import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydra
 import Scripting.Parallel.ThreadPool (parForM)
 
 #ifdef FUSION_TABLES
+import HSBencher.Fusion
 import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
@@ -507,89 +511,6 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
   return ()     
 
 
-
-
--- defaultColumns =
---   ["Program","Args","Threads","Sched","Threads",
---    "MinTime","MedianTime","MaxTime", "MinTime_Prod","MedianTime_Prod","MaxTime_Prod"]
-
-#ifdef FUSION_TABLES
-resultsSchema :: [(String, CellType)]
-resultsSchema =
-  [ ("PROGNAME",STRING)
-  , ("VARIANT",STRING)
-  , ("ARGS",STRING)    
-  , ("HOSTNAME",STRING)
-  -- The run is identified by hostname_secondsSinceEpoch:
-  , ("RUNID",STRING)
-  , ("THREADS",NUMBER)
-  , ("DATETIME",DATETIME)    
-  , ("MINTIME", NUMBER)
-  , ("MEDIANTIME", NUMBER)
-  , ("MAXTIME", NUMBER)
-  , ("MINTIME_PRODUCTIVITY", NUMBER)
-  , ("MEDIANTIME_PRODUCTIVITY", NUMBER)
-  , ("MAXTIME_PRODUCTIVITY", NUMBER)
-  , ("ALLTIMES", STRING)
-  , ("TRIALS", NUMBER)
-  , ("COMPILER",STRING)
-  , ("COMPILE_FLAGS",STRING)
-  , ("RUNTIME_FLAGS",STRING)
-  , ("ENV_VARS",STRING)
-  , ("BENCH_VERSION", STRING)
-  , ("BENCH_FILE", STRING)
---  , ("OS",STRING)
-  , ("UNAME",STRING)
-  , ("PROCESSOR",STRING)
-  , ("TOPOLOGY",STRING)
-  , ("GIT_BRANCH",STRING)
-  , ("GIT_HASH",STRING)
-  , ("GIT_DEPTH",NUMBER)
-  , ("WHO",STRING)
-  , ("ETC_ISSUE",STRING)
-  , ("LSPCI",STRING)    
-  , ("FULL_LOG",STRING)
-  ]
-
--- | The standard retry behavior when receiving HTTP network errors.
-stdRetry :: String -> OAuth2Client -> OAuth2Tokens -> IO a ->
-            BenchM a
-stdRetry msg client toks action = do
-  conf <- ask
-  let retryHook exn = runReaderT (do
-        log$ " [fusiontable] Retrying during <"++msg++"> due to HTTPException: " ++ show exn
-        log$ " [fusiontable] Retrying, but first, attempt token refresh..."
-        -- QUESTION: should we retry the refresh itself, it is NOT inside the exception handler.
-        -- liftIO$ refreshTokens client toks
-        -- liftIO$ retryIORequest (refreshTokens client toks) (\_ -> return ()) [1,1]
-        stdRetry "refresh tokens" client toks (refreshTokens client toks)
-        return ()
-                                 ) conf
-  liftIO$ retryIORequest action retryHook [1,2,4,8,16,32,64]
-
--- | Get the table ID that has been cached on disk, or find the the table in the users
--- Google Drive, or create a new table if needed.
-getTableId :: OAuth2Client -> String -> BenchM TableId
-getTableId auth tablename = do
-  log$ " [fusiontable] Fetching access tokens, client ID/secret: "++show (clientId auth, clientSecret auth)
-  toks      <- liftIO$ getCachedTokens auth
-  log$ " [fusiontable] Retrieved: "++show toks
-  let atok  = B.pack $ accessToken toks
-  allTables <- stdRetry "listTables" auth toks $ listTables atok
-  log$ " [fusiontable] Retrieved metadata on "++show (length allTables)++" tables"
-
-  case filter (\ t -> tab_name t == tablename) allTables of
-    [] -> do log$ " [fusiontable] No table with name "++show tablename ++" found, creating..."
-             TableMetadata{tab_tableId} <- stdRetry "createTable" auth toks $
-                                           createTable atok tablename resultsSchema
-             log$ " [fusiontable] Table created with ID "++show tab_tableId
-             return tab_tableId
-    [t] -> do log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show (tab_tableId t)
-              return (tab_tableId t)
-    ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
-#endif
-
-
 --------------------------------------------------------------------------------
 
 -- TODO: Remove this hack.
@@ -730,8 +651,17 @@ defaultMain = do
   error "FINISHME: defaultMain requires reading benchmark list from a file.  Implement it!"
 --  defaultMainWithBechmarks undefined
 
+-- | In this version, user provides a list of benchmarks to run, explicitly.
 defaultMainWithBechmarks :: [Benchmark DefaultParamMeaning] -> IO ()
-defaultMainWithBechmarks benches = do  
+defaultMainWithBechmarks benches = do
+  defaultMainModifyConfig (\ conf -> conf{ benchlist=benches })
+
+-- | An even more flexible version allows the user to install a hook which modifies
+-- the configuration just before bencharking begins.  All trawling of the execution
+-- environment (command line args, environment variables) happens BEFORE the user
+-- sees the configuration.
+defaultMainModifyConfig :: (Config -> Config) -> IO ()
+defaultMainModifyConfig modConfig = do    
   id <- myThreadId
   writeIORef main_threadid id
 
@@ -754,8 +684,9 @@ defaultMainWithBechmarks benches = do
     putStrLn$ usageStr
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
-  conf@Config{envs,benchlist,stdOut,threadsettings} <- getConfig options benches
-        
+  conf0@Config{envs,benchlist,stdOut,threadsettings} <- getConfig options []
+  let conf1 = modConfig conf0
+
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
   let hasCabalFile = (cabalFile /= []) &&
@@ -844,7 +775,7 @@ defaultMainWithBechmarks benches = do
         --------------------------------------------------------------------------------
         -- Serial version:
           -- TODO: make this a foldlM:
-          let allruns = map (enumerateBenchSpace . configs) benches              
+          let allruns = map (enumerateBenchSpace . configs) benchlist
               allrunsLens = map length allruns
               totalruns = sum allrunsLens
           let 
@@ -903,7 +834,7 @@ defaultMainWithBechmarks benches = do
                     in
                     initBoard (iter+1) rest (M.insert bid elm acc)
 
-              zippedruns = (concat$ zipWith (\ b cfs -> map (b,) cfs) benches allruns)
+              zippedruns = (concat$ zipWith (\ b cfs -> map (b,) cfs) benchlist allruns)
 
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
           runloop 1 (initBoard 1 zippedruns M.empty) M.empty zippedruns
@@ -918,7 +849,7 @@ defaultMainWithBechmarks benches = do
         log$ "--------------------------------------------------------------------------------"
 	liftIO$ exitSuccess
     )
-    conf
+    conf1
 
 
 -- Several different options for how to display output in parallel:

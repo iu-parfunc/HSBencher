@@ -1,8 +1,11 @@
 
 name:                hsbencher
-version:             1.1
+version:             1.1.1.1
 -- CHANGELOG:
 -- 1.0 : Initial release, new flexible benchmark format.
+-- 1.1 : 
+-- 1.1.1 : add defaultMainModifyConfig
+
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 
@@ -75,7 +78,7 @@ extra-source-files:  README.md
 Flag fusion
   description:
       Add support for Google Fusion Table upload of benchmark data.
-  default: False  
+  default: True
 
 Library 
   source-repository head
@@ -100,6 +103,7 @@ Library
 
   if flag(fusion) {
     build-depends: handa-gdata >= 0.6.2
+    exposed-modules: HSBencher.Fusion
     cpp-options: -DFUSION_TABLES
   }
 
