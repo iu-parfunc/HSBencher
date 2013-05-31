@@ -226,12 +226,14 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
   -- (1) Gather contextual information
   ----------------------------------------  
   let args = if shortrun then shortArgs args_ else args_
-      fullargs = args ++ runFlags
+      fullargs = if argsBeforeFlags 
+                 then args ++ runFlags
+                 else runFlags ++ args
       testRoot = fetchBaseName testPath
   log$ "\n--------------------------------------------------------------------------------"
-  log$ "  Running Config "++show iterNum++" of "++show totalIters 
---       ++": "++testRoot++" (args \""++unwords args++"\") scheduler "++show sched++
+  log$ "  Running Config "++show iterNum++" of "++show totalIters ++": "++testPath
 --       "  threads "++show numthreads++" (Env="++show envVars++")"
+  log$ nest 3 $ show$ doc$ map snd runconfig
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
   logT$ "(In directory "++ pwd ++")"
@@ -669,3 +671,13 @@ shortArgs _ls = []
 -- 		 | otherwise  = h : shortArgs tl
 
 ----------------------------------------------------------------------------------------------------
+
+nest :: Int -> String -> String
+nest n str = remlastNewline $ unlines $ 
+             map (replicate n ' ' ++) $
+             lines str
+ where
+   remlastNewline str =
+     case reverse str of
+       '\n':rest -> reverse rest
+       _         -> str

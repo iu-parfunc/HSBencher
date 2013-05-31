@@ -210,7 +210,8 @@ getConfig cmd_line_options benches = do
            , gitInfo        = (trim branch, trim revision, length hashes)
            -- This is in priority order:                   
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
-           , doFusionUpload = False                              
+           , doFusionUpload = False
+           , argsBeforeFlags = True
 #ifdef FUSION_TABLES
            , fusionConfig = FusionConfig 
               { fusionTableID  = Nothing 

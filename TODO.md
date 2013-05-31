@@ -24,3 +24,14 @@ Longer term:
  
  * Further enable packing up a benchmark set to run on a machine
    without GHC (as with Haskell Cnc).
+
+--------------------------------------------------------------------------------
+
+BUGS:
+
+ * seeing a crash related to lastConfigured:
+ 
+    runAndUpload.hs: HSBencher: Internal error, RunInPlace in the board but not lastConfigured!: comparisonSort/serialSort/sort
+ 
+ * keepgoing=false isn't working.
+

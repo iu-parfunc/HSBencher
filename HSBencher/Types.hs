@@ -182,7 +182,10 @@ data Config = Config
    -- A set of environment variable configurations to test
  , envs           :: [[(String, String)]]
 
- , doFusionUpload :: Bool
+ , argsBeforeFlags :: Bool -- ^ A global setting to control whether executables are given
+                           -- their 'flags/params' after their regular arguments.
+                           -- This is here because some executables don't use proper command line parsing.
+ , doFusionUpload  :: Bool
 #ifdef FUSION_TABLES
  , fusionConfig   :: FusionConfig
 #endif
