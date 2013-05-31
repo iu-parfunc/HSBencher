@@ -6,9 +6,11 @@ module HSBencher.Types
          -- * Benchmark building
          RunFlags, CompileFlags, FilePredicate(..), filePredCheck,
          BuildResult(..), BuildMethod(..),
+         mkBenchmark, 
+         Benchmark(..), 
          
          -- * Benchmark configuration spaces
-         Benchmark(..), BenchSpace(..), ParamSetting(..),
+         BenchSpace(..), ParamSetting(..),
          enumerateBenchSpace, compileOptsOnly, isCompileTime,
          toCompileFlags, toRunFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
@@ -66,6 +68,7 @@ data FilePredicate =
     -- directory with exactly one "Makefile".
 
   | PredOr FilePredicate FilePredicate -- ^ Logical or.
+  | AnyFile
 
   -- TODO: Allow arbitrary function predicates also.
  deriving (Show, Generic, Ord, Eq)
@@ -79,6 +82,7 @@ filePredCheck :: FilePredicate -> FilePath -> IO (Maybe FilePath)
 filePredCheck pred path =
   let filename = takeFileName path in 
   case pred of
+    AnyFile           -> return (Just path)
     IsExactly str     -> return$ if str == filename
                                  then Just path else Nothing
     WithExtension ext -> return$ if takeExtension filename == ext
