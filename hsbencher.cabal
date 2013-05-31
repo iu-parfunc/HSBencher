@@ -141,6 +141,10 @@ Test-suite test1
   ghc-options: -threaded 
   default-language:  Haskell2010
 
+  if flag(fusion) {
+    build-depends: handa-gdata >= 0.6.2
+    cpp-options: -DFUSION_TABLES
+  }
 
 Test-suite test2
   main-is: example/make_and_ghc/benchmark.hs
@@ -153,3 +157,8 @@ Test-suite test2
     -- </DUPLICATED>
   ghc-options: -threaded 
   default-language:  Haskell2010
+
+  if flag(fusion) {
+    build-depends: handa-gdata >= 0.6.2
+    cpp-options: -DFUSION_TABLES
+  }

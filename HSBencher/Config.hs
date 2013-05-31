@@ -41,6 +41,7 @@ import Network.Google.FusionTables (createTable, listTables, listColumns, insert
 import HSBencher.Types
 import HSBencher.Utils
 import HSBencher.Methods
+import HSBencher.MeasureProcess
 import HSBencher.Fusion (getTableId)
 
 ----------------------------------------------------------------------------------------------------
@@ -212,6 +213,7 @@ getConfig cmd_line_options benches = do
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
            , doFusionUpload = False
            , argsBeforeFlags = True
+           , harvesters = (selftimedHarvester, Just ghcProductivityHarvester)
 #ifdef FUSION_TABLES
            , fusionConfig = FusionConfig 
               { fusionTableID  = Nothing 

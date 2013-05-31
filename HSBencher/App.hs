@@ -255,8 +255,13 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "  Running trial %d of %d" i trials
     log "  ------------------------"
-    let doMeasure cmddescr = do
-          SubProcess {wait,process_out,process_err} <- lift$ measureProcess cmddescr
+    let (timeHarvest,ph) = harvesters
+        prodHarvest = case ph of
+                       Nothing -> nullHarvester
+                       Just h  -> h
+        doMeasure cmddescr = do
+          SubProcess {wait,process_out,process_err} <-
+            lift$ measureProcess timeHarvest prodHarvest cmddescr
           err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
           both <- lift$ Strm.concurrentMerge [process_out, err2]
           mv <- echoStream (not shortrun) both

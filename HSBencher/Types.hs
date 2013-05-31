@@ -23,7 +23,7 @@ module HSBencher.Types
 #endif
 
          -- * Subprocesses and system commands
-         CommandDescr(..), RunResult(..), SubProcess(..),
+         CommandDescr(..), RunResult(..), SubProcess(..), LineHarvester(..),
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
@@ -185,6 +185,7 @@ data Config = Config
  , argsBeforeFlags :: Bool -- ^ A global setting to control whether executables are given
                            -- their 'flags/params' after their regular arguments.
                            -- This is here because some executables don't use proper command line parsing.
+ , harvesters :: (LineHarvester, Maybe LineHarvester) -- ^ Line harvesters for SELFTIMED and productivity lines.
  , doFusionUpload  :: Bool
 #ifdef FUSION_TABLES
  , fusionConfig   :: FusionConfig
@@ -390,6 +391,13 @@ instance (Out k, Out v) => Out (M.Map k v) where
   docPrec n m = docPrec n $ M.toList m
   doc         = docPrec 0 
 
+
+-- | Things like "SELFTIMED" that should be monitored.
+-- type Tags = [String]
+
+newtype LineHarvester = LineHarvester (B.ByteString -> Maybe Double)
+instance Show LineHarvester where
+  show _ = "<LineHarvester>"
 
 ----------------------------------------------------------------------------------------------------
 -- Benchmark Results Upload

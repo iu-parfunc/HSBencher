@@ -5,7 +5,10 @@
 -- overhead.
 
 module HSBencher.MeasureProcess
-       (measureProcess)
+       (measureProcess,
+        selftimedHarvester, ghcProductivityHarvester,
+        taggedLineHarvester, nullHarvester
+        )
        where
 
 import qualified Control.Concurrent.Async as A
@@ -45,8 +48,9 @@ import HSBencher.Types
 --
 -- This procedure is currently not threadsafe, because it changes the current working
 -- directory.
-measureProcess :: CommandDescr -> IO SubProcess
-measureProcess CommandDescr{command, envVars, timeout, workingDir} = do
+measureProcess :: LineHarvester -> LineHarvester -> CommandDescr -> IO SubProcess
+measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
+               CommandDescr{command, envVars, timeout, workingDir} = do
   origDir <- getCurrentDirectory
   case workingDir of
     Just d  -> setCurrentDirectory d
@@ -111,12 +115,12 @@ measureProcess CommandDescr{command, envVars, timeout, workingDir} = do
           Just (ErrLine errLine) -> do 
             writeChan relay_err (Just errLine)
             -- Check for GHC-produced GC stats here:
-            loop time (prod `orMaybe` checkProductivity errLine)
+            loop time (prod `orMaybe` checkProd errLine)
           Just (OutLine outLine) -> do
             writeChan relay_out (Just outLine)
             -- The SELFTIMED readout will be reported on stdout:
-            loop (time `orMaybe` checkTimingLine outLine)
-                 (prod `orMaybe` checkProductivity outLine)
+            loop (time `orMaybe` checkTiming outLine)
+                 (prod `orMaybe` checkProd outLine)
 
           Nothing -> error "benchmark.hs: Internal error!  This should not happen."
   
@@ -134,12 +138,19 @@ data ProcessEvt = ErrLine B.ByteString
 -- Hacks for looking for particular bits of text in process output:
 -------------------------------------------------------------------
 
+nullHarvester :: LineHarvester
+nullHarvester = LineHarvester $ \_ -> Nothing
+
 -- | Check for a SELFTIMED line of output.
-checkTimingLine :: B.ByteString -> Maybe Double
-checkTimingLine ln =
+selftimedHarvester :: LineHarvester
+selftimedHarvester = taggedLineHarvester "SELFTIMED"
+
+-- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
+taggedLineHarvester :: B.ByteString -> LineHarvester
+taggedLineHarvester tag = LineHarvester $ \ ln -> 
   case B.words ln of
     [] -> Nothing
-    hd:tl | hd == "SELFTIMED" || hd == "SELFTIMED:" ->
+    hd:tl | hd == tag || hd == (tag `B.append` ":") ->
       case tl of
         [time] ->
           case reads (B.unpack time) of
@@ -147,11 +158,13 @@ checkTimingLine ln =
             _ -> error$ "Error parsing number in SELFTIMED line: "++B.unpack ln
     _ -> Nothing
 
+
+
 -- | Retrieve productivity (i.e. percent time NOT garbage collecting) as output from
 -- a Haskell program with "+RTS -s".  Productivity is a percentage (double between
 -- 0.0 and 100.0, inclusive).
-checkProductivity :: B.ByteString -> Maybe Double
-checkProductivity ln =
+ghcProductivityHarvester :: LineHarvester
+ghcProductivityHarvester = LineHarvester $ \ ln -> 
   case words (B.unpack ln) of
     [] -> Nothing
     -- EGAD: This is NOT really meant to be machine read:

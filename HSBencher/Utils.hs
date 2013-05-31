@@ -127,8 +127,12 @@ echoStream echoStdout outS = do
 runLogged :: String -> String -> BenchM (RunResult, [B.ByteString])
 runLogged tag cmd = do 
   log$ " * Executing command: " ++ cmd
+  Config{ harvesters=(timeHarv, ph) } <- ask
+  let prodHarv = case ph of
+                   Nothing -> nullHarvester
+                   Just h -> h  
   SubProcess {wait,process_out,process_err} <-
-    lift$ measureProcess
+    lift$ measureProcess timeHarv prodHarv
             CommandDescr{ command=ShellCommand cmd, envVars=[], timeout=Just 150, workingDir=Nothing }
   err2 <- lift$ Strm.map (B.append (B.pack "[stderr] ")) process_err
   both <- lift$ Strm.concurrentMerge [process_out, err2]
