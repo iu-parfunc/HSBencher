@@ -318,7 +318,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
       let result =
             emptyBenchmarkResult
             { _PROGNAME = testRoot
-            , _VARIANT  = show sched
+            , _VARIANT  = sched
             , _ARGS     = args
             , _THREADS  = numthreads
             , _MINTIME    =  realtime minR
