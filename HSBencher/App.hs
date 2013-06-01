@@ -492,7 +492,7 @@ defaultMainModifyConfig modConfig = do
                 Just trg0 -> log$ "   ...same config space as "++show trg0
               printloop (M.insertWith (\ _ x -> x) configs target mp) tl
 --        log$ "Benchmarks/compile options: "++show (doc benches')              
-        printloop M.empty bencheslist
+        printloop M.empty benchlist
         log$ "--------------------------------------------------------------------------------"
 
         if ParBench `elem` options then do
