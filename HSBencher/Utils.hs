@@ -103,12 +103,17 @@ runIgnoreErr cm =
 
 -- | Create a thread that echos the contents of stdout/stderr InputStreams (lines) to
 -- the appropriate places (as designated by the logging facility).
+-- Returns an MVar used to synchronize on the completion of the echo thread.
 echoStream :: Bool -> Strm.InputStream B.ByteString -> BenchM (MVar ())
 echoStream echoStdout outS = do
   conf <- ask
-  mv   <- lift$ newEmptyMVar
-  lift$ void$ forkIOH "echoStream thread"  $ 
-    runReaderT (echoloop mv) conf 
+  mv   <- lift$ newEmptyMVar  
+  lift$ void$ forkIO $
+      -- Make sure we get around to putting the MVar if something goes wrong:  
+      handle (\ (exn::SomeException) -> do
+                 hPutStrLn stderr $ " [hsbencher] Ignoring exception on echo thread: "++show exn
+                 putMVar mv ())
+             (runReaderT (echoloop mv) conf)
   return mv
  where
    echoloop mv = 

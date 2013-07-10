@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, OverloadedStrings #-}
+{-# LANGUAGE NamedFieldPuns, OverloadedStrings, ScopedTypeVariables #-}
 
 -- | This module provides tools to time a sub-process (benchmark), including a
 -- facility for self-reporting execution time and reporting garbage collector
@@ -14,13 +14,15 @@ module HSBencher.MeasureProcess
 import qualified Control.Concurrent.Async as A
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Chan
+import qualified Control.Exception as E
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.IORef
 import System.Exit
 import System.Directory
-import System.IO (hClose)
-import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
+import System.IO (hClose, stderr)
+import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, terminateProcess, 
                        createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
+import System.Posix.Process (getProcessStatus)
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
@@ -109,7 +111,16 @@ measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
                 return (RunCompleted {realtime=tm, productivity=prod})
               ExitFailure c   -> return (ExitError c)
         
-          Just TimerFire -> return RunTimeOut
+          Just TimerFire -> do
+            B.hPutStrLn stderr $ " [hsbencher] Benchmark run timed out.  Killing process."
+            terminateProcess pid
+            B.hPutStrLn stderr $ " [hsbencher] Cleaning up io-streams."
+            writeChan relay_err Nothing
+            writeChan relay_out Nothing
+            E.catch (dumpRest merged3) $ \ (exn::E.SomeException) ->
+              B.hPutStrLn stderr $ " [hsbencher] ! Got an error while cleaning up: " `B.append` B.pack(show exn)
+            B.hPutStrLn stderr $ " [hsbencher] Done with cleanup."
+            return RunTimeOut
   
           -- Bounce the line back to anyone thats waiting:
           Just (ErrLine errLine) -> do 
@@ -126,6 +137,14 @@ measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
   
   fut <- A.async (loop Nothing Nothing)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
+
+-- Dump the rest of an IOStream until we reach the end
+dumpRest :: Strm.InputStream a -> IO ()
+dumpRest strm = do 
+  x <- Strm.read strm
+  case x of
+    Nothing -> return ()
+    Just _  -> dumpRest strm
 
 -- | Internal data type.
 data ProcessEvt = ErrLine B.ByteString
