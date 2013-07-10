@@ -303,7 +303,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
       let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
                              [gettime minR, gettime medianR, gettime maxR]
           prods@[p1,p2,p3] = map mshow [getprod minR, getprod medianR, getprod maxR]
-          mshow Nothing  = ""
+          mshow Nothing  = "0"
           mshow (Just x) = showFFloat (Just 2) x "" 
 
           -- These are really (time,prod) tuples, but a flat list of
