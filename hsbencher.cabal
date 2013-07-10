@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.3.1
+version:             1.3.2
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -9,6 +9,7 @@ version:             1.3.1
 -- 1.2.1 : Hack to shorten tuples, annoying URL length problem.
 -- 1.3   : breaking change to Config/RunResult types
 -- 1.3.1 : bugfix
+-- 1.3.2 : change policy for timeouts and errors
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 

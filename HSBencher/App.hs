@@ -282,27 +282,29 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
   ------------------------------------------
   -- (3) Produce output to the right places:
   ------------------------------------------
+  let pads n s = take (max 1 (n - length s)) $ repeat ' '
+      padl n x = pads n x ++ x 
+      padr n x = x ++ pads n x
   (t1,t2,t3,p1,p2,p3) <-
-    if not (all didComplete nruns) then do
-      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got ERRORS: " ++show nruns
+    if all isError nruns then do
+      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
+      logOn [ResultsFile]$ 
+        printf "# %s %s %s %s %s" (padr 35 testRoot) (padr 20$ intercalate "_" args)
+                                  (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
       return ("","","","","","")
-    else do 
+    else do
+      let goodruns = filter (not . isError) nruns
       -- Extract the min, median, and max:
-      let sorted = sortBy (\ a b -> compare (realtime a) (realtime b)) nruns
+          sorted = sortBy (\ a b -> compare (gettime a) (gettime b)) goodruns
           minR = head sorted
           maxR = last sorted
           medianR = sorted !! (length sorted `quot` 2)
 
       let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
-                             [realtime minR, realtime medianR, realtime maxR]
-          prods@[p1,p2,p3] = map mshow [productivity minR, productivity medianR, productivity maxR]
+                             [gettime minR, gettime medianR, gettime maxR]
+          prods@[p1,p2,p3] = map mshow [getprod minR, getprod medianR, getprod maxR]
           mshow Nothing  = ""
           mshow (Just x) = showFFloat (Just 2) x "" 
-
-      let 
-          pads n s = take (max 1 (n - length s)) $ repeat ' '
-          padl n x = pads n x ++ x 
-          padr n x = x ++ pads n x
 
           -- These are really (time,prod) tuples, but a flat list of
           -- scalars is simpler and readable by gnuplot:
@@ -321,13 +323,13 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
             , _VARIANT  = sched
             , _ARGS     = args
             , _THREADS  = numthreads
-            , _MINTIME    =  realtime minR
-            , _MEDIANTIME =  realtime medianR
-            , _MAXTIME    =  realtime maxR
-            , _MINTIME_PRODUCTIVITY    = productivity minR
-            , _MEDIANTIME_PRODUCTIVITY = productivity medianR
-            , _MAXTIME_PRODUCTIVITY    = productivity maxR
-            , _ALLTIMES      =  unwords$ map (show . realtime) nruns
+            , _MINTIME    =  gettime minR
+            , _MEDIANTIME =  gettime medianR
+            , _MAXTIME    =  gettime maxR
+            , _MINTIME_PRODUCTIVITY    = getprod minR
+            , _MEDIANTIME_PRODUCTIVITY = getprod medianR
+            , _MAXTIME_PRODUCTIVITY    = getprod maxR
+            , _ALLTIMES      =  unwords$ map (show . gettime) goodruns
             , _TRIALS        =  trials
             }
       result' <- liftIO$ augmentResultWithConfig conf result
@@ -655,6 +657,20 @@ collapsePrefix old new str =
 
 didComplete RunCompleted{} = True
 didComplete _              = False
+
+isError ExitError{} = True
+isError _           = False
+
+getprod RunCompleted{productivity} = productivity
+getprod RunTimeOut{}               = Nothing
+getprod x                          = error$"Cannot get productivity from: "++show x
+
+gettime RunCompleted{realtime} = realtime
+gettime RunTimeOut{}           = posInf
+gettime x                      = error$"Cannot get realtime from: "++show x
+
+posInf :: Double
+posInf = 1/0
 
 -- Shorthand for tagged version:
 logT str = log$hsbencher_tag++str
