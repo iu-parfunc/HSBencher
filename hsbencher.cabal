@@ -1,11 +1,12 @@
 
 name:                hsbencher
-version:             1.2
+version:             1.2.1
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
 -- 1.1.1 : add defaultMainModifyConfig
 -- 1.2   : Significant interface changes.
+-- 1.2.1 : Hack to shorten tuples, annoying URL length problem.
 
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
@@ -45,9 +46,9 @@ description: Benchmark frameworks are usually very specific to the
  @
  import HSBencher
  main = defaultMainWithBechmarks
- .      [ Benchmark "bench1/bench1.cabal" ["1000"] $
- .        Or [ Set NoMeaning (RuntimeParam "+RTS -qa -RTS")
- .            , Set NoMeaning (RuntimeEnv "HELLO" "yes") ] ]
+ .      [ Benchmark \"bench1/bench1.cabal\" [\"1000\"] $
+ .        Or [ Set NoMeaning (RuntimeParam \"+RTS -qa -RTS\")
+ .            , Set NoMeaning (RuntimeEnv \"HELLO\" \"yes\") ] ]
  @
  .
  The output would appear as in this gist:
