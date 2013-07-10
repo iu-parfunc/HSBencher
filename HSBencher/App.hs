@@ -405,7 +405,7 @@ printBenchrunHeader = do
 ----------------------------------------------------------------------------------------------------
 
 
--- | TODO: Eventually this will be parameterized.
+-- | TODO: Eventually this will make sense when all config can be read from the environment, args, files.
 defaultMain :: IO ()
 defaultMain = do
   --      benchF = get "BENCHLIST" "benchlist.txt"
@@ -431,7 +431,7 @@ defaultMainModifyConfig modConfig = do
   writeIORef main_threadid id
 
   cli_args <- getArgs
-  let (options,args,errs) = getOpt Permute (concat$ map snd all_cli_options) cli_args
+  let (options,plainargs,errs) = getOpt Permute (concat$ map snd all_cli_options) cli_args
   let recomp  = NoRecomp `notElem` options
   
   when (ShowVersion `elem` options) $ do
@@ -440,17 +440,29 @@ defaultMainModifyConfig modConfig = do
       (unwords$ versionTags version)
     exitSuccess 
       
-  when (not (null errs && null args) || ShowHelp `elem` options) $ do
+  when (not (null errs) || ShowHelp `elem` options) $ do
     unless (ShowHelp `elem` options) $
       putStrLn$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
     putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]"
+    putStrLn$ "USAGE: command line options include patterns that select the benchmarks to run"
     mapM putStr (map (uncurry usageInfo) all_cli_options)
     putStrLn$ usageStr
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
   conf0 <- getConfig options []
-  let conf1@Config{envs,benchlist,stdOut} = modConfig conf0
+
+  -- The list of benchmarks can optionally be narrowed to match any of the given patterns.
+  let conf1   = modConfig conf0
+      cutlist = case plainargs of
+                 [] -> benchlist conf1
+                 patterns -> filter (\ Benchmark{target,cmdargs} ->
+                                      any (\pat ->
+                                            isInfixOf pat target ||
+                                            any (isInfixOf pat) cmdargs)
+                                          patterns)
+                                    (benchlist conf1)
+  let conf2@Config{envs,benchlist,stdOut} = conf1{benchlist=cutlist}
 
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
@@ -459,6 +471,9 @@ defaultMainModifyConfig modConfig = do
   rootDir <- getCurrentDirectory  
   runReaderT 
     (do
+        unless (null plainargs) $
+          logT$"There were "++show(length cutlist)++" benchmarks matching patterns: "++show plainargs
+        
         logT$"Beginning benchmarking, root directory: "++rootDir
         let globalBinDir = rootDir </> "bin"
         when recomp $ do
@@ -615,7 +630,7 @@ defaultMainModifyConfig modConfig = do
         log$ "--------------------------------------------------------------------------------"
 	liftIO$ exitSuccess
     )
-    conf1
+    conf2
 
 
 -- Several different options for how to display output in parallel:
