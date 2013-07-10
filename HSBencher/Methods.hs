@@ -22,7 +22,7 @@ import Prelude hiding (log)
 import HSBencher.Types
 import HSBencher.Logging (log)
 import HSBencher.MeasureProcess
-import HSBencher.Utils (runLogged)
+import HSBencher.Utils (runLogged, defaultTimeout)
 
 --------------------------------------------------------------------------------
 -- Some useful build methods
@@ -49,7 +49,7 @@ makeMethod = BuildMethod
        let runit args envVars =
              CommandDescr
              { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
-             , timeout = Just 150  
+             , timeout = Just defaultTimeout
              , workingDir = Just absolute
              , envVars
              }
@@ -188,5 +188,5 @@ runSuccessful tag cmd = do
   (res,lines) <- runLogged tag cmd
   case res of
     ExitError code  -> error$ "expected this command to succeed! But it exited with code "++show code++ ":\n  "++ cmd
-    TimeOut {}      -> error "Methods.hs/runSuccessful - internal error!"
+    RunTimeOut {}   -> error "Methods.hs/runSuccessful - internal error!"
     RunCompleted {} -> return lines

@@ -154,12 +154,14 @@ instance Show BuildMethod where
 -- really, its main purpose is enabling logging.
 type BenchM a = ReaderT Config IO a
 
--- | The global configuration for benchmarking:
+-- | The global configuration for benchmarking.  WARNING! This is an internal data
+-- structure.  You shouldn't really use it.
 data Config = Config 
  { benchlist      :: [Benchmark DefaultParamMeaning]
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
+-- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
+ , runTimeOut     :: Maybe Double -- ^ Timeout for running benchmarks (if not specified by the benchmark specifically)
  , maxthreads     :: Int
  , trials         :: Int    -- ^ number of runs of each configuration
  , shortrun       :: Bool
@@ -342,6 +344,7 @@ data ParamSetting
                                --   For example `CmdPath "ghc" "ghc-7.6.3"`.
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
+-- | TimeOut      Double        -- ^ Set the timeout for this benchmark.
  deriving (Show, Eq, Read, Ord, Generic)
 
 ----------------------------------------------------------------------------------------------------
@@ -371,7 +374,7 @@ data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
                  , productivity :: Maybe Double -- ^ Seconds
                  }
-  | TimeOut
+  | RunTimeOut
   | ExitError Int -- ^ Contains the returned error code.
  deriving (Eq,Show)
 

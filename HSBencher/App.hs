@@ -272,7 +272,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
         let command = binpath++" "++unwords fullargs 
         logT$ " Executing command: " ++ command
-        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout=Just defaultTimeout, workingDir=Nothing }
+        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout=runTimeOut, workingDir=Nothing }
       RunInPlace fn -> do
 --        logT$ " Executing in-place benchmark run."
         let cmd = fn fullargs envVars
@@ -420,6 +420,9 @@ defaultMainWithBechmarks benches = do
 -- the configuration just before bencharking begins.  All trawling of the execution
 -- environment (command line args, environment variables) happens BEFORE the user
 -- sees the configuration.
+--
+-- This function doesn't take a benchmark list separately, because that simply
+-- corresponds to the 'benchlist' field of the output 'Config'.
 defaultMainModifyConfig :: (Config -> Config) -> IO ()
 defaultMainModifyConfig modConfig = do    
   id <- myThreadId
@@ -445,7 +448,7 @@ defaultMainModifyConfig modConfig = do
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
   conf0 <- getConfig options []
-  let conf1@Config{envs,benchlist,stdOut,threadsettings} = modConfig conf0
+  let conf1@Config{envs,benchlist,stdOut} = modConfig conf0
 
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"

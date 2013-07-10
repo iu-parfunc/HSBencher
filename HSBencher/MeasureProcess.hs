@@ -109,7 +109,7 @@ measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
                 return (RunCompleted {realtime=tm, productivity=prod})
               ExitFailure c   -> return (ExitError c)
         
-          Just TimerFire -> return TimeOut
+          Just TimerFire -> return RunTimeOut
   
           -- Bounce the line back to anyone thats waiting:
           Just (ErrLine errLine) -> do 

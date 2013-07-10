@@ -202,7 +202,8 @@ getConfig cmd_line_options benches = do
            , benchlist      = benches
 	   , benchversion   = ("",0)
 	   , maxthreads     = maxthreads
-	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
+--	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
+           , runTimeOut     = Just defaultTimeout
 	   , keepgoing      = False
 	   , resultsFile, logFile, logOut, resultsOut, stdOut         
 --	   , outHandles     = Nothing
