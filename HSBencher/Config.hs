@@ -50,6 +50,7 @@ data Flag = ParBench
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
           | ShortRun | KeepGoing | NumTrials String
+          | SkipTo String | RunID String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion
 #ifdef FUSION_TABLES
@@ -76,7 +77,7 @@ core_cli_options =
       , Option [] ["shortrun"] (NoArg ShortRun)
         "Elide command line args to benchmarks to perform a testing rather than benchmarking run."
       , Option ['k'] ["keepgoing"] (NoArg KeepGoing)
-        "Keep executing even after a build or run fails."
+        "Keep executing even after a build or run fails (default false)"
 #ifndef DISABLED 
       , Option [] ["no-cabal"] (NoArg NoCabal)
         "A shortcut to remove Cabal from the BuildMethods"
@@ -88,6 +89,12 @@ core_cli_options =
 
       , Option [] ["trials"] (ReqArg NumTrials "NUM")
         "The number of times to run each benchmark."
+
+      , Option [] ["runid"] (ReqArg RunID "NUM")
+        "Force run ID to be a specific string; useful for completing failed runs"
+      , Option [] ["skipto"] (ReqArg (SkipTo ) "NUM")
+        "Skip ahead to a specific point in the configuration space."
+
       , Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
 
@@ -124,12 +131,14 @@ augmentResultWithConfig Config{..} base = do
   uname    <- runSL "uname -a"
   lspci    <- runLines "lspci"
   whos     <- runLines "who"
-  let runID = (hostname ++ "_" ++ show startTime)
+  let newRunID = (hostname ++ "_" ++ show startTime)
   let (branch,revision,depth) = gitInfo
   return $
     base
     { _HOSTNAME      = hostname
-    , _RUNID         = runID  
+    , _RUNID         = case runID of
+                        Just r -> r
+                        Nothing -> newRunID
     , _DATETIME      = show datetime
     , _TRIALS        = trials
     , _ENV_VARS      = show envs 
@@ -196,6 +205,8 @@ getConfig cmd_line_options benches = do
            , benchsetName   = Nothing
 --	   , trials         = read$ get "TRIALS"    "1"
 	   , trials         = 1
+	   , skipTo         = Nothing
+	   , runID          = Nothing
            , pathRegistry   = M.empty
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
@@ -247,6 +258,13 @@ getConfig cmd_line_options benches = do
                                     case reads s of
                                       (n,_):_ -> n
                                       [] -> error$ "--trials given bad argument: "++s }
+      doFlag (SkipTo s) r = r { skipTo=
+                                    case reads s of
+                                      (n,_):_ | n >= 1    -> Just n
+                                              | otherwise -> error$ "--skipto must be positive: "++s
+                                      [] -> error$ "--skipto given bad argument: "++s }
+      doFlag (RunID s) r = r { runID= Just s }
+
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r

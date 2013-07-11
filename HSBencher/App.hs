@@ -601,6 +601,7 @@ defaultMainModifyConfig modConfig = do
                                    proceed 
                            else runloop iter (M.insert bid (ccnum,Nothing) board) lastConfigured (nextrun:rest)
 
+              -- Keeps track of what's compiled.
               initBoard _ [] acc = acc 
               initBoard !iter ((bench,params):rest) acc = 
                 let bid = makeBuildID (target bench) $ toCompileFlags params 
@@ -618,7 +619,12 @@ defaultMainModifyConfig modConfig = do
               zippedruns = (concat$ zipWith (\ b cfs -> map (b,) cfs) benchlist allruns)
 
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
-          runloop 1 (initBoard 1 zippedruns M.empty) M.empty zippedruns
+          let startBoard = initBoard 1 zippedruns M.empty
+          Config{skipTo} <- ask
+          case skipTo of 
+            Nothing -> runloop 1 startBoard M.empty zippedruns
+            Just ix -> do logT$" !!! WARNING: SKIPPING AHEAD in configuration space; jumping to: "++show ix
+                          runloop ix startBoard M.empty (drop (ix-1) zippedruns)
 
 {-
         do Config{logOut, resultsOut, stdOut} <- ask

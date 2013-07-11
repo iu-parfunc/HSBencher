@@ -164,6 +164,8 @@ data Config = Config
  , runTimeOut     :: Maybe Double -- ^ Timeout for running benchmarks (if not specified by the benchmark specifically)
  , maxthreads     :: Int
  , trials         :: Int    -- ^ number of runs of each configuration
+ , skipTo         :: Maybe Int -- ^ Where to start in the config space.
+ , runID          :: Maybe String -- ^ An over-ride for the run ID.
  , shortrun       :: Bool
  , doClean        :: Bool
  , keepgoing      :: Bool   -- ^ keep going after error
