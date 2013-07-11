@@ -40,7 +40,9 @@ main = do
   files <- case argv of
              -- Wacky default setting -- search at a certain depth for *.dat's:
              []    -> run "ls */*/*/*/results_*.dat"
-	     [dir] -> run ("find "++dir++" -type f -name \"results_*.dat\" ")
+	     [dir] -> do lns1 <- run ("find "++dir++" -type f -name \"results_*.dat\" ")
+                         lns2 <- run ("find "++dir++" -type l -name \"results_*.dat\" ")
+                         return (lns1 ++ lns2)
   printf "Found %d results files:\n"  (length files)
   mapM_ (putStrLn . indent) files
 
