@@ -62,8 +62,10 @@ import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 
+#ifdef USE_HYDRAPRINT
 import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydraConf, hydraPrintStatic)
 import Scripting.Parallel.ThreadPool (parForM)
+#endif
 
 #ifdef FUSION_TABLES
 import HSBencher.Fusion
@@ -643,12 +645,14 @@ defaultMainModifyConfig modConfig = do
 catParallelOutput :: [Strm.InputStream B.ByteString] -> Strm.OutputStream B.ByteString -> IO ()
 catParallelOutput strms stdOut = do 
  case 4 of
+#ifdef USE_HYDRAPRINT   
    -- First option is to create N window panes immediately.
    1 -> do
            hydraPrintStatic defaultHydraConf (zip (map show [1..]) strms)
    2 -> do
            srcs <- Strm.fromList (zip (map show [1..]) strms)
            hydraPrint defaultHydraConf{deleteWhen=Never} srcs
+#endif
    -- This version interleaves their output lines (ugly):
    3 -> do 
            strms2 <- mapM Strm.lines strms
