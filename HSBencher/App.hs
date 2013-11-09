@@ -207,7 +207,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
 runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
-runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=args_} runconfig = do       
+runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=args_, progname} runconfig = do       
   let numthreads = foldl (\ acc (x,_) ->
                            case x of
                              Threads n -> n
@@ -321,7 +321,9 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
 
       let result =
             emptyBenchmarkResult
-            { _PROGNAME = testRoot
+            { _PROGNAME = case progname of
+                           Just s  -> s
+                           Nothing -> testRoot
             , _VARIANT  = sched
             , _ARGS     = args
             , _THREADS  = numthreads

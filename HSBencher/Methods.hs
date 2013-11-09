@@ -104,6 +104,7 @@ ghcMethod = BuildMethod
 cabalMethod :: BuildMethod
 cabalMethod = BuildMethod
   { methodName = "cabal"
+   -- TODO: Add methodDocs
   , canBuild = dotcab `PredOr`
                InDirectoryWithExactlyOne dotcab
   , concurrentBuild = True

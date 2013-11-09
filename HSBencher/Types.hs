@@ -218,9 +218,10 @@ instance Show (Strm.OutputStream a) where
 -- type BenchFile = [BenchStmt]
 
 data Benchmark a = Benchmark
- { target  :: FilePath      -- ^ The target file or direcotry.
+ { target  :: FilePath      -- ^ The target file or directory.
  , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
  , configs :: BenchSpace a  -- ^ The configration space to iterate over.
+ , progname :: Maybe String -- ^ Optional name to use INSTEAD of the basename from `target`.
  } deriving (Eq, Show, Ord, Generic)
 
 
@@ -228,7 +229,7 @@ data Benchmark a = Benchmark
 -- defaults to fill in the rest.  Takes target, cmdargs, configs.
 mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a 
 mkBenchmark  target  cmdargs configs = 
-  Benchmark {target, cmdargs, configs}
+  Benchmark {target, cmdargs, configs, progname=Nothing }
 
 
 -- | A datatype for describing (generating) benchmark configuration spaces.
@@ -273,11 +274,13 @@ isCompileTime CmdPath     {} = True
 isCompileTime RuntimeParam{} = False
 isCompileTime RuntimeEnv  {} = False
 
+-- | Extract the parameters that affect the compile-time arguments.
 toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
 toCompileFlags [] = []
 toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl
 toCompileFlags (_ : tl)                   =      toCompileFlags tl
 
+-- | Extract the parameters that affect the runtime arguments.
 toRunFlags :: [(a,ParamSetting)] -> RunFlags
 toRunFlags [] = []
 toRunFlags ((_,RuntimeParam s1) : tl) = (s1) : toRunFlags tl

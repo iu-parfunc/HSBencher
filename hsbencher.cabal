@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.3.9
+version:             1.4
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -14,6 +14,8 @@ version:             1.3.9
 -- 1.3.6 : bugfix productivity for timeouts
 -- 1.3.8 : Added --skipto and --runid
 -- 1.3.8 : Remove hydra-print dep by default.  Add 'hydra' flag.
+
+-- 1.4   : Richer Benchmark{} record type.
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 
