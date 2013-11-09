@@ -455,10 +455,26 @@ defaultMainModifyConfig modConfig = do
     if (ShowHelp `elem` options) then exitSuccess else exitFailure
 
   conf0 <- getConfig options []
-
   -- The list of benchmarks can optionally be narrowed to match any of the given patterns.
   let conf1   = modConfig conf0
-      cutlist = case plainargs of
+      
+#ifdef FUSION_TABLES
+  when (not (null errs) || FusionTest `elem` options) $ do
+
+    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
+    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+    putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
+    toks  <- getCachedTokens authclient
+    putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
+    putStrLn "[hsbencher] Next, attempt to list tables:"
+    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
+    putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
+    exitSuccess
+#endif
+
+  -- Next prune the list of benchmarks to those selected by the user:
+  let cutlist = case plainargs of
                  [] -> benchlist conf1
                  patterns -> filter (\ Benchmark{target,cmdargs} ->
                                       any (\pat ->

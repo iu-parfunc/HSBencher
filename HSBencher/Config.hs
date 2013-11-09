@@ -58,6 +58,7 @@ data Flag = ParBench
           | BenchsetName (String)
           | ClientID     String
           | ClientSecret String
+          | FusionTest
 #endif
   deriving (Eq,Ord,Show,Read)
 
@@ -116,6 +117,7 @@ fusion_cli_options =
       , Option [] ["name"]         (ReqArg BenchsetName "NAME") "Name for created/discovered fusion table."
       , Option [] ["clientid"]     (ReqArg ClientID "ID")     "Use (and cache) Google client ID"
       , Option [] ["clientsecret"] (ReqArg ClientSecret "STR") "Use (and cache) Google client secret"
+      , Option [] ["fusion-test"]  (NoArg FusionTest)   "Test authentication and list tables if possible." 
       ])
 #endif
 
@@ -248,6 +250,7 @@ getConfig cmd_line_options benches = do
            Just tid -> let r3 = fusionConfig r in
                        r2 { fusionConfig= r3 { fusionTableID = Just tid } }
            Nothing -> r2
+      doFlag FusionTest r = r
 #endif
       doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
       doFlag (GHCPath   p) r = r { pathRegistry= M.insert "ghc"   p (pathRegistry r) }
