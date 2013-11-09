@@ -130,6 +130,7 @@ fusionSchema =
   , ("HOSTNAME",STRING)
   -- The run is identified by hostname_secondsSinceEpoch:
   , ("RUNID",STRING)
+  , ("CI_BUILD_ID",STRING)  
   , ("THREADS",NUMBER)
   , ("DATETIME",DATETIME)    
   , ("MINTIME", NUMBER)
@@ -168,6 +169,7 @@ resultToTuple r =
   , ("ARGS",     unwords$ _ARGS r)    
   , ("HOSTNAME", _HOSTNAME r)
   , ("RUNID",    _RUNID r)
+  , ("CI_BUILD_ID", _CI_BUILD_ID r)    
   , ("THREADS",  show$ _THREADS r)
   , ("DATETIME", _DATETIME r)
   , ("MINTIME",     show$ _MINTIME r)

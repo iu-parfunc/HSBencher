@@ -50,7 +50,7 @@ data Flag = ParBench
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
           | ShortRun | KeepGoing | NumTrials String
-          | SkipTo String | RunID String
+          | SkipTo String | RunID String | CIBuildID String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion
 #ifdef FUSION_TABLES
@@ -93,6 +93,9 @@ core_cli_options =
 
       , Option [] ["runid"] (ReqArg RunID "NUM")
         "Force run ID to be a specific string; useful for completing failed runs"
+      , Option [] ["buildid"] (ReqArg RunID "STR")
+        "Set the build ID used by the continuous integration system."
+
       , Option [] ["skipto"] (ReqArg (SkipTo ) "NUM")
         "Skip ahead to a specific point in the configuration space."
 
@@ -134,13 +137,16 @@ augmentResultWithConfig Config{..} base = do
   lspci    <- runLines "lspci"
   whos     <- runLines "who"
   let newRunID = (hostname ++ "_" ++ show startTime)
-  let (branch,revision,depth) = gitInfo
+  let (branch,revision,depth) = gitInfo      
   return $
     base
     { _HOSTNAME      = hostname
     , _RUNID         = case runID of
                         Just r -> r
                         Nothing -> newRunID
+    , _CI_BUILD_ID   = case ciBuildID of
+                        Just r -> r
+                        Nothing -> ""
     , _DATETIME      = show datetime
     , _TRIALS        = trials
     , _ENV_VARS      = show envs 
@@ -209,6 +215,7 @@ getConfig cmd_line_options benches = do
 	   , trials         = 1
 	   , skipTo         = Nothing
 	   , runID          = Nothing
+	   , ciBuildID      = Nothing                              
            , pathRegistry   = M.empty
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
@@ -267,6 +274,7 @@ getConfig cmd_line_options benches = do
                                               | otherwise -> error$ "--skipto must be positive: "++s
                                       [] -> error$ "--skipto given bad argument: "++s }
       doFlag (RunID s) r = r { runID= Just s }
+      doFlag (CIBuildID s) r = r { ciBuildID= Just s }
 
       -- Ignored options:
       doFlag ShowHelp r = r

@@ -166,6 +166,7 @@ data Config = Config
  , trials         :: Int    -- ^ number of runs of each configuration
  , skipTo         :: Maybe Int -- ^ Where to start in the config space.
  , runID          :: Maybe String -- ^ An over-ride for the run ID.
+ , ciBuildID      :: Maybe String -- ^ The build ID from the continuous integration system.
  , shortrun       :: Bool
  , doClean        :: Bool
  , keepgoing      :: Bool   -- ^ keep going after error
@@ -423,6 +424,7 @@ data BenchmarkResult =
   , _ARGS     :: [String]
   , _HOSTNAME :: String
   , _RUNID    :: String
+  , _CI_BUILD_ID :: String 
   , _THREADS  :: Int
   , _DATETIME :: String -- Datetime
   , _MINTIME    ::  Double
@@ -459,6 +461,7 @@ emptyBenchmarkResult = BenchmarkResult
   , _ARGS     = []
   , _HOSTNAME = ""
   , _RUNID    = ""
+  , _CI_BUILD_ID = ""                
   , _THREADS  = 0
   , _DATETIME = "" 
   , _MINTIME    =  0.0

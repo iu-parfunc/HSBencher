@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.4
+version:             1.4.1
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -16,6 +16,7 @@ version:             1.4
 -- 1.3.8 : Remove hydra-print dep by default.  Add 'hydra' flag.
 
 -- 1.4   : Richer Benchmark{} record type.
+-- 1.4.1 : add CI_BUILD_ID column
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 
