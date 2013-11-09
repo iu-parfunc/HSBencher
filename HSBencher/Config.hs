@@ -93,7 +93,7 @@ core_cli_options =
 
       , Option [] ["runid"] (ReqArg RunID "NUM")
         "Force run ID to be a specific string; useful for completing failed runs"
-      , Option [] ["buildid"] (ReqArg RunID "STR")
+      , Option [] ["buildid"] (ReqArg CIBuildID "STR")
         "Set the build ID used by the continuous integration system."
 
       , Option [] ["skipto"] (ReqArg (SkipTo ) "NUM")
