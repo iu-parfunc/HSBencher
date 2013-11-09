@@ -19,7 +19,7 @@ main = do
   defaultMainWithBechmarks benches
 
 benches =
-  [ Benchmark "bench1/" ["unused_cmdline_arg"] withthreads
+  [ mkBenchmark "bench1/" ["unused_cmdline_arg"] withthreads
   ]
 
 withthreads = defaultHSSettings$
