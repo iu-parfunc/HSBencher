@@ -280,7 +280,12 @@ runOne (iterNum, totalIters) _bldid bldres
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
         let command = binpath++" "++unwords fullargs 
         logT$ " Executing command: " ++ command
-        let timeout = do benchTimeOut; runTimeOut  -- Maybe monad.
+        let timeout = if benchTimeOut == Nothing
+                      then runTimeOut
+                      else benchTimeOut
+        case timeout of
+          Just t  -> logT$ " Setting timeout: " ++ show t
+          Nothing -> return ()
         doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing }
       RunInPlace fn -> do
 --        logT$ " Executing in-place benchmark run."
