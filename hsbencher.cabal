@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.4.1.1
+version:             1.4.1.2
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -17,6 +17,7 @@ version:             1.4.1.1
 
 -- 1.4   : Richer Benchmark{} record type.
 -- 1.4.1 : add CI_BUILD_ID column
+-- 1.4.1.2 : add benchTimeOut field
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 

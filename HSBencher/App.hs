@@ -211,7 +211,9 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
 runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
-runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=args_, progname} runconfig = do       
+runOne (iterNum, totalIters) _bldid bldres
+       Benchmark{target=testPath, cmdargs=args_, progname, benchTimeOut}
+       runconfig = do       
   let numthreads = foldl (\ acc (x,_) ->
                            case x of
                              Threads n -> n
@@ -278,7 +280,8 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
         let command = binpath++" "++unwords fullargs 
         logT$ " Executing command: " ++ command
-        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout=runTimeOut, workingDir=Nothing }
+        let timeout = do benchTimeOut; runTimeOut  -- Maybe monad.
+        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing }
       RunInPlace fn -> do
 --        logT$ " Executing in-place benchmark run."
         let cmd = fn fullargs envVars
@@ -291,7 +294,7 @@ runOne (iterNum, totalIters) bldid bldres Benchmark{target=testPath, cmdargs=arg
   let pads n s = take (max 1 (n - length s)) $ repeat ' '
       padl n x = pads n x ++ x 
       padr n x = x ++ pads n x
-  (t1,t2,t3,p1,p2,p3) <-
+  (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
       logOn [ResultsFile]$ 

@@ -223,6 +223,7 @@ data Benchmark a = Benchmark
  , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
  , configs :: BenchSpace a  -- ^ The configration space to iterate over.
  , progname :: Maybe String -- ^ Optional name to use INSTEAD of the basename from `target`.
+ , benchTimeOut :: Maybe Double -- ^ Specific timeout for this benchmark.  Overrides global setting.
  } deriving (Eq, Show, Ord, Generic)
 
 
@@ -230,7 +231,7 @@ data Benchmark a = Benchmark
 -- defaults to fill in the rest.  Takes target, cmdargs, configs.
 mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a 
 mkBenchmark  target  cmdargs configs = 
-  Benchmark {target, cmdargs, configs, progname=Nothing }
+  Benchmark {target, cmdargs, configs, progname=Nothing, benchTimeOut=Nothing }
 
 
 -- | A datatype for describing (generating) benchmark configuration spaces.
