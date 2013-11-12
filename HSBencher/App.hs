@@ -183,6 +183,10 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
              filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
   when (null matches) $ do
        logT$ "ERROR, no build method matches path: "++testPath
+       logT$ "  Tried methods: "++show(map methodName buildMethods)
+       logT$ "  With file preds: "
+       forM buildMethods $ \ meth ->
+         logT$ "    "++ show (canBuild meth)
        lift exitFailure     
   logT$ printf "Found %d methods that can handle %s: %s" 
          (length matches) testPath (show$ map methodName matches)
