@@ -345,6 +345,7 @@ runOne (iterNum, totalIters) _bldid bldres
             , _MINTIME_PRODUCTIVITY    = getprod minR
             , _MEDIANTIME_PRODUCTIVITY = getprod medianR
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
+            , _RUNTIME_FLAGS = unwords runFlags
             , _ALLTIMES      =  unwords$ map (show . gettime) goodruns
             , _TRIALS        =  trials
             }
