@@ -509,14 +509,13 @@ defaultMainModifyConfig modConfig = do
         unless (null plainargs) $ do
           let len = (length cutlist)
           logT$"There were "++show len++" benchmarks matching patterns: "++show plainargs
-          when (len == 0) $ 
+          when (len == 0) $ do 
             error$ "Expected at least one pattern to match!.  All benchmarks: \n"++
                    (case conf1 of 
                      Config{benchlist=ls} -> 
                        (unlines  [ (target ++ (unwords cmdargs))
                                | Benchmark{cmdargs,target} <- ls
                                ]))
-          lift exitFailure
         
         logT$"Beginning benchmarking, root directory: "++rootDir
         let globalBinDir = rootDir </> "bin"
