@@ -29,7 +29,7 @@ import Control.Exception (evaluate, handle, SomeException, throwTo, fromExceptio
 import Debug.Trace
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.Maybe (isJust, fromJust, catMaybes)
+import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import qualified Data.Map as M
 import Data.Word (Word64)
 import Data.IORef
@@ -489,10 +489,12 @@ defaultMainModifyConfig modConfig = do
   -- Next prune the list of benchmarks to those selected by the user:
   let cutlist = case plainargs of
                  [] -> benchlist conf1
-                 patterns -> filter (\ Benchmark{target,cmdargs} ->
+                 patterns -> filter (\ Benchmark{target,cmdargs,progname} ->
                                       any (\pat ->
                                             isInfixOf pat target ||
-                                            any (isInfixOf pat) cmdargs)
+                                            isInfixOf pat (fromMaybe "" progname) ||
+                                            any (isInfixOf pat) cmdargs
+                                          )
                                           patterns)
                                     (benchlist conf1)
   let conf2@Config{envs,benchlist,stdOut} = conf1{benchlist=cutlist}
@@ -509,7 +511,11 @@ defaultMainModifyConfig modConfig = do
           logT$"There were "++show len++" benchmarks matching patterns: "++show plainargs
           when (len == 0) $ 
             error$ "Expected at least one pattern to match!.  All benchmarks: \n"++
-                   show (case conf1 of Config{benchlist=x} -> x )
+                   (case conf1 of 
+                     Config{benchlist=ls} -> 
+                       (unlines  [ (target ++ (unwords cmdargs))
+                               | Benchmark{cmdargs,target} <- ls
+                               ]))
           lift exitFailure
         
         logT$"Beginning benchmarking, root directory: "++rootDir
