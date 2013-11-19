@@ -28,7 +28,17 @@ import HSBencher.Utils (runLogged, defaultTimeout)
 -- Some useful build methods
 --------------------------------------------------------------------------------
 
--- | Build with GNU Make.
+-- | Build with GNU Make.  This is a basic Make protocol; your application may need
+--   something more complicated.  This assumes targets clean, run, and the default
+--   target for building.
+--
+--   The variables RUN_ARGS and COMPILE_ARGS are used to pass in the per-benchmark
+--   run and compile options, so the Makefile must be written with these conventions
+--   in mind.  Note that this build method never knows where or if any resulting
+--   binaries reside.  One effect of that is that this simple build method can never
+--   be used for PARALLEL compiles, because it cannot manage where the
+--   build-intermediates are stored.
+-- 
 makeMethod :: BuildMethod
 makeMethod = BuildMethod
   { methodName = "make"
@@ -66,7 +76,11 @@ makeMethod = BuildMethod
      inDirectory dir (action makePath)
 
 
--- | Build with GHC directly.
+-- | Build with GHC directly.  This assumes that all dependencies are installed and a
+-- single call to @ghc@ can build the file.
+-- 
+-- Compile-time arguments go directly to GHC, and runtime arguments directly to the
+-- resulting binary.
 ghcMethod :: BuildMethod
 ghcMethod = BuildMethod
   { methodName = "ghc"
@@ -101,6 +115,12 @@ ghcMethod = BuildMethod
 
 
 -- | Build with cabal.
+--   Specifically, this uses "cabal install".
+-- 
+-- This build method attempts to choose reasonable defaults for benchmarking.  It
+-- takes control of the output program suffix and directory (setting it to ./bin).
+-- It passes compile-time arguments directly to cabal.  Likewise, runtime arguments
+-- get passed directly to the resulting binary.
 cabalMethod :: BuildMethod
 cabalMethod = BuildMethod
   { methodName = "cabal"

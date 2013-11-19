@@ -1,15 +1,26 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, NamedFieldPuns, CPP  #-}
 {-# LANGUAGE DeriveGeneric, StandaloneDeriving #-}
 
+-- | All the core types used by the rest of the HSBencher codebase.
+
 module HSBencher.Types
        (
          -- * Benchmark building
-         RunFlags, CompileFlags, FilePredicate(..), filePredCheck,
-         BuildResult(..), BuildMethod(..),
+         -- | The basic types for describing a single benchmark.
          mkBenchmark, 
-         Benchmark(..), 
+         Benchmark(..),          
+         RunFlags, CompileFlags,
+
+         -- * Build method interface and applicability
+         -- | A build method is applicable to a subset of target files
+         -- (`FilePredicate`) and has a particular interface that HSbencher relies
+         -- upon.
+         BuildMethod(..), BuildResult(..),         
+         FilePredicate(..), filePredCheck,
          
          -- * Benchmark configuration spaces
+         -- | Describe how many different ways you want to run your
+         -- benchmarks.           
          BenchSpace(..), ParamSetting(..),
          enumerateBenchSpace, compileOptsOnly, isCompileTime,
          toCompileFlags, toRunFlags, toEnvVars, toCmdPaths,
@@ -28,7 +39,7 @@ module HSBencher.Types
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
 
-         -- * For convenience; large records call for pretty-printing
+         -- * For convenience -- large records demand pretty-printing
          doc
        )
        where
@@ -61,7 +72,11 @@ import Network.Google.FusionTables (createTable, listTables, listColumns, insert
 ----------------------------------------------------------------------------------------------------
 
 type EnvVars      = [(String,String)]
+
+-- | The arguments passed (in a build-method specific way) to the running benchmark.
 type RunFlags     = [String]
+
+-- | The arguments passed (in a build-method specific way) into the compilation process.
 type CompileFlags = [String]
 
 -- | Maps canonical command names, e.g. 'ghc', to absolute system paths.
@@ -216,8 +231,10 @@ instance Show (Strm.OutputStream a) where
 -- Configuration Spaces
 ----------------------------------------------------------------------------------------------------
 
--- type BenchFile = [BenchStmt]
-
+-- | The all-inclusive datatype for a single Benchmark.  Do NOT construct values of
+-- this type directly.  Rather, you should make your code robust against future
+-- addition of fields to this datatype.  Use `mkBenchmark` followed by customizing
+-- only the fields you need.
 data Benchmark a = Benchmark
  { target  :: FilePath      -- ^ The target file or directory.
  , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
