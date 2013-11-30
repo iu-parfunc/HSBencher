@@ -2,7 +2,7 @@
 
 -- | This module provides tools to time a sub-process (benchmark), including a
 -- facility for self-reporting execution time and reporting garbage collector
--- overhead.
+-- overhead for GHC-compiled programs.
 
 module HSBencher.MeasureProcess
        (measureProcess,
@@ -31,6 +31,7 @@ import qualified Data.ByteString.Char8 as B
 import System.Environment (getEnvironment)
 
 import HSBencher.Types
+import Debug.Trace
 
 --------------------------------------------------------------------------------
            
@@ -42,15 +43,18 @@ import HSBencher.Types
 --   (1) An additional protocol for the process to report self-measured realtime (a
 --     line starting in "SELFTIMED")
 --
---   (2) Parsing the output of "+RTS -s" to retrieve productivity OR using lines of
---       the form "PRODUCTIVITY: XYZ"
+--   (2) Parsing the output of GHC's "+RTS -s" to retrieve productivity OR using 
+--       lines of the form "PRODUCTIVITY: XYZ"
 --
 -- Note that "+RTS -s" is specific to Haskell/GHC, but the PRODUCTIVITY tag allows
 -- non-haskell processes to report garbage collector overhead.
 --
 -- This procedure is currently not threadsafe, because it changes the current working
 -- directory.
-measureProcess :: LineHarvester -> LineHarvester -> CommandDescr -> IO SubProcess
+measureProcess :: LineHarvester -- ^ Time harvester
+               -> LineHarvester -- ^ Productivity harvester
+               -> CommandDescr
+               -> IO SubProcess
 measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
                CommandDescr{command, envVars, timeout, workingDir} = do
   origDir <- getCurrentDirectory
@@ -183,25 +187,21 @@ taggedLineHarvester tag = LineHarvester $ \ ln ->
 -- a Haskell program with "+RTS -s".  Productivity is a percentage (double between
 -- 0.0 and 100.0, inclusive).
 ghcProductivityHarvester :: LineHarvester
-ghcProductivityHarvester = LineHarvester $ \ ln -> 
+ghcProductivityHarvester = LineHarvester $ \ ln ->
   case words (B.unpack ln) of
     [] -> Nothing
-    -- EGAD: This is NOT really meant to be machine read:
+    -- This variant is our own manually produced productivity tag (like SELFTIMED):
     [p, time] | p == "PRODUCTIVITY" || p == "PRODUCTIVITY:" ->
        case reads time of
          (dbl,_):_ -> Just dbl
          _ -> error$ "Error parsing number in PRODUCTIVITY line: "++B.unpack ln
-    ["GC","time",gc,"(",total,"elapsed)"] ->
---    "GC":"time": gc :"(": total :_ ->
-        case (reads gc, reads total) of
-          ((gcD,_):_,(totalD,_):_) -> Just $ 
-            if totalD == 0.0
-            then 100.0
-            else (100 - (gcD / totalD * 100))
-          _ -> error$ "checkGCTime: Error parsing number in MUT time line: "++B.unpack ln
+    -- EGAD: This is NOT really meant to be machine read:
+    -- ["GC","time",gc,"(",total,"elapsed)"] ->         
+    ("Productivity": prod: "of": "total": "user," : _) ->
+      case reads (filter (/= '%') prod) of
+         ((prodN,_):_) -> Just prodN 
+         x -> Nothing
    -- TODO: Support  "+RTS -t --machine-readable" as well...          
-   --  read GC_wall_seconds     
-   --  read mutator_wall_seconds
     _ -> Nothing
 
 
