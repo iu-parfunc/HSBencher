@@ -17,7 +17,7 @@ import Data.Maybe (isJust, fromJust, catMaybes)
 import qualified Data.ByteString.Char8 as B
 -- import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
-import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
+import Network.Google.FusionTables (createTable, listTables, listColumns, bulkImportRows
                                     TableId, CellType(..), TableMetadata(..))
 import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
@@ -110,10 +110,11 @@ uploadBenchResult  br@BenchmarkResult{..} = do
     let (cols,vals) = unzip tuple
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
-    -- 
-    -- FIXME: It's easy to blow the URL size; we need the bulk import version.
-    stdRetry "insertRows" authclient toks $
-      insertRows (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
+
+    -- It's easy to blow the URL size; we need the bulk import version.
+    --    stdRetry "insertRows" authclient toks $ insertRows
+    stdRetry "bulkImportRows" authclient toks $ bulkImportRows
+       (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
     log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple)
          ++ " date "++ (fromJust$ lookup "DATETIME" tuple)
 --       [[testRoot, unwords args, show numthreads, t1,t2,t3, p1,p2,p3]]
