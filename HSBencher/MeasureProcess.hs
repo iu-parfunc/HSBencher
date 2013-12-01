@@ -6,7 +6,8 @@
 
 module HSBencher.MeasureProcess
        (measureProcess,
-        selftimedHarvester, ghcProductivityHarvester,
+        selftimedHarvester,
+        ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
         taggedLineHarvester
         )
        where
@@ -182,6 +183,14 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
     _ -> fail
 
 
+--------------------------------------------------------------------------------
+-- GHC-specific Harvesters:
+--     
+-- All three of these are currently using the human-readable "+RTS -s" output format.
+-- We should switch them to "--machine-readable -s", but that would require combining
+-- information harvested from multiple lines, because GHC breaks up the statistics.
+-- (Which is actually kind of weird since its specifically a machine readable format.)
+
 -- | Retrieve productivity (i.e. percent time NOT garbage collecting) as output from
 -- a Haskell program with "+RTS -s".  Productivity is a percentage (double between
 -- 0.0 and 100.0, inclusive).
@@ -200,6 +209,35 @@ ghcProductivityHarvester =
           _ -> nope
     -- TODO: Support  "+RTS -t --machine-readable" as well...          
      _ -> nope)
+
+ghcAllocRateHarvester :: LineHarvester
+ghcAllocRateHarvester =
+  (LineHarvester $ \ ln ->
+   let nope = (id,False) in
+   case words (B.unpack ln) of
+     [] -> nope
+     -- EGAD: This is NOT really meant to be machine read:
+     ("Alloc":"rate": rate: "bytes":"per":_) ->
+       case reads (filter (/= ',') rate) of
+          ((n,_):_) -> (\r -> r{allocRate=Just n}, True)
+          _ -> nope
+     _ -> nope)
+
+ghcMemFootprintHarvester :: LineHarvester
+ghcMemFootprintHarvester =
+  (LineHarvester $ \ ln ->
+   let nope = (id,False) in
+   case words (B.unpack ln) of
+     [] -> nope
+     -- EGAD: This is NOT really meant to be machine read:
+--   "       5,372,024 bytes maximum residency (6 sample(s))",
+     (sz:"bytes":"maximum":"residency":_) ->
+       case reads (filter (/= ',') sz) of
+          ((n,_):_) -> (\r -> r{memFootprint=Just n}, True)
+          _ -> nope
+     _ -> nope)
+
+--------------------------------------------------------------------------------
 
 -- | Fire a single event after a time interval, then end the stream.
 timeOutStream :: Double -> IO (Strm.InputStream ())

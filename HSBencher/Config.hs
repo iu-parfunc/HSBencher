@@ -234,8 +234,10 @@ getConfig cmd_line_options benches = do
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
            , doFusionUpload = False
            , argsBeforeFlags = True
-           , harvesters = selftimedHarvester `mappend`
-                          ghcProductivityHarvester
+           , harvesters = selftimedHarvester       `mappend`
+                          ghcProductivityHarvester `mappend`
+                          ghcMemFootprintHarvester `mappend`
+                          ghcAllocRateHarvester    
 #ifdef FUSION_TABLES
            , fusionConfig = FusionConfig 
               { fusionTableID  = Nothing 
