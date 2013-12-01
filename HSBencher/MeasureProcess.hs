@@ -17,6 +17,7 @@ import Control.Concurrent.Chan
 import qualified Control.Exception as E
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.IORef
+import Data.Monoid
 import System.Exit
 import System.Directory
 import System.IO (hClose, stderr)
@@ -33,8 +34,8 @@ import System.Environment (getEnvironment)
 import HSBencher.Types
 import Debug.Trace
 
---------------------------------------------------------------------------------
-           
+--------------------------------------------------------------------------------  
+
 -- | This runs a sub-process and tries to determine how long it took (real time) and
 -- how much of that time was spent in the mutator vs. the garbage collector.
 --
@@ -96,8 +97,9 @@ measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
   process_err <- Strm.chanToInput relay_err
   
   -- Process the input until there is no more, and then return the result.
-  let 
-      loop time prod = do
+  let
+      loop :: RunResult -> IO RunResult
+      loop resultAcc = do
         x <- Strm.read merged3
         case x of
           Just ProcessClosed -> do
@@ -106,13 +108,14 @@ measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
             code <- waitForProcess pid
             endtime <- getCurrentTime
             case code of
-              ExitSuccess -> do
-                tm <- case time of
-                         -- If there's no self-reported time, we measure it ourselves:
-                         Nothing -> let d = diffUTCTime endtime startTime in
-                                    return$ fromRational$ toRational d
-                         Just t -> return t
-                return (RunCompleted {realtime=tm, productivity=prod})
+              ExitSuccess -> 
+                -- TODO: we should probably make this a Maybe type:
+                if realtime resultAcc == realtime emptyRunResult
+                then    
+                  -- If there's no self-reported time, we measure it ourselves:
+                  let d = diffUTCTime endtime startTime in
+                  return$ resultAcc { realtime = fromRational$ toRational d }
+                else return resultAcc
               ExitFailure c   -> return (ExitError c)
         
           Just TimerFire -> do
@@ -130,16 +133,16 @@ measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
           Just (ErrLine errLine) -> do 
             writeChan relay_err (Just errLine)
             -- Check for GHC-produced GC stats here:
-            loop time (prod `orMaybe` checkProd errLine)
+            loop $ fst (checkProd errLine) resultAcc
           Just (OutLine outLine) -> do
             writeChan relay_out (Just outLine)
             -- The SELFTIMED readout will be reported on stdout:
-            loop (time `orMaybe` checkTiming outLine)
-                 (prod `orMaybe` checkProd outLine)
+            loop $ fst (checkProd outLine) $ 
+                   fst (checkTiming outLine) resultAcc
 
           Nothing -> error "benchmark.hs: Internal error!  This should not happen."
   
-  fut <- A.async (loop Nothing Nothing)
+  fut <- A.async (loop emptyRunResult)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
 
 -- Dump the rest of an IOStream until we reach the end
@@ -162,48 +165,46 @@ data ProcessEvt = ErrLine B.ByteString
 -------------------------------------------------------------------
 
 nullHarvester :: LineHarvester
-nullHarvester = LineHarvester $ \_ -> Nothing
+nullHarvester = LineHarvester $ \_ -> (id, False)
 
 -- | Check for a SELFTIMED line of output.
 selftimedHarvester :: LineHarvester
-selftimedHarvester = taggedLineHarvester "SELFTIMED"
+selftimedHarvester = taggedLineHarvester "SELFTIMED" (\d r -> r{realtime=d})
 
 -- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
-taggedLineHarvester :: B.ByteString -> LineHarvester
-taggedLineHarvester tag = LineHarvester $ \ ln -> 
+--   Take a function that puts the result into place (the write half of a lens).
+taggedLineHarvester :: B.ByteString -> (Double -> RunResult -> RunResult) -> LineHarvester
+taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
+  let fail = (id, False) in 
   case B.words ln of
-    [] -> Nothing
+    [] -> fail
     hd:tl | hd == tag || hd == (tag `B.append` ":") ->
       case tl of
         [time] ->
           case reads (B.unpack time) of
-            (dbl,_):_ -> Just dbl
-            _ -> error$ "Error parsing number in SELFTIMED line: "++B.unpack ln
-    _ -> Nothing
-
+            (dbl,_):_ -> (stickit dbl, True)
+            _ -> error$ "Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
+    _ -> fail
 
 
 -- | Retrieve productivity (i.e. percent time NOT garbage collecting) as output from
 -- a Haskell program with "+RTS -s".  Productivity is a percentage (double between
 -- 0.0 and 100.0, inclusive).
 ghcProductivityHarvester :: LineHarvester
-ghcProductivityHarvester = LineHarvester $ \ ln ->
-  case words (B.unpack ln) of
-    [] -> Nothing
-    -- This variant is our own manually produced productivity tag (like SELFTIMED):
-    [p, time] | p == "PRODUCTIVITY" || p == "PRODUCTIVITY:" ->
-       case reads time of
-         (dbl,_):_ -> Just dbl
-         _ -> error$ "Error parsing number in PRODUCTIVITY line: "++B.unpack ln
-    -- EGAD: This is NOT really meant to be machine read:
-    -- ["GC","time",gc,"(",total,"elapsed)"] ->         
-    ("Productivity": prod: "of": "total": "user," : _) ->
-      case reads (filter (/= '%') prod) of
-         ((prodN,_):_) -> Just prodN 
-         x -> Nothing
-   -- TODO: Support  "+RTS -t --machine-readable" as well...          
-    _ -> Nothing
-
+ghcProductivityHarvester =
+  -- This variant is our own manually produced productivity tag (like SELFTIMED):  
+  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{productivity=Just d})) `mappend`
+  (LineHarvester $ \ ln ->
+   let nope = (id,False) in
+   case words (B.unpack ln) of
+     [] -> nope
+     -- EGAD: This is NOT really meant to be machine read:
+     ("Productivity": prod: "of": "total": "user," : _) ->
+       case reads (filter (/= '%') prod) of
+          ((prodN,_):_) -> (\r -> r{productivity=Just prodN}, True)
+          _ -> nope
+    -- TODO: Support  "+RTS -t --machine-readable" as well...          
+     _ -> nope)
 
 -- | Fire a single event after a time interval, then end the stream.
 timeOutStream :: Double -> IO (Strm.InputStream ())

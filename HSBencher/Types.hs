@@ -34,7 +34,8 @@ module HSBencher.Types
 #endif
 
          -- * Subprocesses and system commands
-         CommandDescr(..), RunResult(..), SubProcess(..), LineHarvester(..),
+         CommandDescr(..), RunResult(..), emptyRunResult,
+         SubProcess(..), LineHarvester(..),
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
@@ -47,6 +48,7 @@ module HSBencher.Types
 import Control.Monad.Reader
 import Data.Char
 import Data.List
+import Data.Monoid
 import qualified Data.Map as M
 import Data.Maybe (catMaybes)
 import Control.Monad (filterM)
@@ -397,10 +399,14 @@ deriving instance Read CmdSpec
 data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
                  , productivity :: Maybe Double -- ^ Seconds
+                 , allocRate    :: Maybe Double -- ^ Bytes allocated per second
                  }
   | RunTimeOut
   | ExitError Int -- ^ Contains the returned error code.
  deriving (Eq,Show)
+
+emptyRunResult :: RunResult
+emptyRunResult = RunCompleted (-1.0) Nothing Nothing
 
 -- | A running subprocess.
 data SubProcess =
@@ -424,7 +430,23 @@ instance (Out k, Out v) => Out (M.Map k v) where
 -- | Things like "SELFTIMED" that should be monitored.
 -- type Tags = [String]
 
-newtype LineHarvester = LineHarvester (B.ByteString -> Maybe Double)
+-- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe Double)
+
+-- | A line harvester takes a single line of input and possible extracts data from it
+-- which it can then add to a RunResult.
+-- 
+-- The boolean result indicates whether the line was used or not.
+newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, Bool))
+-- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe (RunResult -> RunResult))
+
+instance Monoid LineHarvester where
+  mempty = LineHarvester (\ _ -> (id,False))
+  mappend (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
+    case lh1 ln of
+      x@(_,True) -> x
+      (_,False) -> lh2 ln 
+    
+
 instance Show LineHarvester where
   show _ = "<LineHarvester>"
 
