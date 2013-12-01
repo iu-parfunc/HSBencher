@@ -19,6 +19,7 @@ import Control.Monad.Reader
 import qualified Data.Map as M
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Data.Monoid
 import GHC.Conc (getNumProcessors)
 import System.Environment (getArgs, getEnv, getEnvironment)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
@@ -233,7 +234,8 @@ getConfig cmd_line_options benches = do
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
            , doFusionUpload = False
            , argsBeforeFlags = True
-           , harvesters = (selftimedHarvester, Just ghcProductivityHarvester)
+           , harvesters = selftimedHarvester `mappend`
+                          ghcProductivityHarvester
 #ifdef FUSION_TABLES
            , fusionConfig = FusionConfig 
               { fusionTableID  = Nothing 

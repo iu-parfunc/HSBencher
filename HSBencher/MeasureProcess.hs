@@ -7,7 +7,7 @@
 module HSBencher.MeasureProcess
        (measureProcess,
         selftimedHarvester, ghcProductivityHarvester,
-        taggedLineHarvester, nullHarvester
+        taggedLineHarvester
         )
        where
 
@@ -52,11 +52,10 @@ import Debug.Trace
 --
 -- This procedure is currently not threadsafe, because it changes the current working
 -- directory.
-measureProcess :: LineHarvester -- ^ Time harvester
-               -> LineHarvester -- ^ Productivity harvester
+measureProcess :: LineHarvester -- ^ Stack of harvesters
                -> CommandDescr
                -> IO SubProcess
-measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
+measureProcess (LineHarvester harvest)
                CommandDescr{command, envVars, timeout, workingDir} = do
   origDir <- getCurrentDirectory
   case workingDir of
@@ -133,12 +132,11 @@ measureProcess (LineHarvester checkTiming) (LineHarvester checkProd)
           Just (ErrLine errLine) -> do 
             writeChan relay_err (Just errLine)
             -- Check for GHC-produced GC stats here:
-            loop $ fst (checkProd errLine) resultAcc
+            loop $ fst (harvest errLine) resultAcc
           Just (OutLine outLine) -> do
             writeChan relay_out (Just outLine)
             -- The SELFTIMED readout will be reported on stdout:
-            loop $ fst (checkProd outLine) $ 
-                   fst (checkTiming outLine) resultAcc
+            loop $ fst (harvest outLine) resultAcc
 
           Nothing -> error "benchmark.hs: Internal error!  This should not happen."
   
@@ -163,9 +161,6 @@ data ProcessEvt = ErrLine B.ByteString
 -------------------------------------------------------------------
 -- Hacks for looking for particular bits of text in process output:
 -------------------------------------------------------------------
-
-nullHarvester :: LineHarvester
-nullHarvester = LineHarvester $ \_ -> (id, False)
 
 -- | Check for a SELFTIMED line of output.
 selftimedHarvester :: LineHarvester
@@ -193,7 +188,7 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
 ghcProductivityHarvester :: LineHarvester
 ghcProductivityHarvester =
   -- This variant is our own manually produced productivity tag (like SELFTIMED):  
-  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{productivity=Just d})) `mappend`
+  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{productivity=Just d})) `orHarvest`
   (LineHarvester $ \ ln ->
    let nope = (id,False) in
    case words (B.unpack ln) of

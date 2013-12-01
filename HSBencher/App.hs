@@ -30,6 +30,7 @@ import Debug.Trace
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
+import Data.Monoid
 import qualified Data.Map as M
 import Data.Word (Word64)
 import Data.IORef
@@ -227,7 +228,7 @@ runOne (iterNum, totalIters) _bldid bldres
       
   let runFlags = toRunFlags runconfig
       envVars  = toEnvVars  runconfig
-  conf@Config{..} <- ask
+  conf@Config{..} <- ask --- FIXME: I hate the ..
 
   ----------------------------------------
   -- (1) Gather contextual information
@@ -262,13 +263,9 @@ runOne (iterNum, totalIters) _bldid bldres
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "  Running trial %d of %d" i trials
     log "  ------------------------"
-    let (timeHarvest,ph) = harvesters
-        prodHarvest = case ph of
-                       Nothing -> nullHarvester
-                       Just h  -> h
-        doMeasure cmddescr = do
+    let doMeasure cmddescr = do
           SubProcess {wait,process_out,process_err} <-
-            lift$ measureProcess timeHarvest prodHarvest cmddescr
+            lift$ measureProcess harvesters cmddescr
           err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
           both <- lift$ Strm.concurrentMerge [process_out, err2]
           mv <- echoStream (not shortrun) both
@@ -361,11 +358,11 @@ runOne (iterNum, totalIters) _bldid bldres
 --------------------------------------------------------------------------------
 
 -- TODO: Remove this hack.
-whichVariant :: String -> String
-whichVariant "benchlist.txt"        = "desktop"
-whichVariant "benchlist_server.txt" = "server"
-whichVariant "benchlist_laptop.txt" = "laptop"
-whichVariant _                      = "unknown"
+-- whichVariant :: String -> String
+-- whichVariant "benchlist.txt"        = "desktop"
+-- whichVariant "benchlist_server.txt" = "server"
+-- whichVariant "benchlist_laptop.txt" = "laptop"
+-- whichVariant _                      = "unknown"
 
 -- | Write the results header out stdout and to disk.
 printBenchrunHeader :: BenchM ()

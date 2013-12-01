@@ -35,7 +35,7 @@ module HSBencher.Types
 
          -- * Subprocesses and system commands
          CommandDescr(..), RunResult(..), emptyRunResult,
-         SubProcess(..), LineHarvester(..),
+         SubProcess(..), LineHarvester(..), orHarvest,
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
@@ -47,6 +47,7 @@ module HSBencher.Types
 
 import Control.Monad.Reader
 import Data.Char
+import Data.Word
 import Data.List
 import Data.Monoid
 import qualified Data.Map as M
@@ -207,7 +208,7 @@ data Config = Config
  , argsBeforeFlags :: Bool -- ^ A global setting to control whether executables are given
                            -- their 'flags/params' after their regular arguments.
                            -- This is here because some executables don't use proper command line parsing.
- , harvesters :: (LineHarvester, Maybe LineHarvester) -- ^ Line harvesters for SELFTIMED and productivity lines.
+ , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
  , doFusionUpload  :: Bool
 #ifdef FUSION_TABLES
  , fusionConfig   :: FusionConfig
@@ -399,14 +400,15 @@ deriving instance Read CmdSpec
 data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
                  , productivity :: Maybe Double -- ^ Seconds
-                 , allocRate    :: Maybe Double -- ^ Bytes allocated per second
+                 , allocRate    :: Maybe Word64 -- ^ Bytes allocated per mutator-second
+                 , memFootprint :: Maybe Word64 -- ^ High water mark of allocated memory, in bytes.
                  }
   | RunTimeOut
   | ExitError Int -- ^ Contains the returned error code.
  deriving (Eq,Show)
 
 emptyRunResult :: RunResult
-emptyRunResult = RunCompleted (-1.0) Nothing Nothing
+emptyRunResult = RunCompleted (-1.0) Nothing Nothing Nothing
 
 -- | A running subprocess.
 data SubProcess =
@@ -427,11 +429,6 @@ instance (Out k, Out v) => Out (M.Map k v) where
   doc         = docPrec 0 
 
 
--- | Things like "SELFTIMED" that should be monitored.
--- type Tags = [String]
-
--- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe Double)
-
 -- | A line harvester takes a single line of input and possible extracts data from it
 -- which it can then add to a RunResult.
 -- 
@@ -439,13 +436,20 @@ instance (Out k, Out v) => Out (M.Map k v) where
 newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, Bool))
 -- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe (RunResult -> RunResult))
 
+-- | We can stack up line harvesters.  ALL of them get to run on each line.
 instance Monoid LineHarvester where
   mempty = LineHarvester (\ _ -> (id,False))
   mappend (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
-    case lh1 ln of
-      x@(_,True) -> x
-      (_,False) -> lh2 ln 
-    
+    let (f,b1) = lh1 ln 
+        (g,b2) = lh2 ln in
+    (f . g, b1 || b2)
+
+-- | Run the second harvester only if the first fails.
+orHarvest :: LineHarvester -> LineHarvester -> LineHarvester
+orHarvest (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
+  case lh1 ln of
+    x@(_,True) -> x
+    (_,False) -> lh2 ln 
 
 instance Show LineHarvester where
   show _ = "<LineHarvester>"
