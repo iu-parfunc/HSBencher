@@ -201,7 +201,7 @@ getConfig cmd_line_options benches = do
   resultsOut <- Strm.unlines =<< Strm.handleToOutputStream rhnd
   logOut     <- Strm.unlines =<< Strm.handleToOutputStream lhnd
   stdOut     <- Strm.unlines Strm.stdout
-      
+
   let -- Messy way to extract the benchlist version:
       -- ver = case filter (isInfixOf "ersion") (lines benchstr) of 
       --         (h:_t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
@@ -243,6 +243,7 @@ getConfig cmd_line_options benches = do
               { fusionTableID  = Nothing 
               , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" env
               , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
+              , serverColumns      = []
               }
 #endif
 	   }
@@ -300,8 +301,9 @@ getConfig cmd_line_options benches = do
                   case (fusionClientID fconf, fusionClientSecret fconf) of
                     (Just cid, Just sec ) -> do
                       let auth = OAuth2Client { clientId=cid, clientSecret=sec }
-                      tid <- runReaderT (getTableId auth name) conf
-                      return conf{ fusionConfig= fconf { fusionTableID= Just tid }}
+                      (tid,cols) <- runReaderT (getTableId auth name) conf
+                      return conf{ fusionConfig= fconf { fusionTableID= Just tid
+                                                       , serverColumns= cols }}
                     (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required (or equiv ENV vars)"
 #else
   let finalconf = conf      

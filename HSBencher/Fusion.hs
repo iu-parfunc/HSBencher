@@ -13,16 +13,20 @@ module HSBencher.Fusion
 import Control.Monad.Reader
 import Control.Concurrent (threadDelay)
 import qualified Control.Exception as E
-import Data.Maybe (isJust, fromJust, catMaybes)
+import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
+import qualified Data.Set as S
+import qualified Data.Map as M
 import qualified Data.ByteString.Char8 as B
 -- import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
-import Network.Google.FusionTables (createTable, listTables, listColumns, bulkImportRows, insertRows,
+import Network.Google.FusionTables (createTable, createColumn, listTables, listColumns,
+                                    bulkImportRows, insertRows,
                                     TableId, CellType(..), TableMetadata(..), ColumnMetadata(..))
 import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
 import HSBencher.Logging (log)
 import Prelude hiding (log)
+import System.IO (hPutStrLn, stderr)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -74,7 +78,11 @@ retryIORequest req retryHook times = loop times
 
 -- | Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
-getTableId :: OAuth2Client -> String -> BenchM TableId
+--
+-- In the case of a preexisting table, this function also performs sanity checking
+-- comparing the expected schema (including column ordering) to the sserver side one.
+-- It returns the permutation of columns found server side.
+getTableId :: OAuth2Client -> String -> BenchM (TableId, [String])
 getTableId auth tablename = do
   log$ " [fusiontable] Fetching access tokens, client ID/secret: "++show (clientId auth, clientSecret auth)
   toks      <- liftIO$ getCachedTokens auth
@@ -83,6 +91,8 @@ getTableId auth tablename = do
   allTables <- stdRetry "listTables" auth toks $ listTables atok
   log$ " [fusiontable] Retrieved metadata on "++show (length allTables)++" tables"
 
+  let ourSchema = map fst fusionSchema
+      ourSet    = S.fromList ourSchema
   case filter (\ t -> tab_name t == tablename) allTables of
     [] -> do log$ " [fusiontable] No table with name "++show tablename ++" found, creating..."
              TableMetadata{tab_tableId} <- stdRetry "createTable" auth toks $
@@ -90,32 +100,48 @@ getTableId auth tablename = do
              log$ " [fusiontable] Table created with ID "++show tab_tableId
              
              -- TODO: IF it exists but doesn't have all the columns, then add the necessary columns.
-             
-             return tab_tableId
+             return (tab_tableId, ourSchema)
     [t] -> do let tid = (tab_tableId t)
               log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show tid
-              log$ " [fusiontable] Checking columns... "
-              let ourSchema = map fst fusionSchema
+              log$ " [fusiontable] Checking columns... "              
               targetSchema <- fmap (map col_name) $ liftIO$ listColumns atok tid
+              let targetSet = S.fromList targetSchema
+                  missing   = S.difference ourSet targetSet
+                  misslist  = S.toList missing                  
+                  extra     = S.difference targetSet ourSet
               unless (targetSchema == ourSchema) $ 
-                error$ "HSBencher upload schema (1) did not match server side schema (2):\n (1) "++
-                       show ourSchema ++"\n (2) " ++ show targetSchema
-                       ++ "\nThis means uploads will fail.  Please manually fix the columns to match.\n"
-              return (tab_tableId t)
+                log$ "WARNING: HSBencher upload schema (1) did not match server side schema (2):\n (1) "++
+                     show ourSchema ++"\n (2) " ++ show targetSchema
+                     ++ "\n HSBencher will try to make do....\n"
+              unless (S.null missing) $ do                
+                log$ "WARNING: These fields are missing server-side, creating them: "++show misslist
+                forM_ misslist $ \ colname -> do
+                  ColumnMetadata{col_name, col_columnId} <- liftIO$ createColumn atok tid (colname, STRING)
+                  log$ "   -> Created column with name,id: "++show (col_name, col_columnId)
+              unless (S.null extra) $ do
+                log$ "WARNING: The fusion table has extra fields that HSBencher does not know about: "++
+                     show (S.toList extra)
+                log$ "         Expect null-string entries in these fields!  "
+              -- For now we ASSUME that new columns are added to the end:
+              -- TODO: We could do another read from the list of columns to confirm.
+              return (tid, targetSchema ++ misslist)
     ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
 
 
-
+-- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult  br@BenchmarkResult{..} = do
     Config{fusionConfig} <- ask
-    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig
+    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID, serverColumns} = fusionConfig
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
         authclient = OAuth2Client { clientId = cid, clientSecret = sec }
     -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
     toks  <- liftIO$ getCachedTokens authclient
-    let tuple = resultToTuple br
-    let (cols,vals) = unzip tuple
+    let ourData = M.fromList $ resultToTuple br
+        -- Any field HSBencher doesn't know about just gets an empty string:
+        tuple   = [ (key, fromMaybe "" (M.lookup key ourData))
+                  | key <- serverColumns ]
+        (cols,vals) = unzip tuple
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
 

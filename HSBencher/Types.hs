@@ -52,22 +52,16 @@ import Data.List
 import Data.Monoid
 import qualified Data.Map as M
 import Data.Maybe (catMaybes)
-import Control.Monad (filterM)
 import System.FilePath
 import System.Directory
 import System.Process (CmdSpec(..))
-import qualified Data.Set as Set
 import qualified Data.ByteString.Char8 as B
 import qualified System.IO.Streams as Strm
-
-import Debug.Trace
 
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
 
 #ifdef FUSION_TABLES
 import Network.Google.FusionTables (TableId)
-import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
-                                    TableId, CellType(..), TableMetadata(..))
 #endif
 
 ----------------------------------------------------------------------------------------------------
@@ -222,7 +216,7 @@ data FusionConfig =
   { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
   , fusionClientID :: Maybe String
   , fusionClientSecret :: Maybe String
---  , fusionUpload   :: Maybe FusionInfo
+  , serverColumns  :: [String] -- ^ Record the ordering of columns server side.
   }
   deriving Show
 #endif
