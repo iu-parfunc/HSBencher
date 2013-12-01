@@ -224,13 +224,13 @@ resultToTuple r =
   , ("ENV_VARS",       _ENV_VARS r)
   , ("BENCH_VERSION",  _BENCH_VERSION r)
   , ("BENCH_FILE",     _BENCH_FILE r)
-  , ("UNAME",          take 20 (_UNAME r)) -- TEMP, FIXME
+  , ("UNAME",          _UNAME r)
   , ("PROCESSOR",      _PROCESSOR r)
   , ("TOPOLOGY",       _TOPOLOGY r)
   , ("GIT_BRANCH",     _GIT_BRANCH r)
   , ("GIT_HASH",       _GIT_HASH r)
   , ("GIT_DEPTH", show$ _GIT_DEPTH r)
-  , ("WHO",            take 20 (_WHO r))   -- TEMP, FIXME
+  , ("WHO",            _WHO r)
   , ("ETC_ISSUE", _ETC_ISSUE r)
   , ("LSPCI", _LSPCI r)    
   , ("FULL_LOG", _FULL_LOG r)
