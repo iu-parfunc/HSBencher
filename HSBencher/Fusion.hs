@@ -18,7 +18,7 @@ import qualified Data.ByteString.Char8 as B
 -- import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, bulkImportRows, insertRows,
-                                    TableId, CellType(..), TableMetadata(..))
+                                    TableId, CellType(..), TableMetadata(..), ColumnMetadata(..))
 import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
 import HSBencher.Logging (log)
@@ -88,11 +88,19 @@ getTableId auth tablename = do
              TableMetadata{tab_tableId} <- stdRetry "createTable" auth toks $
                                            createTable atok tablename fusionSchema
              log$ " [fusiontable] Table created with ID "++show tab_tableId
-
+             
              -- TODO: IF it exists but doesn't have all the columns, then add the necessary columns.
              
              return tab_tableId
-    [t] -> do log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show (tab_tableId t)
+    [t] -> do let tid = (tab_tableId t)
+              log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show tid
+              log$ " [fusiontable] Checking columns... "
+              let ourSchema = map fst fusionSchema
+              targetSchema <- fmap (map col_name) $ liftIO$ listColumns atok tid
+              unless (targetSchema == ourSchema) $ 
+                error$ "HSBencher upload schema (1) did not match server side schema (2):\n (1) "++
+                       show ourSchema ++"\n (2) " ++ show targetSchema
+                       ++ "\nThis means uploads will fail.  Please manually fix the columns to match.\n"
               return (tab_tableId t)
     ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
 
@@ -112,8 +120,8 @@ uploadBenchResult  br@BenchmarkResult{..} = do
          " columns containing "++show (sum$ map length vals)++" characters of data"
 
     -- It's easy to blow the URL size; we need the bulk import version.
-    stdRetry "insertRows" authclient toks $ insertRows
-    -- stdRetry "bulkImportRows" authclient toks $ bulkImportRows
+    -- stdRetry "insertRows" authclient toks $ insertRows
+    stdRetry "bulkImportRows" authclient toks $ bulkImportRows
        (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
     log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple)
          ++ " date "++ (fromJust$ lookup "DATETIME" tuple)
@@ -159,6 +167,9 @@ fusionSchema =
   , ("ETC_ISSUE",STRING)
   , ("LSPCI",STRING)    
   , ("FULL_LOG",STRING)
+  -- New fields: [2013.12.01]
+  , ("MEDIANTIME_ALLOCRATE", STRING)
+  , ("MEDIANTIME_MEMFOOTPRINT", STRING)
   ]
 
 -- | Convert the Haskell representation of a benchmark result into a tuple for Fusion
@@ -197,5 +208,7 @@ resultToTuple r =
   , ("ETC_ISSUE", _ETC_ISSUE r)
   , ("LSPCI", _LSPCI r)    
   , ("FULL_LOG", _FULL_LOG r)
+  , ("MEDIANTIME_ALLOCRATE", show$ _MEDIANTIME_ALLOCRATE r)
+  , ("MEDIANTIME_MEMFOOTPRINT", show$ _MEDIANTIME_MEMFOOTPRINT r)    
   ]
   

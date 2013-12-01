@@ -1,13 +1,23 @@
+{-# LANGUAGE TemplateHaskell #-}
 
 import Data.List
 import Data.Maybe
 import HSBencher.MeasureProcess
 import HSBencher.Types
+import HSBencher.Config (getConfig)
 import qualified Data.ByteString.Char8 as B
+
+import Test.Framework.Providers.HUnit 
+import Test.Framework (Test, defaultMain, testGroup)
+import Test.Framework.TH (testGroupGenerator)
+import Test.HUnit (Assertion, assertEqual, assertBool, Counts(..))
+
+--------------------------------------------------------------------------------
 
 exampleOuptut :: [String]
 exampleOuptut = 
- [ "  14,956,751,416 bytes allocated in the heap",
+ [ "SELFTIMED 3.3",
+   "  14,956,751,416 bytes allocated in the heap",
    "       2,576,264 bytes copied during GC",
    "       5,372,024 bytes maximum residency (6 sample(s))",
    "       4,199,552 bytes maximum slop",
@@ -38,17 +48,24 @@ exampleOuptut =
    "gen[0].sync: 8",
    "gen[1].sync: 1700" ]
 
-
 -- case_prod = assertEqual "Harvest prod" [73.8] $
 --               catMaybes $ map (fn . B.pack) exampleOuptut
 
-main :: IO ()
-main = do
-  let LineHarvester fn = ghcProductivityHarvester
+case_harvest :: IO ()
+case_harvest = do
+  config <- getConfig [] []
+  let LineHarvester fn = harvesters config
 --  mapM_ print $ map (\x -> (x, fn (B.pack x))) exampleOuptut
   let hits = filter ((==True) . snd) $ map (fn . B.pack) exampleOuptut
-  putStrLn$ "Lines matched: "++show (length hits)
-  print $ foldl' (\ r (f,_) -> f r) emptyRunResult hits
-  
-  return ()
+  putStrLn$ "Lines harvested: "++show (length hits)
+  let result = foldl' (\ r (f,_) -> f r) emptyRunResult hits
+  let expected = RunCompleted {realtime = 3.3, productivity = Just 73.8,
+                               allocRate = Just 1855954977, memFootprint = Just 5372024}
 
+  assertEqual "Test harvesters" expected result
+
+tests :: Test
+tests = $(testGroupGenerator)
+
+main :: IO ()
+main = defaultMain [tests]

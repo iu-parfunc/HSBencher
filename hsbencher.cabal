@@ -164,7 +164,30 @@ Library
 --   default-language:    Haskell2010
 
 
-Test-suite test1
+Test-suite hsbencher-unit-tests
+  main-is: Test.hs
+  type: exitcode-stdio-1.0
+  build-depends:
+    -- <DUPLICATED from above>
+    base >= 4.5 && <= 4.7, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
+    io-streams >= 1.0,
+    GenericPretty >= 1.2, http-conduit, hsbencher
+    -- </DUPLICATED>
+  -- Additional deps for testing:
+  build-depends: test-framework, test-framework-hunit, test-framework-th, 
+                 HUnit, time, text
+
+  ghc-options: -threaded 
+  default-language:  Haskell2010
+  if flag(hydra) {
+     build-depends: hydra-print >= 0.1.0.3
+  }
+  if flag(fusion) {
+    build-depends: handa-gdata >= 0.6.2
+    cpp-options: -DFUSION_TABLES
+  }
+
+Test-suite hsbencher-test1
   main-is: example/cabal/benchmark.hs
   type: exitcode-stdio-1.0
   build-depends:
@@ -175,17 +198,15 @@ Test-suite test1
     -- </DUPLICATED>
   ghc-options: -threaded 
   default-language:  Haskell2010
-
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
   }
-
   if flag(fusion) {
     build-depends: handa-gdata >= 0.6.2
     cpp-options: -DFUSION_TABLES
   }
 
-Test-suite test2
+Test-suite hsbencher-test2
   main-is: example/make_and_ghc/benchmark.hs
   type: exitcode-stdio-1.0
   build-depends:
@@ -196,11 +217,9 @@ Test-suite test2
     -- </DUPLICATED>
   ghc-options: -threaded 
   default-language:  Haskell2010
-
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
   }
-
   if flag(fusion) {
     build-depends: handa-gdata >= 0.6.2
     cpp-options: -DFUSION_TABLES

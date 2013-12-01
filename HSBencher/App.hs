@@ -341,6 +341,8 @@ runOne (iterNum, totalIters) _bldid bldres
             , _MAXTIME    =  gettime maxR
             , _MINTIME_PRODUCTIVITY    = getprod minR
             , _MEDIANTIME_PRODUCTIVITY = getprod medianR
+            , _MEDIANTIME_ALLOCRATE    = getallocrate medianR
+            , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
             , _RUNTIME_FLAGS = unwords runFlags
             , _ALLTIMES      =  unwords$ map (show . gettime) goodruns
@@ -710,24 +712,28 @@ catParallelOutput strms stdOut = do
 
 -- These should go in another module.......
 
-
-
-collapsePrefix :: String -> String -> String -> String
-collapsePrefix old new str =
-  if isPrefixOf old str
-  then new ++ drop (length old) str
-  else str  
-
+didComplete :: RunResult -> Bool
 didComplete RunCompleted{} = True
 didComplete _              = False
 
+isError :: RunResult -> Bool
 isError ExitError{} = True
 isError _           = False
 
+getprod :: RunResult -> Maybe Double
 getprod RunCompleted{productivity} = productivity
 getprod RunTimeOut{}               = Nothing
 getprod x                          = error$"Cannot get productivity from: "++show x
 
+getallocrate :: RunResult -> Maybe Word64
+getallocrate RunCompleted{allocRate} = allocRate
+getallocrate _                       = Nothing
+
+getmemfootprint :: RunResult -> Maybe Word64
+getmemfootprint RunCompleted{memFootprint} = memFootprint
+getmemfootprint _                          = Nothing
+
+gettime :: RunResult -> Double
 gettime RunCompleted{realtime} = realtime
 gettime RunTimeOut{}           = posInf
 gettime x                      = error$"Cannot get realtime from: "++show x

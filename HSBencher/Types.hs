@@ -477,7 +477,7 @@ data BenchmarkResult =
   , _MINTIME_PRODUCTIVITY    ::  Maybe Double
   , _MEDIANTIME_PRODUCTIVITY ::  Maybe Double
   , _MAXTIME_PRODUCTIVITY    ::  Maybe Double
-  , _ALLTIMES      ::  String
+  , _ALLTIMES      ::  String -- ^ Space separated list of numbers.
   , _TRIALS        ::  Int
   , _COMPILER      :: String
   , _COMPILE_FLAGS :: String
@@ -495,6 +495,9 @@ data BenchmarkResult =
   , _ETC_ISSUE  :: String
   , _LSPCI      :: String
   , _FULL_LOG   :: String
+    
+  , _MEDIANTIME_ALLOCRATE    ::  Maybe Word64
+  , _MEDIANTIME_MEMFOOTPRINT ::  Maybe Word64
   }
 
 -- | A default value, useful for filling in only the fields that are relevant to a particular benchmark.
@@ -532,5 +535,7 @@ emptyBenchmarkResult = BenchmarkResult
   , _ETC_ISSUE  = ""
   , _LSPCI      = ""
   , _FULL_LOG   = ""
+  , _MEDIANTIME_ALLOCRATE    = Nothing
+  , _MEDIANTIME_MEMFOOTPRINT = Nothing
   }
 
