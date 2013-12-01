@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.4.3
+version:             1.5
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -21,6 +21,7 @@ version:             1.4.3
 -- 1.4.1.3 : actually upload run flags, nix uname
 -- 1.4.1.5 : search for patterns in 'progname' as well
 -- 1.4.3   : switch to bulkImportRows for Fusion tables
+-- 1.5 : add new columns, formatting tweaks, robustness to schema evolution
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 
@@ -138,7 +139,7 @@ Library
   default-language:    Haskell2010
 
   if flag(fusion) {
-    build-depends: handa-gdata >= 0.6.8
+    build-depends: handa-gdata >= 0.6.9
     exposed-modules: HSBencher.Fusion
     cpp-options: -DFUSION_TABLES
   }
@@ -183,7 +184,7 @@ Test-suite hsbencher-unit-tests
      build-depends: hydra-print >= 0.1.0.3
   }
   if flag(fusion) {
-    build-depends: handa-gdata >= 0.6.2
+    build-depends: handa-gdata >= 0.6.9
     cpp-options: -DFUSION_TABLES
   }
 
@@ -202,7 +203,7 @@ Test-suite hsbencher-test1
      build-depends: hydra-print >= 0.1.0.3
   }
   if flag(fusion) {
-    build-depends: handa-gdata >= 0.6.2
+    build-depends: handa-gdata >= 0.6.9
     cpp-options: -DFUSION_TABLES
   }
 
@@ -221,6 +222,6 @@ Test-suite hsbencher-test2
      build-depends: hydra-print >= 0.1.0.3
   }
   if flag(fusion) {
-    build-depends: handa-gdata >= 0.6.2
+    build-depends: handa-gdata >= 0.6.9
     cpp-options: -DFUSION_TABLES
   }

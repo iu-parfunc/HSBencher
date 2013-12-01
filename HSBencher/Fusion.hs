@@ -213,9 +213,9 @@ resultToTuple r =
   , ("MINTIME",     show$ _MINTIME r)
   , ("MEDIANTIME",  show$ _MEDIANTIME r)
   , ("MAXTIME",     show$ _MAXTIME r)
-  , ("MINTIME_PRODUCTIVITY",    show$ _MINTIME_PRODUCTIVITY r)
-  , ("MEDIANTIME_PRODUCTIVITY", show$ _MEDIANTIME_PRODUCTIVITY r)
-  , ("MAXTIME_PRODUCTIVITY",    show$ _MAXTIME_PRODUCTIVITY r)
+  , ("MINTIME_PRODUCTIVITY",    fromMaybe "" $ fmap show $ _MINTIME_PRODUCTIVITY r)
+  , ("MEDIANTIME_PRODUCTIVITY", fromMaybe "" $ fmap show $ _MEDIANTIME_PRODUCTIVITY r)
+  , ("MAXTIME_PRODUCTIVITY",    fromMaybe "" $ fmap show $ _MAXTIME_PRODUCTIVITY r)
   , ("ALLTIMES",       _ALLTIMES r)
   , ("TRIALS",   show$ _TRIALS r)
   , ("COMPILER",       _COMPILER r)
@@ -234,7 +234,7 @@ resultToTuple r =
   , ("ETC_ISSUE", _ETC_ISSUE r)
   , ("LSPCI", _LSPCI r)    
   , ("FULL_LOG", _FULL_LOG r)
-  , ("MEDIANTIME_ALLOCRATE", show$ _MEDIANTIME_ALLOCRATE r)
-  , ("MEDIANTIME_MEMFOOTPRINT", show$ _MEDIANTIME_MEMFOOTPRINT r)    
+  , ("MEDIANTIME_ALLOCRATE",    fromMaybe "" $ fmap show $ _MEDIANTIME_ALLOCRATE r)
+  , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
   ]
   
