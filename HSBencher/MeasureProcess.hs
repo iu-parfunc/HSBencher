@@ -285,8 +285,9 @@ runInteractiveCommandWithEnv scmd env = do
          std_err = CreatePipe,
          cwd = Nothing,
          close_fds = False,
-         create_group = False
-       }    
+         create_group = False,
+         delegate_ctlc = True
+       }
     sIn  <- Strm.handleToOutputStream hin >>=
             Strm.atEndOfOutput (hClose hin) >>=
             Strm.lockingOutputStream

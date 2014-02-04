@@ -112,7 +112,7 @@ getTableId auth tablename = do
               unless (targetSchema == ourSchema) $ 
                 log$ "WARNING: HSBencher upload schema (1) did not match server side schema (2):\n (1) "++
                      show ourSchema ++"\n (2) " ++ show targetSchema
-                     ++ "\n HSBencher will try to make do....\n"
+                     ++ "\n HSBencher will try to make do..."
               unless (S.null missing) $ do                
                 log$ "WARNING: These fields are missing server-side, creating them: "++show misslist
                 forM_ misslist $ \ colname -> do
