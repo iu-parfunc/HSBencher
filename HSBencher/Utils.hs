@@ -165,7 +165,8 @@ runLines cmd = do
        std_err = CreatePipe,
        cwd = Nothing,
        close_fds = False,
-       create_group = False
+       create_group = False,
+       delegate_ctlc = False
      }
   waitForProcess ph  
   Just _code <- getProcessExitCode ph  

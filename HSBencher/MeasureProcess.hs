@@ -286,7 +286,7 @@ runInteractiveCommandWithEnv scmd env = do
          cwd = Nothing,
          close_fds = False,
          create_group = False,
-         delegate_ctlc = True
+         delegate_ctlc = False
        }
     sIn  <- Strm.handleToOutputStream hin >>=
             Strm.atEndOfOutput (hClose hin) >>=
