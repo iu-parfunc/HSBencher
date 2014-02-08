@@ -145,7 +145,7 @@ Library
   if flag(fusion) {
     build-depends: handa-gdata  >= 0.6.9,
                    http-conduit 
-    exposed-modules: HSBencher.Fusion
+--    exposed-modules: HSBencher.Fusion
     cpp-options: -DFUSION_TABLES
   }
 

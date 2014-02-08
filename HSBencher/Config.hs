@@ -35,6 +35,7 @@ import qualified System.IO.Streams.Combinators as Strm
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
                                     TableId, CellType(..), TableMetadata(..))
+import HSBencher.Fusion (getTableId)
 #endif
 
 
@@ -42,7 +43,6 @@ import HSBencher.Types
 import HSBencher.Utils
 import HSBencher.Methods
 import HSBencher.MeasureProcess
-import HSBencher.Fusion (getTableId)
 
 ----------------------------------------------------------------------------------------------------
 
