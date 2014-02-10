@@ -143,12 +143,12 @@ cabalMethod = BuildMethod
 
      dir <- liftIO$ getDir target -- Where the indiv benchmark lives.
      inDirectory dir $ do 
-       let tmpdir = dir </> "temp"++suffix
+       let tmpdir = benchroot </> dir </> "temp"++suffix
        _ <- runSuccessful tag $ "rm -rf "++tmpdir
        _ <- runSuccessful tag $ "mkdir "++tmpdir
 
        -- Ugh... how could we separate out args to the different phases of cabal?
-       log$ tag++" Switched to "++dir++", and cleared temporary directory: "++tmpdir
+       log$ tag++" Switched to "++dir++", and cleared temporary directory."
        let extra_args  = "--bindir="++tmpdir++" ./ --program-suffix="++suffix
            extra_args' = if ghcPath /= "ghc"
                          then extra_args -- ++ " --with-ghc='"++ghcPath++"'"
