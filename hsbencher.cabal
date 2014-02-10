@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.5.1.2
+version:             1.5.1.3
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -23,7 +23,7 @@ version:             1.5.1.2
 -- 1.4.3   : switch to bulkImportRows for Fusion tables
 -- 1.5 : add new columns, formatting tweaks, robustness to schema evolution
 -- 1.5.1 : adapt to upstream change in process-1.2
--- 1.5.1.2 : bugfix for .dat output
+-- 1.5.1.3 : bugfix for .dat output
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 
