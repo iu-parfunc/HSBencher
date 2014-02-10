@@ -140,7 +140,7 @@ cabalMethod = BuildMethod
      inDirectory dir $ do 
        -- Ugh... how could we separate out args to the different phases of cabal?
        log$ tag++" Switched to "++dir++", clearing binary target dir... "
-       _ <- runSuccessful tag "rm -rf ./bin/*"
+--       _ <- runSuccessful tag "rm -rf ./bin/*"
        let extra_args  = "--bindir=./bin/ ./ --program-suffix="++suffix
            extra_args' = if ghcPath /= "ghc"
                          then extra_args -- ++ " --with-ghc='"++ghcPath++"'"
