@@ -299,8 +299,11 @@ runOne (iterNum, totalIters) _bldid bldres
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
+      let thename = case progname of
+                      Just s  -> s
+                      Nothing -> testRoot
       logOn [ResultsFile]$ 
-        printf "# %s %s %s %s %s" (padr 35 testRoot) (padr 20$ intercalate "_" args)
+        printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
                                   (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
       return ("","","","","","")
     else do
