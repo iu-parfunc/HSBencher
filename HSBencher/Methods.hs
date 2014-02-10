@@ -141,7 +141,7 @@ cabalMethod = BuildMethod
        let tmpdir = "./temp"++suffix
        _ <- runSuccessful tag $ "mkdir "++tmpdir
        -- Ugh... how could we separate out args to the different phases of cabal?
-       log$ tag++" Switched to "++dir++", and made temporary directory... "
+       log$ tag++" Switched to "++dir++", and made temporary directory: "++tmpdir
        let extra_args  = "--bindir="++tmpdir++" ./ --program-suffix="++suffix
            extra_args' = if ghcPath /= "ghc"
                          then extra_args -- ++ " --with-ghc='"++ghcPath++"'"
@@ -151,7 +151,7 @@ cabalMethod = BuildMethod
        _ <- runSuccessful tag cmd
        ls <- liftIO$ filesInDir tmpdir
        case ls of
-         [f] -> do _ <- runSuccessful tag$ "mv "++tmpdir++f++" ./bin/" -- TODO: less shelling
+         [f] -> do _ <- runSuccessful tag$ "mv "++tmpdir++"/"++f++" ./bin/" -- TODO: less shelling
                    return (StandAloneBinary$ dir </> "bin" </> f)
          []  -> error$"No binaries were produced from building cabal file! In: "++show dir
          _   -> error$"Multiple binaries were produced from building cabal file!:"
