@@ -118,7 +118,7 @@ ghcMethod = BuildMethod
 --   Specifically, this uses "cabal install".
 -- 
 -- This build method attempts to choose reasonable defaults for benchmarking.  It
--- takes control of the output program suffix and directory (setting it to ./bin).
+-- takes control of the output program suffix and directory (setting it to BENCHROOT/bin).
 -- It passes compile-time arguments directly to cabal.  Likewise, runtime arguments
 -- get passed directly to the resulting binary.
 cabalMethod :: BuildMethod
@@ -133,16 +133,22 @@ cabalMethod = BuildMethod
   , clean = \ pathMap _ target -> do
      return ()
   , compile = \ pathMap bldid flags target -> do
+
+     benchroot <- liftIO$ getCurrentDirectory
      let suffix = "_"++bldid
          cabalPath = M.findWithDefault "cabal" "cabal" pathMap
          ghcPath   = M.findWithDefault "ghc" "ghc" pathMap
-     dir <- liftIO$ getDir target
+         binD      = benchroot </> "bin"
+     liftIO$ createDirectoryIfMissing True binD
+
+     dir <- liftIO$ getDir target -- Where the indiv benchmark lives.
      inDirectory dir $ do 
-       let tmpdir = "./temp"++suffix
+       let tmpdir = dir </> "temp"++suffix
        _ <- runSuccessful tag $ "rm -rf "++tmpdir
        _ <- runSuccessful tag $ "mkdir "++tmpdir
+
        -- Ugh... how could we separate out args to the different phases of cabal?
-       log$ tag++" Switched to "++dir++", and cleared/made temporary directory: "++tmpdir
+       log$ tag++" Switched to "++dir++", and cleared temporary directory: "++tmpdir
        let extra_args  = "--bindir="++tmpdir++" ./ --program-suffix="++suffix
            extra_args' = if ghcPath /= "ghc"
                          then extra_args -- ++ " --with-ghc='"++ghcPath++"'"
@@ -150,10 +156,11 @@ cabalMethod = BuildMethod
        let cmd = cabalPath++" install "++ extra_args' ++" "++unwords flags
        log$ tag++"Running cabal command: "++cmd
        _ <- runSuccessful tag cmd
+       -- Now make sure we got exactly one binary as output:
        ls <- liftIO$ filesInDir tmpdir
        case ls of
-         [f] -> do _ <- runSuccessful tag$ "mv "++tmpdir++"/"++f++" ./bin/" -- TODO: less shelling
-                   return (StandAloneBinary$ dir </> "bin" </> f)
+         [f] -> do _ <- runSuccessful tag$ "mv "++tmpdir++"/"++f++" "++binD++"/" -- TODO: less shelling
+                   return (StandAloneBinary$ binD </> f)
          []  -> error$"No binaries were produced from building cabal file! In: "++show dir
          _   -> error$"Multiple binaries were produced from building cabal file!:"
                        ++show ls ++" In: "++show dir
@@ -207,6 +214,7 @@ filesInDir d = do
 
 -- | A simple wrapper for a command that is expected to succeed (and whose output we
 -- don't care about).  Throws an exception if the command fails.
+-- Returns lines of output if successful.
 runSuccessful :: String -> String -> BenchM [B.ByteString]
 runSuccessful tag cmd = do
   (res,lines) <- runLogged tag cmd
