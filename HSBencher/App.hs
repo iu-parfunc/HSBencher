@@ -296,11 +296,14 @@ runOne (iterNum, totalIters) _bldid bldres
   let pads n s = take (max 1 (n - length s)) $ repeat ' '
       padl n x = pads n x ++ x 
       padr n x = x ++ pads n x
+  let thename = case progname of
+                  Just s  -> s
+                  Nothing -> testRoot
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
       logOn [ResultsFile]$ 
-        printf "# %s %s %s %s %s" (padr 35 testRoot) (padr 20$ intercalate "_" args)
+        printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
                                   (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
       return ("","","","","","")
     else do
@@ -325,7 +328,7 @@ runOne (iterNum, totalIters) _bldid bldres
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
 
       logOn [ResultsFile]$ 
-        printf "%s %s %s %s %s" (padr 35 testRoot)   (padr 20$ intercalate "_" args)
+        printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
                                 (padr 8$ sched) (padr 3$ show numthreads) formatted
 
       let result =
