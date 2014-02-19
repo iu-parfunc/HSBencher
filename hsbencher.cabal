@@ -146,7 +146,7 @@ Library
   default-language:    Haskell2010
 
   if flag(fusion) {
-    build-depends: handa-gdata  >= 0.6.9,
+    build-depends: handa-gdata  >= 0.6.9.1,
                    http-conduit 
     exposed-modules: HSBencher.Fusion
     cpp-options: -DFUSION_TABLES
