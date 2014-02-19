@@ -152,7 +152,8 @@ Library
     cpp-options: -DFUSION_TABLES
   } else {
     -- Haddock and hackage seem to have problems with conditionally exposed modules.
-    other-modules: HSBencher.Fusion
+    -- other-modules: HSBencher.Fusion
+    exposed-modules: HSBencher.Fusion
   }
 
 -- [2013.05.28] This will come back later when the new ASCII benchmark file format is finished:
