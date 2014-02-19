@@ -1,9 +1,12 @@
-{-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables, CPP #-}
 
 -- | Code pertaining to Google Fusion Table upload.
 --   Built conditionally based on the -ffusion flag.
 
 module HSBencher.Fusion
+#ifndef FUSION_TABLES
+       () where
+#else
        ( FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
        , uploadBenchResult
@@ -238,3 +241,5 @@ resultToTuple r =
   , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
   ]
   
+#endif
+-- End ifndef FUSION_TABLES
