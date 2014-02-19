@@ -1,7 +1,11 @@
 {-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables, CPP #-}
 
--- | Code pertaining to Google Fusion Table upload.
+-- | Google Fusion Table upload of benchmark data.
 --   Built conditionally based on the -ffusion flag.
+--
+--   Be careful!  This module will appear empty if hsbencher is not built with that
+--   flag.  In the future we will probably switch to a new architecture that allows
+--   us to factor this out as its own package.
 
 module HSBencher.Fusion
 #ifndef FUSION_TABLES
