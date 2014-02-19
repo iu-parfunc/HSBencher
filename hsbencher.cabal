@@ -119,7 +119,7 @@ Flag hydra
 Library 
   source-repository head
     type:  git
-    location: https://github.com/rrnewton/HSBenchScaling.git
+    location: https://github.com/rrnewton/HSBencher
 
   exposed-modules: HSBencher
                    HSBencher.App
