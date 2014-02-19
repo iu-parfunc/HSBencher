@@ -16,7 +16,7 @@
 
 module HSBencher.App
        (defaultMainWithBechmarks, defaultMainModifyConfig,
-        Flag(..), all_cli_options)
+        Flag(..), all_cli_options, fullUsageInfo)
        where 
 
 ----------------------------
@@ -75,6 +75,7 @@ import Network.Google.FusionTables (createTable, listTables, listColumns,
                                     TableId, CellType(..), TableMetadata(..))
 #endif
 
+
 ----------------------------
 -- Self imports:
 
@@ -88,6 +89,9 @@ import Paths_hsbencher (version) -- Thanks, cabal!
 
 ----------------------------------------------------------------------------------------------------
 
+hsbencherVersion :: String
+hsbencherVersion = concat $ intersperse "." $ map show $ 
+                   versionBranch version
 
 -- | USAGE
 usageStr :: String
@@ -134,7 +138,9 @@ usageStr = unlines $
    "   $GHC or $CABAL, if available, to select the executable paths.", 
    "   ",
 #endif
-   "   Command line arguments take precedence over environment variables, if both apply."
+   "   Command line arguments take precedence over environment variables, if both apply.",
+   "   ",
+   " NOTE: This bench harness build against hsbencher library version "++hsbencherVersion
  ]
 
 ----------------------------------------------------------------------------------------------------
@@ -362,12 +368,6 @@ runOne (iterNum, totalIters) _bldid bldres
 
 --------------------------------------------------------------------------------
 
--- TODO: Remove this hack.
--- whichVariant :: String -> String
--- whichVariant "benchlist.txt"        = "desktop"
--- whichVariant "benchlist_server.txt" = "server"
--- whichVariant "benchlist_laptop.txt" = "laptop"
--- whichVariant _                      = "unknown"
 
 -- | Write the results header out stdout and to disk.
 printBenchrunHeader :: BenchM ()
@@ -437,6 +437,14 @@ defaultMainWithBechmarks :: [Benchmark DefaultParamMeaning] -> IO ()
 defaultMainWithBechmarks benches = do
   defaultMainModifyConfig (\ conf -> conf{ benchlist=benches })
 
+-- | Multiple lines of usage info help docs.
+fullUsageInfo :: String
+fullUsageInfo = 
+    -- "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]\n" ++
+    "USAGE: naked command line arguments are patterns that select the benchmarks to run\n"++
+    (concat (map (uncurry usageInfo) all_cli_options)) ++
+    usageStr 
+
 -- | An even more flexible version allows the user to install a hook which modifies
 -- the configuration just before bencharking begins.  All trawling of the execution
 -- environment (command line args, environment variables) happens BEFORE the user
@@ -454,9 +462,8 @@ defaultMainModifyConfig modConfig = do
   let recomp  = NoRecomp `notElem` options
   
   when (ShowVersion `elem` options) $ do
-    putStrLn$ "hsbencher version "++
-      (concat$ intersperse "." $ map show $ versionBranch version) ++
-      (unwords$ versionTags version)
+    putStrLn$ "hsbencher version "++ hsbencherVersion
+      -- (unwords$ versionTags version)
     exitSuccess 
       
   when (not (null errs) || ShowHelp `elem` options) $ do

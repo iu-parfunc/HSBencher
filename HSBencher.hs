@@ -11,7 +11,7 @@ module HSBencher
 
          -- * The main entrypoints for building new benchmark suites.
          defaultMainWithBechmarks, defaultMainModifyConfig,
-         Flag(..), all_cli_options,
+         Flag(..), all_cli_options, fullUsageInfo,
 
          -- * All the types necessary for configuration
          module HSBencher.Types
@@ -20,3 +20,4 @@ module HSBencher
 
 import HSBencher.App
 import HSBencher.Types
+

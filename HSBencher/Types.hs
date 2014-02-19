@@ -173,7 +173,7 @@ data Config = Config
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
 -- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
- , runTimeOut     :: Maybe Double -- ^ Timeout for running benchmarks (if not specified by the benchmark specifically)
+ , runTimeOut     :: Maybe Double -- ^ Timeout in seconds for running benchmarks (if not specified by the benchmark specifically)
  , maxthreads     :: Int
  , trials         :: Int    -- ^ number of runs of each configuration
  , skipTo         :: Maybe Int -- ^ Where to start in the config space.
@@ -237,7 +237,7 @@ data Benchmark a = Benchmark
  , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
  , configs :: BenchSpace a  -- ^ The configration space to iterate over.
  , progname :: Maybe String -- ^ Optional name to use INSTEAD of the basename from `target`.
- , benchTimeOut :: Maybe Double -- ^ Specific timeout for this benchmark.  Overrides global setting.
+ , benchTimeOut :: Maybe Double -- ^ Specific timeout for this benchmark in seconds.  Overrides global setting.
  } deriving (Eq, Show, Ord, Generic)
 
 
