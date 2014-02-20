@@ -337,6 +337,16 @@ runOne (iterNum, totalIters) _bldid bldres
         printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
                                 (padr 8$ sched) (padr 3$ show numthreads) formatted
 
+      -- These should be either all Nothing or all Just:
+      let jittimes0 = map getjittime goodruns
+          misses = length (filter (==Nothing) jittimes0)
+      jittimes <- if misses == length goodruns
+                  then return ""
+                  else if misses == 0
+                       then return $ unwords (map (show . fromJust) jittimes0)
+                       else do log $ "WARNING: got JITTIME for some runs: "++show jittimes0
+                               log "  Zeroing those that did not report."
+                               return $ unwords (map (show . fromMaybe 0) jittimes0)
       let result =
             emptyBenchmarkResult
             { _PROGNAME = case progname of
@@ -355,7 +365,7 @@ runOne (iterNum, totalIters) _bldid bldres
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
             , _RUNTIME_FLAGS = unwords runFlags
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
-            , _ALLJITTIMES   =  unwords$ map (show . getjittime) goodruns
+            , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials
             }
       result' <- liftIO$ augmentResultWithConfig conf result
