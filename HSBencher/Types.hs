@@ -457,41 +457,44 @@ instance Show LineHarvester where
 --   Note that multiple "trials" (actual executions) go into a single BenchmarkResult
 data BenchmarkResult =
   BenchmarkResult
-  { _PROGNAME :: String
-  , _VARIANT  :: String
-  , _ARGS     :: [String]
-  , _HOSTNAME :: String
-  , _RUNID    :: String
-  , _CI_BUILD_ID :: String 
-  , _THREADS  :: Int
+  { _PROGNAME :: String    -- ^ Which benchmark are we running
+  , _VARIANT  :: String    -- ^ If there are multiple ways to run the benchmark, this shoud record which was used.
+  , _ARGS     :: [String]  -- ^ Command line arguments.
+  , _HOSTNAME :: String    -- ^ Which machine did we run on?
+  , _RUNID    :: String    -- ^ A unique identifier for the full hsbencher that included this benchmark.
+  , _CI_BUILD_ID :: String -- ^ When launched from Jenkins or Travis, it can help to record where we came from.
+  , _THREADS  :: Int       -- ^ If multithreaded, how many CPU threads did this benchmark run with.
   , _DATETIME :: String -- Datetime
-  , _MINTIME    ::  Double
-  , _MEDIANTIME ::  Double
-  , _MAXTIME    ::  Double
-  , _MINTIME_PRODUCTIVITY    ::  Maybe Double
-  , _MEDIANTIME_PRODUCTIVITY ::  Maybe Double
-  , _MAXTIME_PRODUCTIVITY    ::  Maybe Double
-  , _ALLTIMES      ::  String -- ^ Space separated list of numbers.
-  , _TRIALS        ::  Int
-  , _COMPILER      :: String
-  , _COMPILE_FLAGS :: String
-  , _RUNTIME_FLAGS :: String
-  , _ENV_VARS      :: String
-  , _BENCH_VERSION ::  String
-  , _BENCH_FILE ::  String
-  , _UNAME      :: String
+  , _MINTIME    ::  Double -- ^ Time of the fastest run
+  , _MEDIANTIME ::  Double -- ^ Time of the median run
+  , _MAXTIME    ::  Double -- ^ Time of the slowest run
+  , _MINTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the mintime run.
+  , _MEDIANTIME_PRODUCTIVITY ::  Maybe Double  -- ^ GC productivity (if recorded) for the mediantime run.
+  , _MAXTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the maxtime run.
+  , _ALLTIMES      ::  String -- ^ Space separated list of numbers, should be one number for each TRIAL
+  , _TRIALS        ::  Int    -- ^ How many times to [re]run each benchmark.
+  , _COMPILER      :: String  
+  , _COMPILE_FLAGS :: String  -- ^ Flags used during compilation
+  , _RUNTIME_FLAGS :: String  -- ^ Flags passed at runtime, possibly in addition to ARGS
+  , _ENV_VARS      :: String  -- ^ Environment variables set for this benchmark run
+  , _BENCH_VERSION ::  String -- ^ If the benchmark *suite* tracks its version number, put it here.
+  , _BENCH_FILE ::  String    
+  , _UNAME      :: String     -- ^ Information about the host machine that ran the benchmark.
   , _PROCESSOR  :: String
-  , _TOPOLOGY   :: String
-  , _GIT_BRANCH :: String
-  , _GIT_HASH   :: String
-  , _GIT_DEPTH  :: Int
-  , _WHO        :: String
-  , _ETC_ISSUE  :: String
-  , _LSPCI      :: String
-  , _FULL_LOG   :: String
+  , _TOPOLOGY   :: String     -- todo, output of lstopo
+  , _GIT_BRANCH :: String     -- ^ Which branch was the benchmark run from
+  , _GIT_HASH   :: String     -- ^ Which exact revision of the code was run.
+  , _GIT_DEPTH  :: Int        -- ^ How many git commits deep was that rev (rough proxy for age)
+  , _WHO        :: String     -- ^ Was anyone else logged into the machine?
+  , _ETC_ISSUE  :: String     -- ^ Information about the host machine from /etc/issue
+  , _LSPCI      :: String     -- ^ Information about the host machine from the lspci command
+  , _FULL_LOG   :: String     -- ^ Optionally record the full stdout from the benchmarking process.
     
-  , _MEDIANTIME_ALLOCRATE    ::  Maybe Word64
-  , _MEDIANTIME_MEMFOOTPRINT ::  Maybe Word64
+  , _MEDIANTIME_ALLOCRATE    ::  Maybe Word64  -- ^ If recorded, the allocation rate of the median run.
+  , _MEDIANTIME_MEMFOOTPRINT ::  Maybe Word64  -- ^ If recorded, the memory footprint (high water mark) of the median run
+  , _ALLJITTIMES   ::  String -- ^ Space separated list of numbers, JIT compile times
+                              -- (if applicable), with a 1-1 correspondence to the exec times in ALLTIMES.
+                              -- Time should not be double counted as JIT and exec time; these should be disjoint.
   }
 
 -- | A default value, useful for filling in only the fields that are relevant to a particular benchmark.
@@ -531,5 +534,6 @@ emptyBenchmarkResult = BenchmarkResult
   , _FULL_LOG   = ""
   , _MEDIANTIME_ALLOCRATE    = Nothing
   , _MEDIANTIME_MEMFOOTPRINT = Nothing
+  , _ALLJITTIMES = ""
   }
 

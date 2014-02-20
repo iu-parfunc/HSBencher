@@ -203,6 +203,8 @@ fusionSchema =
   -- New fields: [2013.12.01]
   , ("MEDIANTIME_ALLOCRATE", STRING)
   , ("MEDIANTIME_MEMFOOTPRINT", STRING)
+  -- New field: [2014.02.19]
+  , ("ALLJITTIMES", STRING) -- In order of trials like ALLTIMES.
   ]
 
 -- | Convert the Haskell representation of a benchmark result into a tuple for Fusion
@@ -243,6 +245,7 @@ resultToTuple r =
   , ("FULL_LOG", _FULL_LOG r)
   , ("MEDIANTIME_ALLOCRATE",    fromMaybe "" $ fmap show $ _MEDIANTIME_ALLOCRATE r)
   , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
+  , ("ALLJITTIMES", _ALLJITTIMES r)
   ]
   
 #endif
