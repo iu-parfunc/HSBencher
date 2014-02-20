@@ -237,7 +237,8 @@ getConfig cmd_line_options benches = do
            , harvesters = selftimedHarvester       `mappend`
                           ghcProductivityHarvester `mappend`
                           ghcMemFootprintHarvester `mappend`
-                          ghcAllocRateHarvester    
+                          ghcAllocRateHarvester    `mappend`
+                          jittimeHarvester
 #ifdef FUSION_TABLES
            , fusionConfig = FusionConfig 
               { fusionTableID  = Nothing 

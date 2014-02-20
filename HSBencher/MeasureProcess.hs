@@ -6,7 +6,7 @@
 
 module HSBencher.MeasureProcess
        (measureProcess,
-        selftimedHarvester,
+        selftimedHarvester, jittimeHarvester,
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
         taggedLineHarvester
         )
@@ -43,7 +43,7 @@ import Debug.Trace
 -- It is complicated by:
 --
 --   (1) An additional protocol for the process to report self-measured realtime (a
---     line starting in "SELFTIMED")
+--     line starting in "SELFTIMED", ditto for "JITTIME:")
 --
 --   (2) Parsing the output of GHC's "+RTS -s" to retrieve productivity OR using 
 --       lines of the form "PRODUCTIVITY: XYZ"
@@ -166,6 +166,9 @@ data ProcessEvt = ErrLine B.ByteString
 -- | Check for a SELFTIMED line of output.
 selftimedHarvester :: LineHarvester
 selftimedHarvester = taggedLineHarvester "SELFTIMED" (\d r -> r{realtime=d})
+
+jittimeHarvester :: LineHarvester
+jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{jittime=Just d})
 
 -- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
 --   Take a function that puts the result into place (the write half of a lens).

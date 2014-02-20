@@ -354,7 +354,8 @@ runOne (iterNum, totalIters) _bldid bldres
             , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
             , _RUNTIME_FLAGS = unwords runFlags
-            , _ALLTIMES      =  unwords$ map (show . gettime) goodruns
+            , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
+            , _ALLJITTIMES   =  unwords$ map (show . getjittime) goodruns
             , _TRIALS        =  trials
             }
       result' <- liftIO$ augmentResultWithConfig conf result
@@ -747,6 +748,10 @@ gettime :: RunResult -> Double
 gettime RunCompleted{realtime} = realtime
 gettime RunTimeOut{}           = posInf
 gettime x                      = error$"Cannot get realtime from: "++show x
+
+getjittime :: RunResult -> Maybe Double
+getjittime RunCompleted{jittime}  = jittime
+getjittime _                      = Nothing
 
 posInf :: Double
 posInf = 1/0

@@ -396,13 +396,18 @@ data RunResult =
                  , productivity :: Maybe Double -- ^ Seconds
                  , allocRate    :: Maybe Word64 -- ^ Bytes allocated per mutator-second
                  , memFootprint :: Maybe Word64 -- ^ High water mark of allocated memory, in bytes.
+                 , jittime      :: Maybe Double -- ^ Time to JIT compile the benchmark, counted separately from realtime.
                  }
   | RunTimeOut
   | ExitError Int -- ^ Contains the returned error code.
  deriving (Eq,Show)
 
 emptyRunResult :: RunResult
-emptyRunResult = RunCompleted (-1.0) Nothing Nothing Nothing
+emptyRunResult = RunCompleted { realtime = (-1.0)
+                              , productivity = Nothing 
+                              , allocRate = Nothing 
+                              , memFootprint = Nothing
+                              , jittime = Nothing }
 
 -- | A running subprocess.
 data SubProcess =
