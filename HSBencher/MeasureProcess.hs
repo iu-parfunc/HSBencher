@@ -107,17 +107,17 @@ measureProcess (LineHarvester harvest)
             writeChan relay_out Nothing
             code <- waitForProcess pid
             endtime <- getCurrentTime
-            case code of
-              ExitSuccess -> 
-                -- TODO: we should probably make this a Maybe type:
-                if realtime resultAcc == realtime emptyRunResult
-                then    
-                  -- If there's no self-reported time, we measure it ourselves:
-                  let d = diffUTCTime endtime startTime in
-                  return$ resultAcc { realtime = fromRational$ toRational d }
-                else return resultAcc
-              ExitFailure c   -> return (ExitError c)
-        
+            -- TODO: we should probably make this a Maybe type:
+            if realtime resultAcc == realtime emptyRunResult
+            then case code of
+                   ExitSuccess -> 
+                       -- If there's no self-reported time, we measure it ourselves:
+                       let d = diffUTCTime endtime startTime in
+                       return$ resultAcc { realtime = fromRational$ toRational d }
+                   ExitFailure c   -> return (ExitError c)
+            -- [2014.03.01] Change of policy.. if there was a SELFTIMED result, return it even if the process
+            -- later errored.  (Accelerate/Cilk is segfaulting on exit right now.)
+            else return resultAcc
           Just TimerFire -> do
             B.hPutStrLn stderr $ " [hsbencher] Benchmark run timed out.  Killing process."
             terminateProcess pid
