@@ -174,14 +174,14 @@ jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{jittime=Just d})
 --   Take a function that puts the result into place (the write half of a lens).
 taggedLineHarvester :: B.ByteString -> (Double -> RunResult -> RunResult) -> LineHarvester
 taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
-  let fail = (id, False) in 
+  let fail = (id, LineIgnored) in 
   case B.words ln of
     [] -> fail
     hd:tl | hd == tag || hd == (tag `B.append` ":") ->
       case tl of
         [time] ->
           case reads (B.unpack time) of
-            (dbl,_):_ -> (stickit dbl, True)
+            (dbl,_):_ -> (stickit dbl, LineUsed) -- Cannot generate ResultFinished
             _ -> error$ "Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
     _ -> fail
 
@@ -202,13 +202,13 @@ ghcProductivityHarvester =
   -- This variant is our own manually produced productivity tag (like SELFTIMED):  
   (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{productivity=Just d})) `orHarvest`
   (LineHarvester $ \ ln ->
-   let nope = (id,False) in
+   let nope = (id,LineIgnored) in
    case words (B.unpack ln) of
      [] -> nope
      -- EGAD: This is NOT really meant to be machine read:
      ("Productivity": prod: "of": "total": "user," : _) ->
        case reads (filter (/= '%') prod) of
-          ((prodN,_):_) -> (\r -> r{productivity=Just prodN}, True)
+          ((prodN,_):_) -> (\r -> r{productivity=Just prodN}, LineUsed)
           _ -> nope
     -- TODO: Support  "+RTS -t --machine-readable" as well...          
      _ -> nope)
@@ -216,27 +216,27 @@ ghcProductivityHarvester =
 ghcAllocRateHarvester :: LineHarvester
 ghcAllocRateHarvester =
   (LineHarvester $ \ ln ->
-   let nope = (id,False) in
+   let nope = (id,LineIgnored) in
    case words (B.unpack ln) of
      [] -> nope
      -- EGAD: This is NOT really meant to be machine read:
      ("Alloc":"rate": rate: "bytes":"per":_) ->
        case reads (filter (/= ',') rate) of
-          ((n,_):_) -> (\r -> r{allocRate=Just n}, True)
+          ((n,_):_) -> (\r -> r{allocRate=Just n}, LineUsed)
           _ -> nope
      _ -> nope)
 
 ghcMemFootprintHarvester :: LineHarvester
 ghcMemFootprintHarvester =
   (LineHarvester $ \ ln ->
-   let nope = (id,False) in
+   let nope = (id,LineIgnored) in
    case words (B.unpack ln) of
      [] -> nope
      -- EGAD: This is NOT really meant to be machine read:
 --   "       5,372,024 bytes maximum residency (6 sample(s))",
      (sz:"bytes":"maximum":"residency":_) ->
        case reads (filter (/= ',') sz) of
-          ((n,_):_) -> (\r -> r{memFootprint=Just n}, True)
+          ((n,_):_) -> (\r -> r{memFootprint=Just n}, LineUsed)
           _ -> nope
      _ -> nope)
 

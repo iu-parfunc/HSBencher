@@ -35,7 +35,7 @@ module HSBencher.Types
 
          -- * Subprocesses and system commands
          CommandDescr(..), RunResult(..), emptyRunResult,
-         SubProcess(..), LineHarvester(..), orHarvest,
+         SubProcess(..), LineHarvester(..), HarvestStatus(..), orHarvest,
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
@@ -427,28 +427,37 @@ instance (Out k, Out v) => Out (M.Map k v) where
   docPrec n m = docPrec n $ M.toList m
   doc         = docPrec 0 
 
+-- | What happened with the harvesting of a particular line?
+data HarvestStatus = LineIgnored     -- ^ This harvester didn't know how to use it.
+                   | LineUsed        -- ^ This harvester did use it, tweaking the current RunResult.
+                   | ResultFinished  -- ^ This harvester used it AND the RunResult is DONE (start the next).
 
 -- | A line harvester takes a single line of input and possible extracts data from it
 -- which it can then add to a RunResult.
--- 
--- The boolean result indicates whether the line was used or not.
-newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, Bool))
+newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, HarvestStatus))
 -- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe (RunResult -> RunResult))
 
 -- | We can stack up line harvesters.  ALL of them get to run on each line.
 instance Monoid LineHarvester where
-  mempty = LineHarvester (\ _ -> (id,False))
+  mempty = LineHarvester (\ _ -> (id,LineIgnored))
   mappend (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
     let (f,b1) = lh1 ln 
         (g,b2) = lh2 ln in
-    (f . g, b1 || b2)
+    (f . g, b1 `orHS` b2)
+
+orHS :: HarvestStatus -> HarvestStatus -> HarvestStatus
+orHS ResultFinished _ = ResultFinished
+orHS _ ResultFinished = ResultFinished
+orHS LineUsed       _ = LineUsed
+orHS _       LineUsed = LineUsed
+orHS _ _              = LineIgnored 
 
 -- | Run the second harvester only if the first fails.
 orHarvest :: LineHarvester -> LineHarvester -> LineHarvester
 orHarvest (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
   case lh1 ln of
-    x@(_,True) -> x
-    (_,False) -> lh2 ln 
+    (_,LineIgnored) -> lh2 ln 
+    x -> x
 
 instance Show LineHarvester where
   show _ = "<LineHarvester>"
