@@ -45,7 +45,8 @@ import System.IO (hPutStrLn, stderr)
 --    "MinTime","MedianTime","MaxTime", "MinTime_Prod","MedianTime_Prod","MaxTime_Prod"]
 
 
--- | The standard retry behavior when receiving HTTP network errors.
+-- | The standard retry behavior when receiving HTTP network errors.  Note that this
+-- can retry for quite a long while so it is only to be usedfrom batch applications.
 stdRetry :: String -> OAuth2Client -> OAuth2Tokens -> IO a ->
             BenchM a
 stdRetry msg client toks action = do
@@ -59,7 +60,7 @@ stdRetry msg client toks action = do
         stdRetry "refresh tokens" client toks (refreshTokens client toks)
         return ()
                                  ) conf
-  liftIO$ retryIORequest action retryHook [1,2,4,8,16,32,64]
+  liftIO$ retryIORequest action retryHook [1,2,4,4,4,4,4,4,8,16,32,64,4,4]
 
 
 -- | Takes an idempotent IO action that includes a network request.  Catches
