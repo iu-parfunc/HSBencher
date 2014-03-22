@@ -23,6 +23,7 @@ import qualified Control.Exception as E
 import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import qualified Data.Set as S
 import qualified Data.Map as M
+import qualified Data.List as L
 import qualified Data.ByteString.Char8 as B
 -- import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
@@ -115,7 +116,7 @@ getTableId auth tablename = do
               targetSchema <- fmap (map col_name) $ liftIO$ listColumns atok tid
               let targetSet = S.fromList targetSchema
                   missing   = S.difference ourSet targetSet
-                  misslist  = S.toList missing                  
+                  misslist  = L.filter (`S.member` missing) ourSchema -- Keep the order.
                   extra     = S.difference targetSet ourSet
               unless (targetSchema == ourSchema) $ 
                 log$ "WARNING: HSBencher upload schema (1) did not match server side schema (2):\n (1) "++
@@ -165,20 +166,23 @@ uploadBenchResult  br@BenchmarkResult{..} = do
 
 -- | A representaton used for creating tables.  Must be isomorphic to
 -- `BenchmarkResult`.  This could perhaps be generated automatically.
+-- 
+-- Note, order is important here, because this is the preferred order we'd like to
+-- have it in the Fusion table.
 fusionSchema :: [(String, CellType)]
 fusionSchema =
   [ ("PROGNAME",STRING)
   , ("VARIANT",STRING)
   , ("ARGS",STRING)    
   , ("HOSTNAME",STRING)
+  , ("MINTIME", NUMBER)
+  , ("MEDIANTIME", NUMBER)
+  , ("MAXTIME", NUMBER)
   -- The run is identified by hostname_secondsSinceEpoch:
   , ("RUNID",STRING)
   , ("CI_BUILD_ID",STRING)  
   , ("THREADS",NUMBER)
   , ("DATETIME",DATETIME)    
-  , ("MINTIME", NUMBER)
-  , ("MEDIANTIME", NUMBER)
-  , ("MAXTIME", NUMBER)
   , ("MINTIME_PRODUCTIVITY", NUMBER)
   , ("MEDIANTIME_PRODUCTIVITY", NUMBER)
   , ("MAXTIME_PRODUCTIVITY", NUMBER)
