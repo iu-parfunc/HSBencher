@@ -61,8 +61,9 @@ stdRetry msg client toks action = do
         stdRetry "refresh tokens" client toks (refreshTokens client toks)
         return ()
                                  ) conf
-  liftIO$ retryIORequest action retryHook [1,2,4,4,4,4,4,4,8,16,32,64,4,4]
-
+  liftIO$ retryIORequest action retryHook $
+          [1,2,4,4,4,4,4,4,8,16] --- 32,64,
+          ++ replicate 20 5
 
 -- | Takes an idempotent IO action that includes a network request.  Catches
 -- `HttpException`s and tries a gain a certain number of times.  The second argument
