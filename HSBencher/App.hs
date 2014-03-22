@@ -34,7 +34,7 @@ import Data.Monoid
 import qualified Data.Map as M
 import Data.Word (Word64)
 import Data.IORef
-import Data.List (intercalate, sortBy, intersperse, isPrefixOf, tails, isInfixOf, delete)
+import Data.List (intercalate, sortBy, intersperse, isPrefixOf, tails, isInfixOf, delete, transpose)
 import qualified Data.Set as Set
 import Data.Version (versionBranch, versionTags)
 import GHC.Conc (getNumProcessors)
@@ -276,8 +276,8 @@ runOne (iterNum, totalIters) _bldid bldres
           both <- lift$ Strm.concurrentMerge [process_out, err2]
           mv <- echoStream (not shortrun) both
           lift$ takeMVar mv
-          x <- lift wait
-          return x
+          (x,xs) <- lift wait
+          return (x:xs)
     case bldres of
       StandAloneBinary binpath -> do
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
@@ -305,76 +305,82 @@ runOne (iterNum, totalIters) _bldid bldres
   let thename = case progname of
                   Just s  -> s
                   Nothing -> testRoot
-  (_t1,_t2,_t3,_p1,_p2,_p3) <-
-    if all isError nruns then do
-      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
-      logOn [ResultsFile]$ 
-        printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
-                                  (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
-      return ("","","","","","")
-    else do
-      let goodruns = filter (not . isError) nruns
-      -- Extract the min, median, and max:
-          sorted = sortBy (\ a b -> compare (gettime a) (gettime b)) goodruns
-          minR = head sorted
-          maxR = last sorted
-          medianR = sorted !! (length sorted `quot` 2)
+  -- Process a batch of runs (trials) of a single benchmark:
+  let processRuns alltrials = do 
+        (if all isError alltrials then do
+           log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show alltrials
+           logOn [ResultsFile]$ 
+             printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
+                                       (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
+           return ("","","","","","")
+         else do
+           let goodruns = filter (not . isError) alltrials
+           -- Extract the min, median, and max:
+               sorted = sortBy (\ a b -> compare (gettime a) (gettime b)) goodruns
+               minR = head sorted
+               maxR = last sorted
+               medianR = sorted !! (length sorted `quot` 2)
 
-      let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
-                             [gettime minR, gettime medianR, gettime maxR]
-          prods@[p1,p2,p3] = map mshow [getprod minR, getprod medianR, getprod maxR]
-          mshow Nothing  = "0"
-          mshow (Just x) = showFFloat (Just 2) x "" 
+           let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
+                                  [gettime minR, gettime medianR, gettime maxR]
+               prods@[p1,p2,p3] = map mshow [getprod minR, getprod medianR, getprod maxR]
+               mshow Nothing  = "0"
+               mshow (Just x) = showFFloat (Just 2) x "" 
 
-          -- These are really (time,prod) tuples, but a flat list of
-          -- scalars is simpler and readable by gnuplot:
-          formatted = (padl 15$ unwords $ ts)
-                      ++"   "++ unwords prods -- prods may be empty!
+               -- These are really (time,prod) tuples, but a flat list of
+               -- scalars is simpler and readable by gnuplot:
+               formatted = (padl 15$ unwords $ ts)
+                           ++"   "++ unwords prods -- prods may be empty!
 
-      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
+           log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
 
-      logOn [ResultsFile]$ 
-        printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
-                                (padr 8$ sched) (padr 3$ show numthreads) formatted
+           logOn [ResultsFile]$ 
+             printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
+                                     (padr 8$ sched) (padr 3$ show numthreads) formatted
 
-      -- These should be either all Nothing or all Just:
-      let jittimes0 = map getjittime goodruns
-          misses = length (filter (==Nothing) jittimes0)
-      jittimes <- if misses == length goodruns
-                  then return ""
-                  else if misses == 0
-                       then return $ unwords (map (show . fromJust) jittimes0)
-                       else do log $ "WARNING: got JITTIME for some runs: "++show jittimes0
-                               log "  Zeroing those that did not report."
-                               return $ unwords (map (show . fromMaybe 0) jittimes0)
-      let result =
-            emptyBenchmarkResult
-            { _PROGNAME = case progname of
-                           Just s  -> s
-                           Nothing -> testRoot
-            , _VARIANT  = sched
-            , _ARGS     = args
-            , _THREADS  = numthreads
-            , _MINTIME    =  gettime minR
-            , _MEDIANTIME =  gettime medianR
-            , _MAXTIME    =  gettime maxR
-            , _MINTIME_PRODUCTIVITY    = getprod minR
-            , _MEDIANTIME_PRODUCTIVITY = getprod medianR
-            , _MEDIANTIME_ALLOCRATE    = getallocrate medianR
-            , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
-            , _MAXTIME_PRODUCTIVITY    = getprod maxR
-            , _RUNTIME_FLAGS = unwords runFlags
-            , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
-            , _ALLJITTIMES   =  jittimes
-            , _TRIALS        =  trials
-            }
-      result' <- liftIO$ augmentResultWithConfig conf result
+           -- These should be either all Nothing or all Just:
+           let jittimes0 = map getjittime goodruns
+               misses = length (filter (==Nothing) jittimes0)
+           jittimes <- if misses == length goodruns
+                       then return ""
+                       else if misses == 0
+                            then return $ unwords (map (show . fromJust) jittimes0)
+                            else do log $ "WARNING: got JITTIME for some runs: "++show jittimes0
+                                    log "  Zeroing those that did not report."
+                                    return $ unwords (map (show . fromMaybe 0) jittimes0)
+           let result =
+                 emptyBenchmarkResult
+                 { _PROGNAME = case progname of
+                                Just s  -> s
+                                Nothing -> testRoot
+                 , _VARIANT  = sched
+                 , _ARGS     = args
+                 , _THREADS  = numthreads
+                 , _MINTIME    =  gettime minR
+                 , _MEDIANTIME =  gettime medianR
+                 , _MAXTIME    =  gettime maxR
+                 , _MINTIME_PRODUCTIVITY    = getprod minR
+                 , _MEDIANTIME_PRODUCTIVITY = getprod medianR
+                 , _MEDIANTIME_ALLOCRATE    = getallocrate medianR
+                 , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
+                 , _MAXTIME_PRODUCTIVITY    = getprod maxR
+                 , _RUNTIME_FLAGS = unwords runFlags
+                 , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
+                 , _ALLJITTIMES   =  jittimes
+                 , _TRIALS        =  trials
+                 }
+           result' <- liftIO$ augmentResultWithConfig conf result
 #ifdef FUSION_TABLES
-      when doFusionUpload $ uploadBenchResult result'
-#endif      
-      return (t1,t2,t3,p1,p2,p3)
-      
-  return ()     
+           when doFusionUpload $ uploadBenchResult result'
+#endif
+           return (t1,t2,t3,p1,p2,p3))
+  ----------------End_processRuns------------------------  
+  -- First check that each benchmark run produced the same number of outputs:
+  let resultLens = map length nruns -- In the common case these will all be length 1.
+      shortest   = minimum resultLens
+      eachCfg    = transpose $ map (take shortest) nruns
+  forM_ eachCfg processRuns
+  return ()
 
 
 --------------------------------------------------------------------------------

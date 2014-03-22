@@ -141,7 +141,7 @@ measureProcess (LineHarvester harvest)
 
           Nothing -> error "benchmark.hs: Internal error!  This should not happen."
   
-  fut <- A.async (loop emptyRunResult)
+  fut <- A.async (fmap (\x -> (x,[])) $ loop emptyRunResult)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
 
 -- Dump the rest of an IOStream until we reach the end

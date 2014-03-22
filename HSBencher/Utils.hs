@@ -129,6 +129,9 @@ echoStream echoStdout outS = do
 -- | Run a command and wait for all output.  Log output to the appropriate places.
 --   The first argument is a "tag" to append to each output line to make things
 --   clearer.
+-- 
+--   (Note: the command being run does use line harvesters, but had better not have
+--   more than one RunResult.)
 runLogged :: String -> String -> BenchM (RunResult, [B.ByteString])
 runLogged tag cmd = do 
   log$ " * Executing command: " ++ cmd
@@ -147,7 +150,7 @@ runLogged tag cmd = do
           Just ln -> do log (B.unpack ln)
                         loop (ln:acc)
   lines <- loop []
-  res   <- lift$ wait
+  (res,[]) <- lift$ wait
   log$ " * Command completed with "++show(length lines)++" lines of output." -- ++show res
   return (res,lines)
 

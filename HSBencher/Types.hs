@@ -409,10 +409,11 @@ emptyRunResult = RunCompleted { realtime = (-1.0)
                               , memFootprint = Nothing
                               , jittime = Nothing }
 
--- | A running subprocess.
+-- | A running subprocess.  When finished, it returns one or more RunResults.
+--   The RunResults are returned in chronological order.
 data SubProcess =
   SubProcess
-  { wait :: IO RunResult
+  { wait :: IO (RunResult,[RunResult])
   , process_out  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
   , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
   }
@@ -510,6 +511,7 @@ data BenchmarkResult =
                               -- (if applicable), with a 1-1 correspondence to the exec times in ALLTIMES.
                               -- Time should not be double counted as JIT and exec time; these should be disjoint.
   }
+  deriving (Show, Read, Eq, Ord)
 
 -- | A default value, useful for filling in only the fields that are relevant to a particular benchmark.
 emptyBenchmarkResult :: BenchmarkResult

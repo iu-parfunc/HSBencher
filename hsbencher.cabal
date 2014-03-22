@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.6.1
+version:             1.7.0.0
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -27,6 +27,7 @@ version:             1.6.1
 -- 1.5.2   : remove aggressive cleaning in cabal method, change output dir
 -- 1.5.3   : minor: expose more info about the full command line usage info.
 -- 1.6     : Add new column, ALLJITTIMES
+-- 1.7.0.0 : Add multiple RunResult's from a single process.
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 
