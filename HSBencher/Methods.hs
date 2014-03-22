@@ -220,5 +220,5 @@ runSuccessful tag cmd = do
   (res,lines) <- runLogged tag cmd
   case res of
     ExitError code  -> error$ "expected this command to succeed! But it exited with code "++show code++ ":\n  "++ cmd
-    RunTimeOut {}   -> error "Methods.hs/runSuccessful - internal error!"
+    RunTimeOut {}   -> error "Methods.hs/runSuccessful - unexpected timeout - internal error!"
     RunCompleted {} -> return lines

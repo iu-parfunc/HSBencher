@@ -370,6 +370,7 @@ runOne (iterNum, totalIters) _bldid bldres
                  , _TRIALS        =  trials
                  }
            result' <- liftIO$ augmentResultWithConfig conf result
+--           liftIO$ putStrLn $ "GOT RESULT: "++show result'
 #ifdef FUSION_TABLES
            when doFusionUpload $ uploadBenchResult result'
 #endif
@@ -379,6 +380,7 @@ runOne (iterNum, totalIters) _bldid bldres
   let resultLens = map length nruns -- In the common case these will all be length 1.
       shortest   = minimum resultLens
       eachCfg    = transpose $ map (take shortest) nruns
+  liftIO$ putStrLn $ "[DBG] result lengths from measureProcess runs: "++show resultLens
   forM_ eachCfg processRuns
   return ()
 

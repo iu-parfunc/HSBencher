@@ -6,8 +6,8 @@
 
 module HSBencher.MeasureProcess
        (measureProcess,
-        selftimedHarvester, jittimeHarvester,
-        ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
+        selftimedHarvester, jittimeHarvester, argAndTimedHarvester,
+        ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester, 
         taggedLineHarvester
         )
        where
@@ -185,6 +185,25 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
             _ -> error$ "Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
     _ -> fail
 
+argAndTimedHarvester :: LineHarvester
+argAndTimedHarvester = 
+  (LineHarvester $ \ ln ->
+   let nope = (id,LineIgnored) in
+   case B.words ln of
+     [] -> nope
+     hd:tl | hd == tag || hd == (tag `B.append` ":") ->
+       case reverse tl of 
+         [] -> error $ "Must have at least one argument following: "++B.unpack tag
+         time:revargs -> 
+          let args = reverse revargs 
+              stickit d r = r{realtime=d } -- FIXME: NEED A WAY TO CONTROL THE ARGS FROM THE RUNRESULT
+          in
+          case reads (B.unpack time) of
+            (dbl,_):_ -> (stickit dbl, ResultFinished)
+            _ -> error$ "Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
+     _ -> nope)
+ where 
+  tag = "ARG_AND_SELFTIMED" :: B.ByteString
 
 --------------------------------------------------------------------------------
 -- GHC-specific Harvesters:

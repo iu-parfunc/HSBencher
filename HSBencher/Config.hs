@@ -235,6 +235,7 @@ getConfig cmd_line_options benches = do
            , doFusionUpload = False
            , argsBeforeFlags = True
            , harvesters = selftimedHarvester       `mappend`
+                          argAndTimedHarvester     `mappend`
                           ghcProductivityHarvester `mappend`
                           ghcMemFootprintHarvester `mappend`
                           ghcAllocRateHarvester    `mappend`
