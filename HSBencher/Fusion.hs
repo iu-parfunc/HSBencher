@@ -36,6 +36,9 @@ import HSBencher.Logging (log)
 import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
 
+import Data.Time.Clock
+import Data.Time.Calendar
+
 ----------------------------------------------------------------------------------------------------
 
 
@@ -53,8 +56,9 @@ stdRetry :: String -> OAuth2Client -> OAuth2Tokens -> IO a ->
 stdRetry msg client toks action = do
   conf <- ask
   let retryHook num exn = runReaderT (do
+        datetime <- lift$ getDateTime
         log$ " [fusiontable] Retry #"++show num++" during <"++msg++"> due to HTTPException: " ++ show exn
-        log$ " [fusiontable] Retrying, but first, attempt token refresh..."
+        log$ " [fusiontable] ("++datetime++") Retrying, but first, attempt token refresh..."
         -- QUESTION: should we retry the refresh itself, it is NOT inside the exception handler.
         -- liftIO$ refreshTokens client toks
         -- liftIO$ retryIORequest (refreshTokens client toks) (\_ -> return ()) [1,1]
@@ -64,6 +68,13 @@ stdRetry msg client toks action = do
   liftIO$ retryIORequest action retryHook $
           [1,2,4,4,4,4,4,4,8,16] --- 32,64,
           ++ replicate 30 5
+
+getDateTime :: IO String
+getDateTime = do 
+  utc <- getCurrentTime
+  let day  = utctDay utc
+      secs = utctDayTime utc
+  return $ show day ++" "++show secs
 
 -- | Takes an idempotent IO action that includes a network request.  Catches
 -- `HttpException`s and tries a gain a certain number of times.  The second argument
