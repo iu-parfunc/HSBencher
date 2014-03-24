@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables, CPP #-}
+{-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables, CPP, BangPatterns #-}
 
 -- | Google Fusion Table upload of benchmark data.
 --   Built conditionally based on the -ffusion flag.
@@ -52,18 +52,18 @@ stdRetry :: String -> OAuth2Client -> OAuth2Tokens -> IO a ->
             BenchM a
 stdRetry msg client toks action = do
   conf <- ask
-  let retryHook exn = runReaderT (do
-        log$ " [fusiontable] Retrying during <"++msg++"> due to HTTPException: " ++ show exn
+  let retryHook num exn = runReaderT (do
+        log$ " [fusiontable] Retry #"++show num++" during <"++msg++"> due to HTTPException: " ++ show exn
         log$ " [fusiontable] Retrying, but first, attempt token refresh..."
         -- QUESTION: should we retry the refresh itself, it is NOT inside the exception handler.
         -- liftIO$ refreshTokens client toks
         -- liftIO$ retryIORequest (refreshTokens client toks) (\_ -> return ()) [1,1]
         stdRetry "refresh tokens" client toks (refreshTokens client toks)
         return ()
-                                 ) conf
+                                     ) conf
   liftIO$ retryIORequest action retryHook $
           [1,2,4,4,4,4,4,4,8,16] --- 32,64,
-          ++ replicate 20 5
+          ++ replicate 30 5
 
 -- | Takes an idempotent IO action that includes a network request.  Catches
 -- `HttpException`s and tries a gain a certain number of times.  The second argument
@@ -75,15 +75,15 @@ stdRetry msg client toks action = do
 --
 -- Once the retry list runs out, the last attempt may throw `HttpException`
 -- exceptions that escape this function.
-retryIORequest :: IO a -> (HttpException -> IO ()) -> [Double] -> IO a
-retryIORequest req retryHook times = loop times
+retryIORequest :: IO a -> (Int -> HttpException -> IO ()) -> [Double] -> IO a
+retryIORequest req retryHook times = loop 0 times
   where
-    loop [] = req
-    loop (delay:tl) = 
+    loop _ [] = req
+    loop !num (delay:tl) = 
       E.catch req $ \ (exn::HttpException) -> do 
-        retryHook exn
+        retryHook num exn
         threadDelay (round$ delay * 1000 * 1000) -- Microseconds
-        loop tl
+        loop (num+1) tl
 
 
 -- | Get the table ID that has been cached on disk, or find the the table in the users
