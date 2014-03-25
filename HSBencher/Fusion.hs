@@ -35,9 +35,14 @@ import HSBencher.Types
 import HSBencher.Logging (log)
 import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
-
 import Data.Time.Clock
 import Data.Time.Calendar
+
+import System.Directory (doesFileExist, doesDirectoryExist, getAppUserDataDirectory,
+                         createDirectory, renameFile, removeFile)
+import System.FilePath ((</>),(<.>), splitExtension)
+import System.IO.Unsafe (unsafePerformIO)
+import Control.Concurrent.MVar
 
 ----------------------------------------------------------------------------------------------------
 
@@ -149,6 +154,10 @@ getTableId auth tablename = do
     ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
 
 
+-- TEMP: Hack
+fileLock :: MVar ()
+fileLock = unsafePerformIO (newMVar ())
+
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult  br@BenchmarkResult{..} = do
@@ -165,6 +174,14 @@ uploadBenchResult  br@BenchmarkResult{..} = do
         (cols,vals) = unzip tuple
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
+
+    cabalD <- lift $ getAppUserDataDirectory "cabal"
+    let csvfile = cabalD </> "hsbencherDribble.csv"
+    log$ " [fusiontable] TEMP: Also dumping data to: "++csvfile
+    lift $ withMVar fileLock $ \ () -> do 
+       b <- doesFileExist csvfile
+       unless b$ writeFile csvfile (concat (L.intersperse "," cols)++"\n")
+       appendFile csvfile (concat (L.intersperse "," vals)++"\n")
 
     -- It's easy to blow the URL size; we need the bulk import version.
     -- stdRetry "insertRows" authclient toks $ insertRows

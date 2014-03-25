@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.6.1.2
+version:             1.6.2
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -28,6 +28,7 @@ version:             1.6.1.2
 -- 1.5.3   : minor: expose more info about the full command line usage info.
 -- 1.6     : Add new column, ALLJITTIMES
 -- 1.6.1.1 : Very aggressive default fusion table retry policy.
+-- 1.6.2   : Temp: hack to write to a csv file on disk as well.
 
 synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
 
