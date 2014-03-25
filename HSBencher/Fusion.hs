@@ -181,7 +181,7 @@ uploadBenchResult  br@BenchmarkResult{..} = do
     lift $ withMVar fileLock $ \ () -> do 
        b <- doesFileExist csvfile
        unless b$ writeFile csvfile (concat (L.intersperse "," cols)++"\n")
-       appendFile csvfile (concat (L.intersperse "," vals)++"\n")
+       appendFile csvfile (concat (L.intersperse "," (map show vals))++"\n")
 
     -- It's easy to blow the URL size; we need the bulk import version.
     -- stdRetry "insertRows" authclient toks $ insertRows
