@@ -37,6 +37,7 @@ import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
 import Data.Time.Clock
 import Data.Time.Calendar
+import Data.Time.Format ()
 
 import System.Directory (doesFileExist, doesDirectoryExist, getAppUserDataDirectory,
                          createDirectory, renameFile, removeFile)
@@ -77,9 +78,10 @@ stdRetry msg client toks action = do
 getDateTime :: IO String
 getDateTime = do 
   utc <- getCurrentTime
-  let day  = utctDay utc
-      secs = utctDayTime utc
-  return $ show day ++" "++show secs
+  -- let day  = utctDay utc
+  --     secs = utctDayTime utc
+--  return $ show day ++" "++show secs
+  return $ show utc
 
 -- | Takes an idempotent IO action that includes a network request.  Catches
 -- `HttpException`s and tries a gain a certain number of times.  The second argument
