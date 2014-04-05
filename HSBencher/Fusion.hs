@@ -318,8 +318,8 @@ instance Functor ArgDescr where
   fmap fn x = 
     case x of 
       NoArg x ->  NoArg (fn x)
-      -- ReqArg (String -> a) String	
---      OptArg (Maybe String -> a) String	
+      ReqArg fn2 str -> ReqArg (fn . fn2) str
+      OptArg fn2 str -> OptArg (fn . fn2) str
 
 fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
 fusion_cli_options =
