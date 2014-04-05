@@ -14,6 +14,7 @@ module HSBencher.Fusion
        ( FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
        , uploadBenchResult
+       , fusionUploader
        )
        where
 
@@ -25,6 +26,9 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.ByteString.Char8 as B
+import Data.Time.Clock
+import Data.Time.Calendar
+import Data.Time.Format ()
 -- import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, createColumn, listTables, listColumns,
@@ -35,10 +39,7 @@ import HSBencher.Types
 import HSBencher.Logging (log)
 import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
-import Data.Time.Clock
-import Data.Time.Calendar
-import Data.Time.Format ()
-
+import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Directory (doesFileExist, doesDirectoryExist, getAppUserDataDirectory,
                          createDirectory, renameFile, removeFile)
 import System.FilePath ((</>),(<.>), splitExtension)
@@ -285,6 +286,35 @@ resultToTuple r =
   , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
   , ("ALLJITTIMES", _ALLJITTIMES r)
   ]
-  
+
+fusionUploader :: Uploader
+fusionUploader = Uploader 
+ { ulname = "fusionTableUploader"
+ , ulUsageInfo = unlines 
+   [ "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
+     "               client ID and secret can be provided by env vars OR command line options. " ]
+ , upload = uploadBenchResult 
+ }
+
+fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
+fusion_cli_options =
+  ("\n Fusion Table Options:",
+      [ Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
+        "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
+
+      , Option [] ["name"]         (ReqArg BenchsetName "NAME") "Name for created/discovered fusion table."
+      , Option [] ["clientid"]     (ReqArg ClientID "ID")     "Use (and cache) Google client ID"
+      , Option [] ["clientsecret"] (ReqArg ClientSecret "STR") "Use (and cache) Google client secret"
+      , Option [] ["fusion-test"]  (NoArg FusionTest)   "Test authentication and list tables if possible." 
+      ])
+
+data FusionCmdLnFlag = 
+   FusionTables (Maybe TableId)
+ | BenchsetName (String)
+ | ClientID     String
+ | ClientSecret String
+ | FusionTest
+
 #endif
 -- End ifndef FUSION_TABLES
+

@@ -27,7 +27,7 @@ module HSBencher.Types
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
          
-         -- * HSBench Driver Configuration
+         -- * HSBencher Driver Configuration
          Config(..), BenchM,
 #ifdef FUSION_TABLES
          FusionConfig(..),
@@ -39,6 +39,7 @@ module HSBencher.Types
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
+         Uploader(..),
 
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -204,6 +205,7 @@ data Config = Config
                            -- This is here because some executables don't use proper command line parsing.
  , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
  , doFusionUpload  :: Bool
+ , uploaders       :: [Uploader]
 #ifdef FUSION_TABLES
  , fusionConfig   :: FusionConfig
 #endif
@@ -402,6 +404,9 @@ data RunResult =
   | ExitError Int -- ^ Contains the returned error code.
  deriving (Eq,Show)
 
+-- | A default `RunResult` that is a good starting point for filling in desired
+-- fields.  (This way, one remains robust to additional fields that are added in the
+-- future.)
 emptyRunResult :: RunResult
 emptyRunResult = RunCompleted { realtime = (-1.0)
                               , productivity = Nothing 
@@ -543,3 +548,17 @@ emptyBenchmarkResult = BenchmarkResult
   , _ALLJITTIMES = ""
   }
 
+--------------------------------------------------------------------------------
+-- Generic uploader interface
+--------------------------------------------------------------------------------
+
+-- | A backend receiver for results that publishes or stores them in an specific way.
+data Uploader = Uploader 
+  { ulname :: String
+  , ulUsageInfo :: String
+--  , ulCmdOptions :: 
+  , upload :: BenchmarkResult -> BenchM ()
+  }
+
+instance Show Uploader where
+  show Uploader{ulname} = "<Uploader "++ulname++">"

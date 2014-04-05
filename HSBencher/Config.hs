@@ -125,7 +125,6 @@ fusion_cli_options =
       ])
 #endif
 
-
 ----------------------------------------------------------------------------------------------------
 
 -- | Fill in "static" fields of a FusionTable row based on the `Config` data.
@@ -239,6 +238,7 @@ getConfig cmd_line_options benches = do
                           ghcMemFootprintHarvester `mappend`
                           ghcAllocRateHarvester    `mappend`
                           jittimeHarvester
+           , uploaders = []
 #ifdef FUSION_TABLES
            , fusionConfig = FusionConfig 
               { fusionTableID  = Nothing 
