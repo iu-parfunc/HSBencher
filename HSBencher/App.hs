@@ -470,30 +470,35 @@ defaultMainModifyConfig modConfig = do
 
   cli_args <- getArgs
   let (options,plainargs,errs) = getOpt Permute (concat$ map snd all_cli_options) cli_args
-  let recomp  = NoRecomp `notElem` options
-  
-  when (ShowVersion `elem` options) $ do
+
+  -- This ugly method avoids needing an Eq instance:
+  let recomp       = null [ () | NoRecomp <- options]
+      gotHelp      = not$ null [ () | ShowHelp <- options]
+      gotVersion   = not$ null [ () | ShowVersion <- options]
+      gotFusion    = not$ null [ () | FusionTest <- options]
+      cabalAllowed = not$ null [ () | NoCabal <- options]
+      parBench     = not$ null [ () | ParBench <- options]
+
+  when gotVersion  $ do
     putStrLn$ "hsbencher version "++ hsbencherVersion
       -- (unwords$ versionTags version)
     exitSuccess 
       
-  when (not (null errs) || ShowHelp `elem` options) $ do
-    unless (ShowHelp `elem` options) $
-      putStrLn$ "Errors parsing command line options:"
+  when (not (null errs) || gotHelp) $ do
+    unless gotHelp $ putStrLn$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
     putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]"
     putStrLn$ "USAGE: command line options include patterns that select the benchmarks to run"
     mapM putStr (map (uncurry usageInfo) all_cli_options)
     putStrLn$ usageStr
-    if (ShowHelp `elem` options) then exitSuccess else exitFailure
+    if gotHelp then exitSuccess else exitFailure
 
   conf0 <- getConfig options []
   -- The list of benchmarks can optionally be narrowed to match any of the given patterns.
   let conf1   = modConfig conf0
       
 #ifdef FUSION_TABLES
-  when (not (null errs) || FusionTest `elem` options) $ do
-
+  when (not (null errs) || gotFusion) $ do
     let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
         authclient = OAuth2Client { clientId = cid, clientSecret = sec }
@@ -521,8 +526,7 @@ defaultMainModifyConfig modConfig = do
 
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
-  let hasCabalFile = (cabalFile /= []) &&
-                     not (NoCabal `elem` options)
+  let hasCabalFile = (cabalFile /= []) && cabalAllowed
   rootDir <- getCurrentDirectory  
   runReaderT 
     (do
@@ -578,7 +582,7 @@ defaultMainModifyConfig modConfig = do
         printloop M.empty benchlist
         log$ "--------------------------------------------------------------------------------"
 
-        if ParBench `elem` options then do
+        if parBench then do
             unless rtsSupportsBoundThreads $ error (my_name++" was NOT compiled with -threaded.  Can't do --par.")
      {-            
         --------------------------------------------------------------------------------

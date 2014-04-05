@@ -22,6 +22,7 @@ import Control.Monad.Reader
 import Control.Concurrent (threadDelay)
 import qualified Control.Exception as E
 import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
+import Data.Dynamic
 import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.List as L
@@ -287,12 +288,20 @@ resultToTuple r =
   , ("ALLJITTIMES", _ALLJITTIMES r)
   ]
 
+fusionPlugin :: Plugin
+fusionPlugin = Plugin
+ { plugUsageInfo = unlines 
+   [ "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
+     "               client ID and secret can be provided by env vars OR command line options. " ]
+-- , plugCmdOptions = fmap toDyn  $ snd fusion_cli_options
+ }
+
+instance Show Plugin where
+  show Plugin{plugUploader} = "<Plugin containing "++show plugUploader++">"
+
 fusionUploader :: Uploader
 fusionUploader = Uploader 
  { ulname = "fusionTableUploader"
- , ulUsageInfo = unlines 
-   [ "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
-     "               client ID and secret can be provided by env vars OR command line options. " ]
  , upload = uploadBenchResult 
  }
 

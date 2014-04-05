@@ -20,6 +20,7 @@ import qualified Data.Map as M
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Monoid
+import Data.Dynamic
 import GHC.Conc (getNumProcessors)
 import System.Environment (getArgs, getEnv, getEnvironment)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
@@ -61,7 +62,9 @@ data Flag = ParBench
           | ClientSecret String
           | FusionTest
 #endif
-  deriving (Eq,Ord,Show,Read)
+          | PlugInFlags [(Plugin,Dynamic)]
+  deriving (Show)
+--  deriving (Eq,Ord,Show,Read)
 
 -- | Command line options.
 core_cli_options :: (String, [OptDescr Flag])

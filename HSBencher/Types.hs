@@ -1,6 +1,8 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, NamedFieldPuns, CPP  #-}
 {-# LANGUAGE DeriveGeneric, StandaloneDeriving #-}
 
+{-# LANGUAGE TypeFamilies #-}
+
 -- | All the core types used by the rest of the HSBencher codebase.
 
 module HSBencher.Types
@@ -39,7 +41,7 @@ module HSBencher.Types
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
-         Uploader(..),
+         Uploader(..), Plugin(..),
 
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -51,8 +53,10 @@ import Data.Char
 import Data.Word
 import Data.List
 import Data.Monoid
+import Data.Dynamic
 import qualified Data.Map as M
 import Data.Maybe (catMaybes)
+import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.FilePath
 import System.Directory
 import System.Process (CmdSpec(..))
@@ -552,13 +556,25 @@ emptyBenchmarkResult = BenchmarkResult
 -- Generic uploader interface
 --------------------------------------------------------------------------------
 
+-- | A PlugIn adds functionality to HSBencher, including extra command line options
+-- and extra result-upload actions.
+data Plugin = Plugin
+  { plugUsageInfo :: String
+  , plugCmdOptions :: [OptDescr Dynamic]
+  , plugUploader :: Uploader
+  }
+
 -- | A backend receiver for results that publishes or stores them in an specific way.
 data Uploader = Uploader 
   { ulname :: String
-  , ulUsageInfo :: String
---  , ulCmdOptions :: 
   , upload :: BenchmarkResult -> BenchM ()
   }
 
 instance Show Uploader where
   show Uploader{ulname} = "<Uploader "++ulname++">"
+
+class PlugIn p where
+  type CmdLnFlag p 
+  opts :: p -> [OptDescr (CmdLnFlag p)]
+
+--  uploadResult :: p -> BenchResult -> IO ()
