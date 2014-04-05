@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables, CPP, BangPatterns #-}
+{-# LANGUAGE TupleSections, DeriveDataTypeable #-}
 
 -- | Google Fusion Table upload of benchmark data.
 --   Built conditionally based on the -ffusion flag.
@@ -293,8 +294,12 @@ fusionPlugin = Plugin
  { plugUsageInfo = unlines 
    [ "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
      "               client ID and secret can be provided by env vars OR command line options. " ]
--- , plugCmdOptions = fmap toDyn  $ snd fusion_cli_options
+ , plugCmdOptions = dynOptDescrs
  }
+ where
+  dynOptDescrs :: [OptDescr Dynamic]
+  dynOptDescrs = map (fmap toDyn) $ snd fusion_cli_options
+
 
 instance Show Plugin where
   show Plugin{plugUploader} = "<Plugin containing "++show plugUploader++">"
@@ -304,6 +309,17 @@ fusionUploader = Uploader
  { ulname = "fusionTableUploader"
  , upload = uploadBenchResult 
  }
+
+instance Functor OptDescr where
+  fmap fn (Option shrt long args str) = 
+    Option shrt long (fmap fn args) str
+
+instance Functor ArgDescr where
+  fmap fn x = 
+    case x of 
+      NoArg x ->  NoArg (fn x)
+      -- ReqArg (String -> a) String	
+--      OptArg (Maybe String -> a) String	
 
 fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
 fusion_cli_options =
@@ -323,6 +339,7 @@ data FusionCmdLnFlag =
  | ClientID     String
  | ClientSecret String
  | FusionTest
+ deriving (Show,Read,Ord,Eq, Typeable)
 
 #endif
 -- End ifndef FUSION_TABLES
