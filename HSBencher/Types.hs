@@ -3,6 +3,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 -- | All the core types used by the rest of the HSBencher codebase.
@@ -43,7 +44,7 @@ module HSBencher.Types
 --         Uploader(..), Plugin(..),
          SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
 
-         PlugIn(..), genericCmdOpts,
+         PlugIn(..), genericCmdOpts, getMyConf, 
 
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -543,34 +544,6 @@ emptyBenchmarkResult = BenchmarkResult
 -- Generic uploader interface
 --------------------------------------------------------------------------------
 
-#if 0 
-
--- | A PlugIn adds functionality to HSBencher, including extra command line options
--- and extra result-upload actions.
-data Plugin = Plugin
-  { plugName       :: String
-  , plugUsageInfo  :: String
-  , plugCmdOptions :: [OptDescr Dynamic]
-  , plugInit       :: [Dynamic] -> IO () -- ^ Takes a list of command line options.
-  -- plugConfig 
-  , plugUploader   :: Uploader
-  }
-
--- | A backend receiver for results that publishes or stores them in an specific way.
-data Uploader = Uploader 
-  { upname :: String
-  , upload :: BenchmarkResult -> BenchM ()
-  }
-
-instance Show Plugin where
-  show = plugName
---  show Plugin{plugUploader} = "<Plugin containing "++show plugUploader++">"
-
-instance Show Uploader where
-  show Uploader{upname} = "<Uploader "++upname++">"
-
-#endif
-
 instance Functor OptDescr where
   fmap fn (Option shrt long args str) = 
     Option shrt long (fmap fn args) str
@@ -584,29 +557,38 @@ instance Functor ArgDescr where
 
 --------------------------------------------------------------------------------
 
-
--- An alternative approach:
+-- | An interface for plugins provided in separate packages.  These plugins provide
+-- new backends for uploading benchmark data.
 class (Show p, Eq p, Ord p,
        Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p), 
        Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p)) => 
       PlugIn p where
-  -- | 
+  -- | A configuration flag for the plugin (parsed from the command line)
   type PlugFlag p 
-  -- | 
+  -- | The full configuration record for the plugin.
   type PlugConf p 
 
   -- | Each plugin must have a unique name.
   plugName  :: p -> String
 
+  -- | Options for command line parsing.  These should probably be disjoint from the
+  -- options used by other plugins; so use specific names.
   plugCmdOpts :: p -> [OptDescr (PlugFlag p)]
+
+  -- | Process flags and update a configuration accordingly.
   foldFlags :: p -> [PlugFlag p] -> PlugConf p -> PlugConf p
 
+  -- | The default configuration for this plugin.
   defaultPlugConf :: p -> PlugConf p
 
-  -- plugInitialize :: p -> PlugConf p -> IO ()
-  -- plugUpload     :: p -> BenchmarkResult -> BenchM () 
+  -- | Take any initialization actions, which may include reading or writing files
+  -- and connecting to network services, as the main purpose of plugin is to provide
+  -- backends for data upload.
   plugInitialize :: p -> Config -> IO ()
-  plugUpload     :: p -> Config -> BenchmarkResult -> IO () 
+
+  -- | This is the raison d'etre for the class.  Upload a single row of benchmark data.
+  plugUploadRow  :: p -> Config -> BenchmarkResult -> IO () 
+
 
 data SomePlugin  = forall p . PlugIn p => SomePlugin p 
 
@@ -621,6 +603,9 @@ data SomePluginConf =
 --  forall p . (PlugIn p, Typeable (PlugConf p), Show (PlugConf p)) => 
   forall p . (PlugIn p) =>
   SomePluginConf p (PlugConf p)
+
+------------------------------------------------------------
+-- Instances, very boring.
 
 instance Show SomePlugin where
   show (SomePlugin p) = show p
@@ -640,6 +625,8 @@ instance Show SomePluginConf where
 instance Show SomePluginFlag where
   show (SomePluginFlag p f) = show f
 
+------------------------------------------------------------
+
 -- | Make the command line flags for a particular plugin generic so that they can be
 -- mixed together with other plugins options.
 genericCmdOpts :: PlugIn p => p -> [OptDescr SomePluginFlag]
@@ -647,6 +634,17 @@ genericCmdOpts p = map (fmap lift) (plugCmdOpts p)
  where 
  lift pf = SomePluginFlag p pf
 
+-- | Retrieve our own PlugIn's configuration from the global config.
+--   This involves a dynamic type cast.
+getMyConf :: forall p . PlugIn p => p -> Config -> PlugConf p 
+getMyConf p Config{plugInConfs} = 
+  case M.lookup (plugName p) plugInConfs of 
+   Nothing -> error$ "getMyConf: expected to find plugin config for "++show p
+   Just (SomePluginConf p2 pc) -> 
+     case (fromDynamic (toDyn pc)) :: Maybe (PlugConf p) of
+       Nothing -> error $ "getMyConf: internal failure.  Performed lookup for plugin conf "
+                          ++show p++" got back a conf for a different plugin " ++ show p2
+       Just pc2 -> pc2
 
 test :: PlugIn p => p -> String
 test p = show (defaultPlugConf p)
@@ -654,29 +652,6 @@ test p = show (defaultPlugConf p)
 toDyno' :: [SomePlugin] -> [[OptDescr Dynamic]]
 toDyno' ps = [ map (fmap toDyn) (plugCmdOpts p) | SomePlugin p <- ps ]
 
-
-
-
-
-
 ----------------------------------------
+-- Small convenience functions
 
-#if 0
-class (Typeable flg, Show flg) =>
-      PlugIn p flg | p -> flg where
-  opts :: p -> [OptDescr flg]
-
-data SomePlugin = forall p f . PlugIn p f => SomePlugin p 
-
--- A flag that carries the corresponding plugin with it:
-data SomePluginFlag = forall p f . PlugIn p f => SomePluginFlag p f
--- The end result is that this type:
---    [OptDescr SomePluginFlag]
--- Is better to work with than:
---    [OptDescr (Plugin,Dynamic)]
-
--- In contrast, this version works fine:
-toDyno2 :: [SomePlugin] -> [[OptDescr Dynamic]]
-toDyno2 ps = [ map (fmap toDyn) (opts p) | SomePlugin p <- ps ]
---  uploadResult :: p -> BenchResult -> IO ()
-#endif

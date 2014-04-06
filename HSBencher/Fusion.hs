@@ -299,29 +299,6 @@ resultToTuple r =
   , ("ALLJITTIMES", _ALLJITTIMES r)
   ]
 
-#if 0 
-
-fusionPlugin :: Plugin
-fusionPlugin = Plugin
- { plugName = "fusionPlugin"
- , plugUsageInfo = unlines 
-   [ "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
-     "               client ID and secret can be provided by env vars OR command line options. " ]
- , plugInit = \ opts -> return ()
- , plugCmdOptions = dynOptDescrs
- , plugUploader = fusionUploader
- }
- where
-  dynOptDescrs :: [OptDescr Dynamic]
-  dynOptDescrs = map (fmap toDyn) $ snd fusion_cli_options
-
-fusionUploader :: Uploader
-fusionUploader = Uploader 
- { upname = "fusionTableUploader"
- , upload = uploadBenchResult 
- }
-
-#endif
 
 data FusionPlug = FusionPlug
   deriving (Eq,Show,Ord,Read)

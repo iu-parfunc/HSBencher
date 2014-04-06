@@ -795,11 +795,6 @@ getjittime _                      = Nothing
 posInf :: Double
 posInf = 1/0
 
--- Shorthand for tagged version:
-logT str = log$hsbencher_tag++str
-
-hsbencher_tag :: String
-hsbencher_tag = " [hsbencher] "
 
 -- Compute a cut-down version of a benchmark's args list that will do
 -- a short (quick) run.  The way this works is that benchmarks are
