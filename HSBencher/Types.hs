@@ -3,6 +3,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | All the core types used by the rest of the HSBencher codebase.
 
@@ -39,7 +40,10 @@ module HSBencher.Types
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult,
-         Uploader(..), Plugin(..),
+--         Uploader(..), Plugin(..),
+         SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
+
+         PlugIn(..),
 
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -203,7 +207,11 @@ data Config = Config
                            -- their 'flags/params' after their regular arguments.
                            -- This is here because some executables don't use proper command line parsing.
  , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
- , plugins         :: [(Plugin, Maybe Dynamic)] -- ^ Each plugin, and, if configured, its configuration.
+-- , plugins         :: [(Plugin, Maybe Dynamic)] -- ^ Each plugin, and, if configured, its configuration.
+
+ , plugIns         :: [SomePlugin] -- ^ Each plugin, and, if configured, its configuration.
+ , plugInConfs     :: M.Map SomePlugin SomePluginConf
+
  }
  deriving Show
 
@@ -537,6 +545,8 @@ emptyBenchmarkResult = BenchmarkResult
 -- Generic uploader interface
 --------------------------------------------------------------------------------
 
+#if 0 
+
 -- | A PlugIn adds functionality to HSBencher, including extra command line options
 -- and extra result-upload actions.
 data Plugin = Plugin
@@ -561,6 +571,8 @@ instance Show Plugin where
 instance Show Uploader where
   show Uploader{upname} = "<Uploader "++upname++">"
 
+#endif
+
 instance Functor OptDescr where
   fmap fn (Option shrt long args str) = 
     Option shrt long (fmap fn args) str
@@ -574,21 +586,71 @@ instance Functor ArgDescr where
 
 --------------------------------------------------------------------------------
 
+
 -- An alternative approach:
-class PlugIn0 p where
-  type CmdLnFlag p 
-  opts0 :: p -> [OptDescr (CmdLnFlag p)]
+class (Show p, Eq p, Ord p,
+       Show (PlugFlag p), Typeable (PlugFlag p), 
+       Show (PlugConf p), Typeable (PlugConf p)) => 
+      PlugIn p where
+  type PlugFlag p 
+  type PlugConf p 
 
-data SomePlugin0  = forall p . PlugIn0 p => SomePlugin0 p 
+  -- This must be unique
+--  plugName :: p -> String
 
--- toDyno :: (Typeable (CmdLnFlag p), PlugIn p) => [p] -> [[OptDescr Dynamic]]
--- toDyno :: (PlugIn p) => [p] -> [[OptDescr Dynamic]]
-toDyno ps = [ map (fmap toDyn) (opts0 p) | p <- ps ]
--- This version runs into the problem that we can't assert constraints on the RANGE
--- of a type function:
--- toDyno ps = [ map (fmap toDyn) (opts p) | SomePlugin p <- ps ]
+  plugFlags :: p -> [OptDescr (PlugFlag p)]
+  foldFlags :: p -> [PlugFlag p] -> PlugConf p -> PlugConf p
+
+  defaultPlugConf :: p -> PlugConf p
+
+  -- plugInitialize :: p -> PlugConf p -> IO ()
+  -- plugUpload     :: p -> BenchmarkResult -> BenchM () 
+  plugInitialize :: p -> Config -> IO ()
+  plugUpload     :: p -> Config -> BenchmarkResult -> IO () 
+
+data SomePlugin  = forall p . PlugIn p => SomePlugin p 
+
+-- | Keep a single flag together with the plugin it goes with.
+data SomePluginFlag = 
+--  forall p . (PlugIn p, Typeable (PlugFlag p), Show (PlugFlag p)) => 
+  forall p . (PlugIn p) =>
+  SomePluginFlag p (PlugFlag p)
+
+-- | Keep a full plugin configuration together with the plugin it goes with.
+data SomePluginConf = 
+--  forall p . (PlugIn p, Typeable (PlugConf p), Show (PlugConf p)) => 
+  forall p . (PlugIn p) =>
+  SomePluginConf p (PlugConf p)
+
+instance Show SomePlugin where
+  show (SomePlugin p) = show p
+
+instance Eq SomePlugin where 
+  (SomePlugin p1) == (SomePlugin p2) = 
+    -- Convention: their show instance is just their NAME:
+    show p1 == show p2
+--    plugName p1 == plugName p2
+
+instance Show SomePluginConf where
+  show (SomePluginConf p pc) = show pc
+
+-- | Make the command line flags for a particular plugin generic so that they can be
+-- mixed together with other plugins options.
+genericFlags :: PlugIn p => p -> [OptDescr SomePluginFlag]
+genericFlags p = map (fmap lift) (plugFlags p)
+ where 
+ lift pf = SomePluginFlag p pf
+
+
+test :: PlugIn p => p -> String
+test p = show (defaultPlugConf p)
+
+toDyno' :: [SomePlugin] -> [[OptDescr Dynamic]]
+toDyno' ps = [ map (fmap toDyn) (plugFlags p) | SomePlugin p <- ps ]
 
 ----------------------------------------
+
+#if 0
 
 class (Typeable flg, Show flg) =>
       PlugIn p flg | p -> flg where
@@ -607,3 +669,5 @@ data SomePluginFlag = forall p f . PlugIn p f => SomePluginFlag p f
 toDyno2 :: [SomePlugin] -> [[OptDescr Dynamic]]
 toDyno2 ps = [ map (fmap toDyn) (opts p) | SomePlugin p <- ps ]
 --  uploadResult :: p -> BenchResult -> IO ()
+#endif
+

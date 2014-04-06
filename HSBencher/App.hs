@@ -503,6 +503,7 @@ defaultMainModifyConfig modConfig = do
   let conf1   = modConfig conf0
 
   -- Combine all plugins command line options, and reparse the command line.
+{-
   let allplugs = map fst $ plugins conf1
       -- Pair each option with WHERE it came from:
       dynOpts :: [OptDescr (Plugin,Dynamic)]
@@ -510,6 +511,7 @@ defaultMainModifyConfig modConfig = do
 
   case getOpt' Permute dynOpts cli_args of
    (o,p,u,e) -> error $ "GOT options with plugins: "++show (o,p,u,e)
+-}
 
 -- todo: PLUGIN INIT:  e.g.  FUSION_TABLES 
 

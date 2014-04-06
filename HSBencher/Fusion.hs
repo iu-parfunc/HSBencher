@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns, RecordWildCards, ScopedTypeVariables, CPP, BangPatterns #-}
 {-# LANGUAGE TupleSections, DeriveDataTypeable #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Google Fusion Table upload of benchmark data.
 --   Built conditionally based on the -ffusion flag.
@@ -15,7 +16,8 @@ module HSBencher.Fusion
        ( FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
        , uploadBenchResult
-       , fusionPlugin, fusionUploader
+       , FusionPlug(..), FusionCmdLnFlag(..),
+--       , fusionPlugin, fusionUploader
        )
        where
 
@@ -41,11 +43,13 @@ import HSBencher.Types
 import HSBencher.Logging (log)
 import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
+import System.IO.Unsafe (unsafePerformIO)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Directory (doesFileExist, doesDirectoryExist, getAppUserDataDirectory,
                          createDirectory, renameFile, removeFile)
 import System.FilePath ((</>),(<.>), splitExtension)
 import System.IO.Unsafe (unsafePerformIO)
+import System.Environment (getEnvironment)
 import Control.Concurrent.MVar
 
 ----------------------------------------------------------------------------------------------------
@@ -295,6 +299,8 @@ resultToTuple r =
   , ("ALLJITTIMES", _ALLJITTIMES r)
   ]
 
+#if 0 
+
 fusionPlugin :: Plugin
 fusionPlugin = Plugin
  { plugName = "fusionPlugin"
@@ -309,12 +315,52 @@ fusionPlugin = Plugin
   dynOptDescrs :: [OptDescr Dynamic]
   dynOptDescrs = map (fmap toDyn) $ snd fusion_cli_options
 
-
 fusionUploader :: Uploader
 fusionUploader = Uploader 
  { upname = "fusionTableUploader"
  , upload = uploadBenchResult 
  }
+
+#endif
+
+
+data FusionPlug = FusionPlug
+  deriving (Eq,Show,Ord,Read)
+
+instance PlugIn FusionPlug where
+  type PlugConf FusionPlug = FusionConfig
+  type PlugFlag FusionPlug = FusionCmdLnFlag
+
+  defaultPlugConf _ = FusionConfig 
+    { fusionTableID  = Nothing 
+    , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" theEnv
+    , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" theEnv
+    , serverColumns      = []
+    }
+
+  plugInitialize FusionPlug Config{} = do 
+   -- FusionConfig{}
+   return ()
+-- From App.hs:   initialization
+#if 0
+  when (not (null errs) || gotFusion) $ do
+    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
+    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+    putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
+    toks  <- getCachedTokens authclient
+    putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
+    putStrLn "[hsbencher] Next, attempt to list tables:"
+    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
+    putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
+    exitSuccess
+#endif
+
+
+
+theEnv :: [(String,String)] 
+theEnv = unsafePerformIO getEnvironment
+
 
 fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
 fusion_cli_options =
@@ -336,6 +382,14 @@ data FusionCmdLnFlag =
  | FusionTest
  deriving (Show,Read,Ord,Eq, Typeable)
 
+data FusionConfig = 
+  FusionConfig
+  { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
+  , fusionClientID :: Maybe String
+  , fusionClientSecret :: Maybe String
+  , serverColumns  :: [String] -- ^ Record the ordering of columns server side.
+  }
+  deriving (Show,Read,Ord,Eq, Typeable)
 
 #if 0 
       doFlag (BenchsetName name) r     = r { benchsetName= Just name }
@@ -373,24 +427,6 @@ data FusionCmdLnFlag =
  , fusionConfig   :: FusionConfig
 #endif
 
-#ifdef FUSION_TABLES
-data FusionConfig = 
-  FusionConfig
-  { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
-  , fusionClientID :: Maybe String
-  , fusionClientSecret :: Maybe String
-  , serverColumns  :: [String] -- ^ Record the ordering of columns server side.
-  }
-  deriving Show
-#endif
-
--- From Config.hs:
-           -- , fusionConfig = FusionConfig 
-           --    { fusionTableID  = Nothing 
-           --    , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" env
-           --    , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
-           --    , serverColumns      = []
-           --    }
 
 
 --  , doFusionUpload  :: Bool
@@ -399,20 +435,6 @@ data FusionConfig =
 --            , doFusionUpload = False
 
 
--- From App.hs:   initialization
-#if 0
-  when (not (null errs) || gotFusion) $ do
-    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
-    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
-        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
-    putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
-    toks  <- getCachedTokens authclient
-    putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
-    putStrLn "[hsbencher] Next, attempt to list tables:"
-    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
-    putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
-    exitSuccess
-#endif
 
 
 #endif

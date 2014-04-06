@@ -31,7 +31,7 @@ import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 
-import HSBencher.Fusion (fusionPlugin)
+import HSBencher.Fusion (FusionPlug(FusionPlug))
 
 import HSBencher.Types
 import HSBencher.Utils
@@ -48,7 +48,7 @@ data Flag = ParBench
           | SkipTo String | RunID String | CIBuildID String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion
-          | PlugInFlags [(Plugin,Dynamic)]
+--          | PlugInFlags [(Plugin,Dynamic)]
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
 
@@ -212,9 +212,10 @@ getConfig cmd_line_options benches = do
                           ghcAllocRateHarvester    `mappend`
                           jittimeHarvester
 #ifdef FUSION_TABLES
-           , plugins = [(fusionPlugin,Nothing)]
+--           , plugins = [(fusionPlugin,Nothing)]
+           , plugIns = [SomePlugin FusionPlug]
 #else
-           , plugins = []
+           , plugIns = []
 #endif
 	   }
 
