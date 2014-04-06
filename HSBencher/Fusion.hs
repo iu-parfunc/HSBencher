@@ -49,7 +49,12 @@ import System.IO.Unsafe (unsafePerformIO)
 import Control.Concurrent.MVar
 
 ----------------------------------------------------------------------------------------------------
-
+-- #ifdef FUSION_TABLES
+-- import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
+-- import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
+--                                     TableId, CellType(..), TableMetadata(..))
+-- import HSBencher.Fusion (getTableId, fusionPlugin)
+-- #endif
 
 ----------------------------------------------------------------------------------------------------
 
@@ -166,7 +171,8 @@ fileLock = unsafePerformIO (newMVar ())
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult  br@BenchmarkResult{..} = do
-    Config{fusionConfig} <- ask
+--    Config{fusionConfig} <- ask
+    fusionConfig <- error "FINISHME - acquire config dynamically"
     let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID, serverColumns} = fusionConfig
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
         authclient = OAuth2Client { clientId = cid, clientSecret = sec }
@@ -295,6 +301,7 @@ fusionPlugin = Plugin
  , plugUsageInfo = unlines 
    [ "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
      "               client ID and secret can be provided by env vars OR command line options. " ]
+ , plugInit = \ opts -> return ()
  , plugCmdOptions = dynOptDescrs
  , plugUploader = fusionUploader
  }
@@ -328,6 +335,85 @@ data FusionCmdLnFlag =
  | ClientSecret String
  | FusionTest
  deriving (Show,Read,Ord,Eq, Typeable)
+
+
+#if 0 
+      doFlag (BenchsetName name) r     = r { benchsetName= Just name }
+      doFlag (ClientID cid)   r = let r2 = fusionConfig r in
+                                  r { fusionConfig= r2 { fusionClientID = Just cid } }
+      doFlag (ClientSecret s) r = let r2 = fusionConfig r in
+                                  r { fusionConfig= r2 { fusionClientSecret = Just s } }
+      doFlag (FusionTables m) r = 
+         let r2 = r { doFusionUpload = True } in
+         case m of 
+           Just tid -> let r3 = fusionConfig r in
+                       r2 { fusionConfig= r3 { fusionTableID = Just tid } }
+           Nothing -> r2
+      doFlag FusionTest r = r
+#endif
+
+#if 0
+  finalconf <- if not (doFusionUpload conf) then return conf else
+               let fconf = fusionConfig conf in
+               case (benchsetName conf, fusionTableID fconf) of
+                (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
+                (_, Just tid) -> return conf
+                (Just name,_) -> do
+                  case (fusionClientID fconf, fusionClientSecret fconf) of
+                    (Just cid, Just sec ) -> do
+                      let auth = OAuth2Client { clientId=cid, clientSecret=sec }
+                      (tid,cols) <- runReaderT (getTableId auth name) conf
+                      return conf{ fusionConfig= fconf { fusionTableID= Just tid
+                                                       , serverColumns= cols }}
+                    (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required (or equiv ENV vars)"
+#endif
+
+
+#if 0
+ , fusionConfig   :: FusionConfig
+#endif
+
+#ifdef FUSION_TABLES
+data FusionConfig = 
+  FusionConfig
+  { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
+  , fusionClientID :: Maybe String
+  , fusionClientSecret :: Maybe String
+  , serverColumns  :: [String] -- ^ Record the ordering of columns server side.
+  }
+  deriving Show
+#endif
+
+-- From Config.hs:
+           -- , fusionConfig = FusionConfig 
+           --    { fusionTableID  = Nothing 
+           --    , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" env
+           --    , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
+           --    , serverColumns      = []
+           --    }
+
+
+--  , doFusionUpload  :: Bool
+-- -- , uploaders       :: [Uploader]
+
+--            , doFusionUpload = False
+
+
+-- From App.hs:   initialization
+#if 0
+  when (not (null errs) || gotFusion) $ do
+    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
+    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+    putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
+    toks  <- getCachedTokens authclient
+    putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
+    putStrLn "[hsbencher] Next, attempt to list tables:"
+    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
+    putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
+    exitSuccess
+#endif
+
 
 #endif
 -- End ifndef FUSION_TABLES

@@ -32,9 +32,6 @@ module HSBencher.Types
          
          -- * HSBencher Driver Configuration
          Config(..), BenchM,
-#ifdef FUSION_TABLES
-         FusionConfig(..),
-#endif
 
          -- * Subprocesses and system commands
          CommandDescr(..), RunResult(..), emptyRunResult,
@@ -65,10 +62,6 @@ import qualified Data.ByteString.Char8 as B
 import qualified System.IO.Streams as Strm
 
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
-
-#ifdef FUSION_TABLES
-import Network.Google.FusionTables (TableId)
-#endif
 
 ----------------------------------------------------------------------------------------------------
 -- Benchmark Build Methods
@@ -176,7 +169,8 @@ type BenchM a = ReaderT Config IO a
 -- structure.  You shouldn't really use it.
 data Config = Config 
  { benchlist      :: [Benchmark DefaultParamMeaning]
- , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?  Used to create fusion table.
+ , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?
+                     -- In some upload backends this is the name of the dataset or table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
 -- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
  , runTimeOut     :: Maybe Double -- ^ Timeout in seconds for running benchmarks (if not specified by the benchmark specifically)
@@ -209,25 +203,10 @@ data Config = Config
                            -- their 'flags/params' after their regular arguments.
                            -- This is here because some executables don't use proper command line parsing.
  , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
- , doFusionUpload  :: Bool
--- , uploaders       :: [Uploader]
- , plugins         :: [Plugin]
-#ifdef FUSION_TABLES
- , fusionConfig   :: FusionConfig
-#endif
+ , plugins         :: [(Plugin, Maybe Dynamic)] -- ^ Each plugin, and, if configured, its configuration.
  }
  deriving Show
 
-#ifdef FUSION_TABLES
-data FusionConfig = 
-  FusionConfig
-  { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
-  , fusionClientID :: Maybe String
-  , fusionClientSecret :: Maybe String
-  , serverColumns  :: [String] -- ^ Record the ordering of columns server side.
-  }
-  deriving Show
-#endif
 
 instance Show (Strm.OutputStream a) where
   show _ = "<OutputStream>"
@@ -564,6 +543,8 @@ data Plugin = Plugin
   { plugName       :: String
   , plugUsageInfo  :: String
   , plugCmdOptions :: [OptDescr Dynamic]
+  , plugInit       :: [Dynamic] -> IO () -- ^ Takes a list of command line options.
+  -- plugConfig 
   , plugUploader   :: Uploader
   }
 
@@ -594,27 +575,35 @@ instance Functor ArgDescr where
 --------------------------------------------------------------------------------
 
 -- An alternative approach:
-class PlugIn p where
+class PlugIn0 p where
   type CmdLnFlag p 
-  opts :: p -> [OptDescr (CmdLnFlag p)]
+  opts0 :: p -> [OptDescr (CmdLnFlag p)]
 
-data SomePlugin  = forall p . PlugIn p => SomePlugin p 
+data SomePlugin0  = forall p . PlugIn0 p => SomePlugin0 p 
 
 -- toDyno :: (Typeable (CmdLnFlag p), PlugIn p) => [p] -> [[OptDescr Dynamic]]
 -- toDyno :: (PlugIn p) => [p] -> [[OptDescr Dynamic]]
-toDyno ps = [ map (fmap toDyn) (opts p) | p <- ps ]
+toDyno ps = [ map (fmap toDyn) (opts0 p) | p <- ps ]
 -- This version runs into the problem that we can't assert constraints on the RANGE
 -- of a type function:
 -- toDyno ps = [ map (fmap toDyn) (opts p) | SomePlugin p <- ps ]
 
 ----------------------------------------
 
-class Typeable flg => PlugIn2 p flg | p -> flg where
-  opts2 :: p -> [OptDescr flg]
+class (Typeable flg, Show flg) =>
+      PlugIn p flg | p -> flg where
+  opts :: p -> [OptDescr flg]
 
-data SomePlugin2 = forall p f . PlugIn2 p f => SomePlugin2 p 
+data SomePlugin = forall p f . PlugIn p f => SomePlugin p 
+
+-- A flag that carries the corresponding plugin with it:
+data SomePluginFlag = forall p f . PlugIn p f => SomePluginFlag p f
+-- The end result is that this type:
+--    [OptDescr SomePluginFlag]
+-- Is better to work with than:
+--    [OptDescr (Plugin,Dynamic)]
 
 -- In contrast, this version works fine:
-toDyno2 :: [SomePlugin2] -> [[OptDescr Dynamic]]
-toDyno2 ps = [ map (fmap toDyn) (opts2 p) | SomePlugin2 p <- ps ]
+toDyno2 :: [SomePlugin] -> [[OptDescr Dynamic]]
+toDyno2 ps = [ map (fmap toDyn) (opts p) | SomePlugin p <- ps ]
 --  uploadResult :: p -> BenchResult -> IO ()

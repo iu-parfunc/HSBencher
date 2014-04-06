@@ -31,14 +31,7 @@ import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 
-
-#ifdef FUSION_TABLES
-import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
-import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
-                                    TableId, CellType(..), TableMetadata(..))
-import HSBencher.Fusion (getTableId, fusionPlugin)
-#endif
-
+import HSBencher.Fusion (fusionPlugin)
 
 import HSBencher.Types
 import HSBencher.Utils
@@ -55,13 +48,6 @@ data Flag = ParBench
           | SkipTo String | RunID String | CIBuildID String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion
-#ifdef FUSION_TABLES
-          | FusionTables (Maybe TableId)
-          | BenchsetName (String)
-          | ClientID     String
-          | ClientSecret String
-          | FusionTest
-#endif
           | PlugInFlags [(Plugin,Dynamic)]
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
@@ -112,25 +98,10 @@ core_cli_options =
 
 all_cli_options :: [(String, [OptDescr Flag])]
 all_cli_options = [core_cli_options]
-#ifdef FUSION_TABLES
-                ++ [fusion_cli_options]
-
-fusion_cli_options :: (String, [OptDescr Flag])
-fusion_cli_options =
-  ("\n Fusion Table Options:",
-      [ Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
-        "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
-
-      , Option [] ["name"]         (ReqArg BenchsetName "NAME") "Name for created/discovered fusion table."
-      , Option [] ["clientid"]     (ReqArg ClientID "ID")     "Use (and cache) Google client ID"
-      , Option [] ["clientsecret"] (ReqArg ClientSecret "STR") "Use (and cache) Google client secret"
-      , Option [] ["fusion-test"]  (NoArg FusionTest)   "Test authentication and list tables if possible." 
-      ])
-#endif
 
 ----------------------------------------------------------------------------------------------------
 
--- | Fill in "static" fields of a FusionTable row based on the `Config` data.
+-- | Fill in "static" fields of a BenchmarkResult row based on the `Config` data.
 augmentResultWithConfig :: Config -> BenchmarkResult -> IO BenchmarkResult
 augmentResultWithConfig Config{..} base = do
   -- ghcVer <- runSL$ ghc ++ " -V"
@@ -234,7 +205,6 @@ getConfig cmd_line_options benches = do
            , gitInfo        = (trim branch, trim revision, length hashes)
            -- This is in priority order:                   
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
-           , doFusionUpload = False
            , argsBeforeFlags = True
            , harvesters = selftimedHarvester       `mappend`
                           ghcProductivityHarvester `mappend`
@@ -242,13 +212,7 @@ getConfig cmd_line_options benches = do
                           ghcAllocRateHarvester    `mappend`
                           jittimeHarvester
 #ifdef FUSION_TABLES
-           , fusionConfig = FusionConfig 
-              { fusionTableID  = Nothing 
-              , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" env
-              , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
-              , serverColumns      = []
-              }
-           , plugins = [fusionPlugin]
+           , plugins = [(fusionPlugin,Nothing)]
 #else
            , plugins = []
 #endif
@@ -256,20 +220,6 @@ getConfig cmd_line_options benches = do
 
   -- Process command line arguments to add extra cofiguration information:
   let 
-#ifdef FUSION_TABLES
-      doFlag (BenchsetName name) r     = r { benchsetName= Just name }
-      doFlag (ClientID cid)   r = let r2 = fusionConfig r in
-                                  r { fusionConfig= r2 { fusionClientID = Just cid } }
-      doFlag (ClientSecret s) r = let r2 = fusionConfig r in
-                                  r { fusionConfig= r2 { fusionClientSecret = Just s } }
-      doFlag (FusionTables m) r = 
-         let r2 = r { doFusionUpload = True } in
-         case m of 
-           Just tid -> let r3 = fusionConfig r in
-                       r2 { fusionConfig= r3 { fusionTableID = Just tid } }
-           Nothing -> r2
-      doFlag FusionTest r = r
-#endif
       doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
       doFlag (GHCPath   p) r = r { pathRegistry= M.insert "ghc"   p (pathRegistry r) }
 
@@ -297,22 +247,7 @@ getConfig cmd_line_options benches = do
       --------------------
       conf = foldr ($) base_conf (map doFlag cmd_line_options)
 
-#ifdef FUSION_TABLES
-  finalconf <- if not (doFusionUpload conf) then return conf else
-               let fconf = fusionConfig conf in   
-               case (benchsetName conf, fusionTableID fconf) of
-                (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
-                (_, Just tid) -> return conf
-                (Just name,_) -> do
-                  case (fusionClientID fconf, fusionClientSecret fconf) of
-                    (Just cid, Just sec ) -> do
-                      let auth = OAuth2Client { clientId=cid, clientSecret=sec }
-                      (tid,cols) <- runReaderT (getTableId auth name) conf
-                      return conf{ fusionConfig= fconf { fusionTableID= Just tid
-                                                       , serverColumns= cols }}
-                    (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required (or equiv ENV vars)"
-#else
-  let finalconf = conf      
-#endif         
+  let finalconf = conf
+
 --  runReaderT (log$ "Read list of benchmarks/parameters from: "++benchF) finalconf
   return finalconf

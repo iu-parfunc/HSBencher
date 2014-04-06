@@ -370,7 +370,8 @@ runOne (iterNum, totalIters) _bldid bldres
             , _TRIALS        =  trials
             }
       result' <- liftIO$ augmentResultWithConfig conf result
-#ifdef FUSION_TABLES
+#if 0
+-- def FUSION_TABLES
       when doFusionUpload $ uploadBenchResult result'
 #endif      
       return (t1,t2,t3,p1,p2,p3)
@@ -476,7 +477,7 @@ defaultMainModifyConfig modConfig = do
   let recomp       = null [ () | NoRecomp <- options]
       showHelp      = not$ null [ () | ShowHelp <- options]
       gotVersion   = not$ null [ () | ShowVersion <- options]
-      gotFusion    = not$ null [ () | FusionTest <- options]
+--      gotFusion    = not$ null [ () | FusionTest <- options]
       cabalAllowed = not$ null [ () | NoCabal <- options]
       parBench     = not$ null [ () | ParBench <- options]
 
@@ -502,27 +503,15 @@ defaultMainModifyConfig modConfig = do
   let conf1   = modConfig conf0
 
   -- Combine all plugins command line options, and reparse the command line.
-  let allplugs = plugins conf1
+  let allplugs = map fst $ plugins conf1
       -- Pair each option with WHERE it came from:
       dynOpts :: [OptDescr (Plugin,Dynamic)]
       dynOpts = concatMap (\p -> map (fmap (p,)) (plugCmdOptions p)) allplugs
 
   case getOpt' Permute dynOpts cli_args of
    (o,p,u,e) -> error $ "GOT options with plugins: "++show (o,p,u,e)
-      
-#ifdef FUSION_TABLES
-  when (not (null errs) || gotFusion) $ do
-    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
-    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
-        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
-    putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
-    toks  <- getCachedTokens authclient
-    putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
-    putStrLn "[hsbencher] Next, attempt to list tables:"
-    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
-    putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
-    exitSuccess
-#endif
+
+-- todo: PLUGIN INIT:  e.g.  FUSION_TABLES 
 
   -- Next prune the list of benchmarks to those selected by the user:
   let cutlist = case plainargs of
