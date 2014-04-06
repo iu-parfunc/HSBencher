@@ -31,6 +31,7 @@ import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import Data.Monoid
+import Data.Dynamic
 import qualified Data.Map as M
 import Data.Word (Word64)
 import Data.IORef
@@ -39,7 +40,7 @@ import qualified Data.Set as Set
 import Data.Version (versionBranch, versionTags)
 import GHC.Conc (getNumProcessors)
 import Numeric (showFFloat)
-import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
+import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getEnv, getEnvironment)
 import System.Directory
 import System.Posix.Env (setEnv)
@@ -469,11 +470,11 @@ defaultMainModifyConfig modConfig = do
   writeIORef main_threadid id
 
   cli_args <- getArgs
-  let (options,plainargs,errs) = getOpt Permute (concat$ map snd all_cli_options) cli_args
+  let (options,plainargs,_unrec,errs) = getOpt' Permute (concat$ map snd all_cli_options) cli_args
 
   -- This ugly method avoids needing an Eq instance:
   let recomp       = null [ () | NoRecomp <- options]
-      gotHelp      = not$ null [ () | ShowHelp <- options]
+      showHelp      = not$ null [ () | ShowHelp <- options]
       gotVersion   = not$ null [ () | ShowVersion <- options]
       gotFusion    = not$ null [ () | FusionTest <- options]
       cabalAllowed = not$ null [ () | NoCabal <- options]
@@ -484,18 +485,30 @@ defaultMainModifyConfig modConfig = do
       -- (unwords$ versionTags version)
     exitSuccess 
       
-  when (not (null errs) || gotHelp) $ do
-    unless gotHelp $ putStrLn$ "Errors parsing command line options:"
+  when (not (null errs) || showHelp) $ do
+    unless showHelp $ putStrLn$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
     putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]"
     putStrLn$ "USAGE: command line options include patterns that select the benchmarks to run"
     mapM putStr (map (uncurry usageInfo) all_cli_options)
     putStrLn$ usageStr
-    if gotHelp then exitSuccess else exitFailure
+    if showHelp then exitSuccess else exitFailure
 
+  putStrLn$ "\nTEMP: calling getConfig:"
   conf0 <- getConfig options []
+  putStrLn$ "\nTEMP: DONE getConfig: "++show conf0
+
   -- The list of benchmarks can optionally be narrowed to match any of the given patterns.
   let conf1   = modConfig conf0
+
+  -- Combine all plugins command line options, and reparse the command line.
+  let allplugs = plugins conf1
+      -- Pair each option with WHERE it came from:
+      dynOpts :: [OptDescr (Plugin,Dynamic)]
+      dynOpts = concatMap (\p -> map (fmap (p,)) (plugCmdOptions p)) allplugs
+
+  case getOpt' Permute dynOpts cli_args of
+   (o,p,u,e) -> error $ "GOT options with plugins: "++show (o,p,u,e)
       
 #ifdef FUSION_TABLES
   when (not (null errs) || gotFusion) $ do

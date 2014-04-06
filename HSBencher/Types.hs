@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, NamedFieldPuns, CPP  #-}
 {-# LANGUAGE DeriveGeneric, StandaloneDeriving #-}
-
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | All the core types used by the rest of the HSBencher codebase.
@@ -209,7 +210,8 @@ data Config = Config
                            -- This is here because some executables don't use proper command line parsing.
  , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
  , doFusionUpload  :: Bool
- , uploaders       :: [Uploader]
+-- , uploaders       :: [Uploader]
+ , plugins         :: [Plugin]
 #ifdef FUSION_TABLES
  , fusionConfig   :: FusionConfig
 #endif
@@ -559,22 +561,60 @@ emptyBenchmarkResult = BenchmarkResult
 -- | A PlugIn adds functionality to HSBencher, including extra command line options
 -- and extra result-upload actions.
 data Plugin = Plugin
-  { plugUsageInfo :: String
+  { plugName       :: String
+  , plugUsageInfo  :: String
   , plugCmdOptions :: [OptDescr Dynamic]
-  , plugUploader :: Uploader
+  , plugUploader   :: Uploader
   }
 
 -- | A backend receiver for results that publishes or stores them in an specific way.
 data Uploader = Uploader 
-  { ulname :: String
+  { upname :: String
   , upload :: BenchmarkResult -> BenchM ()
   }
 
-instance Show Uploader where
-  show Uploader{ulname} = "<Uploader "++ulname++">"
+instance Show Plugin where
+  show = plugName
+--  show Plugin{plugUploader} = "<Plugin containing "++show plugUploader++">"
 
+instance Show Uploader where
+  show Uploader{upname} = "<Uploader "++upname++">"
+
+instance Functor OptDescr where
+  fmap fn (Option shrt long args str) = 
+    Option shrt long (fmap fn args) str
+
+instance Functor ArgDescr where
+  fmap fn x = 
+    case x of 
+      NoArg x ->  NoArg (fn x)
+      ReqArg fn2 str -> ReqArg (fn . fn2) str
+      OptArg fn2 str -> OptArg (fn . fn2) str
+
+--------------------------------------------------------------------------------
+
+-- An alternative approach:
 class PlugIn p where
   type CmdLnFlag p 
   opts :: p -> [OptDescr (CmdLnFlag p)]
 
+data SomePlugin  = forall p . PlugIn p => SomePlugin p 
+
+-- toDyno :: (Typeable (CmdLnFlag p), PlugIn p) => [p] -> [[OptDescr Dynamic]]
+-- toDyno :: (PlugIn p) => [p] -> [[OptDescr Dynamic]]
+toDyno ps = [ map (fmap toDyn) (opts p) | p <- ps ]
+-- This version runs into the problem that we can't assert constraints on the RANGE
+-- of a type function:
+-- toDyno ps = [ map (fmap toDyn) (opts p) | SomePlugin p <- ps ]
+
+----------------------------------------
+
+class Typeable flg => PlugIn2 p flg | p -> flg where
+  opts2 :: p -> [OptDescr flg]
+
+data SomePlugin2 = forall p f . PlugIn2 p f => SomePlugin2 p 
+
+-- In contrast, this version works fine:
+toDyno2 :: [SomePlugin2] -> [[OptDescr Dynamic]]
+toDyno2 ps = [ map (fmap toDyn) (opts2 p) | SomePlugin2 p <- ps ]
 --  uploadResult :: p -> BenchResult -> IO ()

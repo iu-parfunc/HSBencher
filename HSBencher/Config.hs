@@ -36,7 +36,7 @@ import qualified System.IO.Streams.Combinators as Strm
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, listTables, listColumns, insertRows,
                                     TableId, CellType(..), TableMetadata(..))
-import HSBencher.Fusion (getTableId)
+import HSBencher.Fusion (getTableId, fusionPlugin)
 #endif
 
 
@@ -241,7 +241,6 @@ getConfig cmd_line_options benches = do
                           ghcMemFootprintHarvester `mappend`
                           ghcAllocRateHarvester    `mappend`
                           jittimeHarvester
-           , uploaders = []
 #ifdef FUSION_TABLES
            , fusionConfig = FusionConfig 
               { fusionTableID  = Nothing 
@@ -249,6 +248,9 @@ getConfig cmd_line_options benches = do
               , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" env
               , serverColumns      = []
               }
+           , plugins = [fusionPlugin]
+#else
+           , plugins = []
 #endif
 	   }
 

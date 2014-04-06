@@ -15,7 +15,7 @@ module HSBencher.Fusion
        ( FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
        , uploadBenchResult
-       , fusionUploader
+       , fusionPlugin, fusionUploader
        )
        where
 
@@ -291,35 +291,23 @@ resultToTuple r =
 
 fusionPlugin :: Plugin
 fusionPlugin = Plugin
- { plugUsageInfo = unlines 
+ { plugName = "fusionPlugin"
+ , plugUsageInfo = unlines 
    [ "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
      "               client ID and secret can be provided by env vars OR command line options. " ]
  , plugCmdOptions = dynOptDescrs
+ , plugUploader = fusionUploader
  }
  where
   dynOptDescrs :: [OptDescr Dynamic]
   dynOptDescrs = map (fmap toDyn) $ snd fusion_cli_options
 
 
-instance Show Plugin where
-  show Plugin{plugUploader} = "<Plugin containing "++show plugUploader++">"
-
 fusionUploader :: Uploader
 fusionUploader = Uploader 
- { ulname = "fusionTableUploader"
+ { upname = "fusionTableUploader"
  , upload = uploadBenchResult 
  }
-
-instance Functor OptDescr where
-  fmap fn (Option shrt long args str) = 
-    Option shrt long (fmap fn args) str
-
-instance Functor ArgDescr where
-  fmap fn x = 
-    case x of 
-      NoArg x ->  NoArg (fn x)
-      ReqArg fn2 str -> ReqArg (fn . fn2) str
-      OptArg fn2 str -> OptArg (fn . fn2) str
 
 fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
 fusion_cli_options =
