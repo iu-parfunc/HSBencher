@@ -323,7 +323,6 @@ fusionUploader = Uploader
 
 #endif
 
-
 data FusionPlug = FusionPlug
   deriving (Eq,Show,Ord,Read)
 
@@ -339,24 +338,20 @@ instance PlugIn FusionPlug where
     }
 
   plugInitialize FusionPlug Config{} = do 
-   -- FusionConfig{}
-   return ()
--- From App.hs:   initialization
+   putStrLn " [hsbencher] Fusion table plugin initializing..."
 #if 0
-  when (not (null errs) || gotFusion) $ do
-    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
-    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
-        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
-    putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
-    toks  <- getCachedTokens authclient
-    putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
-    putStrLn "[hsbencher] Next, attempt to list tables:"
-    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
-    putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
-    exitSuccess
+   let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
+   let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+       authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+   putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
+   toks  <- getCachedTokens authclient
+   putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
+   putStrLn "[hsbencher] Next, attempt to list tables:"
+   strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
+   putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
+   exitSuccess
 #endif
-
-
+   return ()
 
 theEnv :: [(String,String)] 
 theEnv = unsafePerformIO getEnvironment

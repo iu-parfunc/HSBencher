@@ -33,6 +33,7 @@ import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import Data.Monoid
 import Data.Dynamic
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.Word (Word64)
 import Data.IORef
 import Data.List (intercalate, sortBy, intersperse, isPrefixOf, tails, isInfixOf, delete)
@@ -495,29 +496,49 @@ defaultMainModifyConfig modConfig = do
     putStrLn$ usageStr
     if showHelp then exitSuccess else exitFailure
 
-  putStrLn$ "\nTEMP: calling getConfig:"
+  putStrLn$ "\n"++hsbencher_tag++"Harvesting environment data to build Config."
   conf0 <- getConfig options []
-  putStrLn$ "\nTEMP: DONE getConfig: "++show conf0
 
   -- The list of benchmarks can optionally be narrowed to match any of the given patterns.
-  let conf1   = modConfig conf0
+  let conf1 = modConfig conf0
 
-  -- Combine all plugins command line options, and reparse the command line.
+  -- The phasing here is rather funny.  We need to get the initial config to know
+  -- WHICH plugins are active.  And then their individual per-plugin configs need to
+  -- be computed and added to the global config.
+  let allplugs = plugIns conf1
+
+-- Hmm, not really a strong reason to combine the options lists:
 {-
-  let allplugs = map fst $ plugins conf1
-      -- Pair each option with WHERE it came from:
-      dynOpts :: [OptDescr (Plugin,Dynamic)]
-      dynOpts = concatMap (\p -> map (fmap (p,)) (plugCmdOptions p)) allplugs
-
-  case getOpt' Permute dynOpts cli_args of
-   (o,p,u,e) -> error $ "GOT options with plugins: "++show (o,p,u,e)
+  let allPlugOpts = concatMap (\ (SomePlugin p) -> genericCmdOpts p) allplugs
+  let plugFlgs :: [SomePluginFlag]
+      (plugFlgs,_,_,_) = getOpt' Permute allPlugOpts cli_args 
+      flgMap = M.fromListWith (++) $ 
+               [ (SomePlugin p, [spf]) 
+               | spf@(SomePluginFlag p f) <- plugFlgs ]
 -}
+  -- forM_ (plugIns conf1) $ \ (SomePlugin p) -> do
+  --   let pconf0 = defaultPlugConf p
+  --   case M.lookup (SomePlugin p) flgMap of 
+  --     Just [SomePluginFlag p2 f] -> 
+  --       -- Can't prove p2 is the same type as p...
+  --       undefined
 
--- todo: PLUGIN INIT:  e.g.  FUSION_TABLES 
+  let pconfs = [ (plugName p, SomePluginConf p pconf)
+               | (SomePlugin p) <- (plugIns conf1)
+               , let (o2,_,_,_) = getOpt' Permute (plugCmdOpts p) cli_args 
+               , let pconf = foldFlags p o2 (defaultPlugConf p)
+               ]
+
+  let conf_final = conf1 { plugInConfs = M.fromList pconfs }
+  -- Combine all plugins command line options, and reparse the command line.
+
+  putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured, now initializing them."
+  forM_ allplugs $ \ (SomePlugin p) ->  plugInitialize p conf_final
+  putStrLn$ hsbencher_tag++" plugin init complete."
 
   -- Next prune the list of benchmarks to those selected by the user:
   let cutlist = case plainargs of
-                 [] -> benchlist conf1
+                 [] -> benchlist conf_final
                  patterns -> filter (\ Benchmark{target,cmdargs,progname} ->
                                       any (\pat ->
                                             isInfixOf pat target ||
@@ -525,8 +546,8 @@ defaultMainModifyConfig modConfig = do
                                             any (isInfixOf pat) cmdargs
                                           )
                                           patterns)
-                                    (benchlist conf1)
-  let conf2@Config{envs,benchlist,stdOut} = conf1{benchlist=cutlist}
+                                    (benchlist conf_final)
+  let conf2@Config{envs,benchlist,stdOut} = conf_final{benchlist=cutlist}
 
   hasMakefile <- doesFileExist "Makefile"
   cabalFile   <- runLines "ls *.cabal"
@@ -539,7 +560,7 @@ defaultMainModifyConfig modConfig = do
           logT$"There were "++show len++" benchmarks matching patterns: "++show plainargs
           when (len == 0) $ do 
             error$ "Expected at least one pattern to match!.  All benchmarks: \n"++
-                   (case conf1 of 
+                   (case conf_final of 
                      Config{benchlist=ls} -> 
                        (unlines  [ (target ++ (unwords cmdargs))
                                | Benchmark{cmdargs,target} <- ls
@@ -776,6 +797,8 @@ posInf = 1/0
 
 -- Shorthand for tagged version:
 logT str = log$hsbencher_tag++str
+
+hsbencher_tag :: String
 hsbencher_tag = " [hsbencher] "
 
 -- Compute a cut-down version of a benchmark's args list that will do

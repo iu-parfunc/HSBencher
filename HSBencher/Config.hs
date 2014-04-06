@@ -212,11 +212,11 @@ getConfig cmd_line_options benches = do
                           ghcAllocRateHarvester    `mappend`
                           jittimeHarvester
 #ifdef FUSION_TABLES
---           , plugins = [(fusionPlugin,Nothing)]
            , plugIns = [SomePlugin FusionPlug]
 #else
            , plugIns = []
 #endif
+           , plugInConfs = M.empty
 	   }
 
   -- Process command line arguments to add extra cofiguration information:

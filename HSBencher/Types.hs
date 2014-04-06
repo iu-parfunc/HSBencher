@@ -43,7 +43,7 @@ module HSBencher.Types
 --         Uploader(..), Plugin(..),
          SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
 
-         PlugIn(..),
+         PlugIn(..), genericCmdOpts,
 
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -207,11 +207,9 @@ data Config = Config
                            -- their 'flags/params' after their regular arguments.
                            -- This is here because some executables don't use proper command line parsing.
  , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
--- , plugins         :: [(Plugin, Maybe Dynamic)] -- ^ Each plugin, and, if configured, its configuration.
 
- , plugIns         :: [SomePlugin] -- ^ Each plugin, and, if configured, its configuration.
- , plugInConfs     :: M.Map SomePlugin SomePluginConf
-
+ , plugIns         :: [SomePlugin] -- ^ Each plugin, and, if configured, its configuration. 
+ , plugInConfs     :: M.Map String SomePluginConf -- ^ Maps the `plugName` to its config.
  }
  deriving Show
 
@@ -589,16 +587,18 @@ instance Functor ArgDescr where
 
 -- An alternative approach:
 class (Show p, Eq p, Ord p,
-       Show (PlugFlag p), Typeable (PlugFlag p), 
-       Show (PlugConf p), Typeable (PlugConf p)) => 
+       Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p), 
+       Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p)) => 
       PlugIn p where
+  -- | 
   type PlugFlag p 
+  -- | 
   type PlugConf p 
 
-  -- This must be unique
---  plugName :: p -> String
+  -- | Each plugin must have a unique name.
+  plugName  :: p -> String
 
-  plugFlags :: p -> [OptDescr (PlugFlag p)]
+  plugCmdOpts :: p -> [OptDescr (PlugFlag p)]
   foldFlags :: p -> [PlugFlag p] -> PlugConf p -> PlugConf p
 
   defaultPlugConf :: p -> PlugConf p
@@ -627,17 +627,23 @@ instance Show SomePlugin where
 
 instance Eq SomePlugin where 
   (SomePlugin p1) == (SomePlugin p2) = 
-    -- Convention: their show instance is just their NAME:
-    show p1 == show p2
---    plugName p1 == plugName p2
+--    show p1 == show p2
+    plugName p1 == plugName p2
+
+instance Ord SomePlugin where 
+  compare (SomePlugin p1) (SomePlugin p2) = 
+    compare (plugName p1) (plugName p2)
 
 instance Show SomePluginConf where
   show (SomePluginConf p pc) = show pc
 
+instance Show SomePluginFlag where
+  show (SomePluginFlag p f) = show f
+
 -- | Make the command line flags for a particular plugin generic so that they can be
 -- mixed together with other plugins options.
-genericFlags :: PlugIn p => p -> [OptDescr SomePluginFlag]
-genericFlags p = map (fmap lift) (plugFlags p)
+genericCmdOpts :: PlugIn p => p -> [OptDescr SomePluginFlag]
+genericCmdOpts p = map (fmap lift) (plugCmdOpts p)
  where 
  lift pf = SomePluginFlag p pf
 
@@ -646,12 +652,16 @@ test :: PlugIn p => p -> String
 test p = show (defaultPlugConf p)
 
 toDyno' :: [SomePlugin] -> [[OptDescr Dynamic]]
-toDyno' ps = [ map (fmap toDyn) (plugFlags p) | SomePlugin p <- ps ]
+toDyno' ps = [ map (fmap toDyn) (plugCmdOpts p) | SomePlugin p <- ps ]
+
+
+
+
+
 
 ----------------------------------------
 
 #if 0
-
 class (Typeable flg, Show flg) =>
       PlugIn p flg | p -> flg where
   opts :: p -> [OptDescr flg]
@@ -670,4 +680,3 @@ toDyno2 :: [SomePlugin] -> [[OptDescr Dynamic]]
 toDyno2 ps = [ map (fmap toDyn) (opts p) | SomePlugin p <- ps ]
 --  uploadResult :: p -> BenchResult -> IO ()
 #endif
-
