@@ -1,6 +1,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module HSBencher.Logging (LogDest(..), log, logOn, logT, hsbencher_tag) where 
+module HSBencher.Logging 
+       (LogDest(..), log, logOn, 
+        logT, hsbencher_tag, chatter) where 
 
 import qualified Data.ByteString.Char8 as B
 import Control.Monad.Reader (ask, liftIO)
@@ -34,6 +36,10 @@ logOn modes s = do
 -- | Shorthand for tagged version of logging.
 logT :: String -> BenchM ()
 logT str = log$hsbencher_tag++str
+
+-- | Logging straight to stdout (but with the hsbencher tag).
+chatter :: String -> IO ()
+chatter s = putStrLn $ hsbencher_tag ++ s
 
 -- | The tag for printing hsbencher messagse
 hsbencher_tag :: String

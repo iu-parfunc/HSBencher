@@ -70,14 +70,6 @@ import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydra
 import Scripting.Parallel.ThreadPool (parForM)
 #endif
 
-#ifdef FUSION_TABLES
-import HSBencher.Fusion
-import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
-import Network.Google.FusionTables (createTable, listTables, listColumns, 
-                                    TableId, CellType(..), TableMetadata(..))
-#endif
-
-
 ----------------------------
 -- Self imports:
 
@@ -478,7 +470,6 @@ defaultMainModifyConfig modConfig = do
   let recomp       = null [ () | NoRecomp <- options]
       showHelp      = not$ null [ () | ShowHelp <- options]
       gotVersion   = not$ null [ () | ShowVersion <- options]
---      gotFusion    = not$ null [ () | FusionTest <- options]
       cabalAllowed = not$ null [ () | NoCabal <- options]
       parBench     = not$ null [ () | ParBench <- options]
 
@@ -529,11 +520,13 @@ defaultMainModifyConfig modConfig = do
                , let pconf = foldFlags p o2 (defaultPlugConf p)
                ]
 
-  let conf_final = conf1 { plugInConfs = M.fromList pconfs }
+  let conf2 = conf1 { plugInConfs = M.fromList pconfs }
   -- Combine all plugins command line options, and reparse the command line.
 
   putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured, now initializing them."
-  forM_ allplugs $ \ (SomePlugin p) ->  plugInitialize p conf_final
+--  forM_ allplugs $ \ (SomePlugin p) ->  plugInitialize p conf2
+  conf_final <- foldM (\ cfg (SomePlugin p) -> plugInitialize p cfg)
+                  conf2 allplugs 
   putStrLn$ hsbencher_tag++" plugin init complete."
 
   -- Next prune the list of benchmarks to those selected by the user:

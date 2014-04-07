@@ -44,7 +44,7 @@ module HSBencher.Types
 --         Uploader(..), Plugin(..),
          SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
 
-         PlugIn(..), genericCmdOpts, getMyConf, 
+         PlugIn(..), genericCmdOpts, getMyConf, setMyConf,
 
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -584,7 +584,9 @@ class (Show p, Eq p, Ord p,
   -- | Take any initialization actions, which may include reading or writing files
   -- and connecting to network services, as the main purpose of plugin is to provide
   -- backends for data upload.
-  plugInitialize :: p -> Config -> IO ()
+  --
+  -- Note that the initialization process can CHANGE the Config (it returns a new one).
+  plugInitialize :: p -> Config -> IO Config
 
   -- | This is the raison d'etre for the class.  Upload a single row of benchmark data.
   plugUploadRow  :: p -> Config -> BenchmarkResult -> IO () 
@@ -645,6 +647,12 @@ getMyConf p Config{plugInConfs} =
        Nothing -> error $ "getMyConf: internal failure.  Performed lookup for plugin conf "
                           ++show p++" got back a conf for a different plugin " ++ show p2
        Just pc2 -> pc2
+
+-- | Encapsulate the policy for where/how to inject the PlugIn's conf into the global
+-- Config.
+setMyConf :: forall p . PlugIn p => p -> PlugConf p -> Config -> Config 
+setMyConf p new cfg@Config{plugInConfs} = 
+  cfg { plugInConfs= (M.insert (plugName p) (SomePluginConf p new) plugInConfs) }
 
 test :: PlugIn p => p -> String
 test p = show (defaultPlugConf p)

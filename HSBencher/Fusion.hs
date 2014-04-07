@@ -40,7 +40,7 @@ import Network.Google.FusionTables (createTable, createColumn, listTables, listC
                                     TableId, CellType(..), TableMetadata(..), ColumnMetadata(..))
 import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
-import HSBencher.Logging (log)
+import HSBencher.Logging (log, chatter)
 import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -50,6 +50,7 @@ import System.Directory (doesFileExist, doesDirectoryExist, getAppUserDataDirect
 import System.FilePath ((</>),(<.>), splitExtension)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getEnvironment)
+import System.Exit
 import Control.Concurrent.MVar
 
 ----------------------------------------------------------------------------------------------------
@@ -314,21 +315,54 @@ instance PlugIn FusionPlug where
     , serverColumns      = []
     }
 
-  plugInitialize FusionPlug Config{} = do 
-   putStrLn " [hsbencher] Fusion table plugin initializing..."
-#if 0
-   let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} = fusionConfig conf1
-   let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+  plugName _ = "Google_FusionTable_Backend"
+
+  plugCmdOpts _ = snd fusion_cli_options
+
+  plugUploadRow p cfg row = runReaderT (uploadBenchResult row) cfg
+
+  plugInitialize p gconf = do 
+   putStrLn " [fusiontable] Fusion table plugin initializing.. First, find config."
+   gc2 <- let fc@FusionConfig{fusionClientID, fusionClientSecret, fusionTableID} =
+                  getMyConf p gconf in 
+          case (benchsetName gconf, fusionTableID) of
+            (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
+            (_, Just tid)     -> return gconf
+            (Just name,_) -> do
+              case (fusionClientID, fusionClientSecret) of
+                (Just cid, Just sec ) -> do
+                  let auth = OAuth2Client { clientId=cid, clientSecret=sec }
+                  (tid,cols) <- runReaderT (getTableId auth name) gconf
+                  putStrLn$ " [fusiontable] -> Resolved name "++show name++" to table ID " ++show tid
+                  return $! setMyConf p fc{ fusionTableID= Just tid, serverColumns= cols } gconf 
+                (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required (or equiv ENV vars)"
+   let fc2 = getMyConf p gc2
+   let (Just cid, Just sec) = (fusionClientID fc2, fusionClientSecret fc2)
        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
-   putStrLn "[hsbencher] Fusion table test mode.  Getting tokens:"
+   putStrLn " [fusiontable] Second, lets retrieved cached auth tokens on the file system..."
    toks  <- getCachedTokens authclient
-   putStrLn$ "[hsbencher] Successfully got tokens: "++show toks
-   putStrLn "[hsbencher] Next, attempt to list tables:"
+
+   -- TEMP: This should become another command line flag: --fusion-list
+{-
+   putStrLn " [fusiontable] Next, to test our connections, attempt to list tables:"
    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))
-   putStrLn$"[hsbencher] All of users tables:\n"++ unlines (map ("   "++) strs)
-   exitSuccess
-#endif
-   return ()
+   putStrLn$" [fusiontable] All of users tables:\n"++ unlines (map ("   "++) strs)
+-}
+   return gc2
+
+  foldFlags p flgs cnf0 = 
+      foldr ($) cnf0 (map doFlag flgs)
+    where      
+      -- TODO: Move this one to the global config
+      doFlag FusionTest r = r
+      doFlag (ClientID cid) r = r { fusionClientID = Just cid } 
+      doFlag (ClientSecret s) r = r { fusionClientSecret = Just s } 
+      doFlag (FusionTables m) r = 
+--         let r2 = r { doFusionUpload = True } in
+         case m of 
+           Just tid -> r { fusionTableID = Just tid } 
+           Nothing  -> r
+
 
 theEnv :: [(String,String)] 
 theEnv = unsafePerformIO getEnvironment
@@ -339,8 +373,6 @@ fusion_cli_options =
   ("\n Fusion Table Options:",
       [ Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
         "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
-
-      , Option [] ["name"]         (ReqArg BenchsetName "NAME") "Name for created/discovered fusion table."
       , Option [] ["clientid"]     (ReqArg ClientID "ID")     "Use (and cache) Google client ID"
       , Option [] ["clientsecret"] (ReqArg ClientSecret "STR") "Use (and cache) Google client secret"
       , Option [] ["fusion-test"]  (NoArg FusionTest)   "Test authentication and list tables if possible." 
@@ -348,7 +380,6 @@ fusion_cli_options =
 
 data FusionCmdLnFlag = 
    FusionTables (Maybe TableId)
- | BenchsetName (String)
  | ClientID     String
  | ClientSecret String
  | FusionTest
@@ -362,50 +393,6 @@ data FusionConfig =
   , serverColumns  :: [String] -- ^ Record the ordering of columns server side.
   }
   deriving (Show,Read,Ord,Eq, Typeable)
-
-#if 0 
-      doFlag (BenchsetName name) r     = r { benchsetName= Just name }
-      doFlag (ClientID cid)   r = let r2 = fusionConfig r in
-                                  r { fusionConfig= r2 { fusionClientID = Just cid } }
-      doFlag (ClientSecret s) r = let r2 = fusionConfig r in
-                                  r { fusionConfig= r2 { fusionClientSecret = Just s } }
-      doFlag (FusionTables m) r = 
-         let r2 = r { doFusionUpload = True } in
-         case m of 
-           Just tid -> let r3 = fusionConfig r in
-                       r2 { fusionConfig= r3 { fusionTableID = Just tid } }
-           Nothing -> r2
-      doFlag FusionTest r = r
-#endif
-
-#if 0
-  finalconf <- if not (doFusionUpload conf) then return conf else
-               let fconf = fusionConfig conf in
-               case (benchsetName conf, fusionTableID fconf) of
-                (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
-                (_, Just tid) -> return conf
-                (Just name,_) -> do
-                  case (fusionClientID fconf, fusionClientSecret fconf) of
-                    (Just cid, Just sec ) -> do
-                      let auth = OAuth2Client { clientId=cid, clientSecret=sec }
-                      (tid,cols) <- runReaderT (getTableId auth name) conf
-                      return conf{ fusionConfig= fconf { fusionTableID= Just tid
-                                                       , serverColumns= cols }}
-                    (_,_) -> error "When --fusion-upload is activated --clientid and --clientsecret are required (or equiv ENV vars)"
-#endif
-
-
-#if 0
- , fusionConfig   :: FusionConfig
-#endif
-
-
-
---  , doFusionUpload  :: Bool
--- -- , uploaders       :: [Uploader]
-
---            , doFusionUpload = False
-
 
 
 

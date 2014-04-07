@@ -42,13 +42,13 @@ import HSBencher.MeasureProcess
 
 -- | Command line flags.
 data Flag = ParBench 
+          | BenchsetName (String)
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
           | ShortRun | KeepGoing | NumTrials String
           | SkipTo String | RunID String | CIBuildID String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion
---          | PlugInFlags [(Plugin,Dynamic)]
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
 
@@ -94,6 +94,7 @@ core_cli_options =
 
       , Option ['V'] ["version"] (NoArg ShowVersion)
         "Show the version and exit"
+      , Option [] ["name"] (ReqArg BenchsetName "NAME") "Name for created/discovered table in the backend."
      ])
 
 all_cli_options :: [(String, [OptDescr Flag])]
@@ -221,6 +222,7 @@ getConfig cmd_line_options benches = do
 
   -- Process command line arguments to add extra cofiguration information:
   let 
+      doFlag (BenchsetName name) r = r { benchsetName= Just name }
       doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
       doFlag (GHCPath   p) r = r { pathRegistry= M.insert "ghc"   p (pathRegistry r) }
 
