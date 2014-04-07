@@ -231,7 +231,7 @@ runOne (iterNum, totalIters) _bldid bldres
   conf@Config{ runTimeOut, trials, shortrun, argsBeforeFlags, harvesters } <- ask 
   -- maxthreads, runID, skipTo, ciBuildID, hostname, startTime, pathRegistry, 
   -- doClean, keepgoing, benchlist, benchsetName, benchversion, resultsFile, logFile, gitInfo,
-  -- buildMethods, logOut, resultsOut, stdOut, envs, plugIns, plugInConfs 
+  -- buildMethods, logOut, resultsOut, stdOut, envs, plugInConfs 
 
   ----------------------------------------
   -- (1) Gather contextual information
@@ -366,10 +366,13 @@ runOne (iterNum, totalIters) _bldid bldres
             , _TRIALS        =  trials
             }
       result' <- liftIO$ augmentResultWithConfig conf result
-#if 0
--- def FUSION_TABLES
-      when doFusionUpload $ uploadBenchResult result'
-#endif      
+
+      -- Upload results to plugin backends:
+      conf2@Config{ plugIns } <- ask 
+      forM_ plugIns $ \ (SomePlugin p) -> do 
+        lift $ plugUploadRow p conf2 result'
+        return ()
+
       return (t1,t2,t3,p1,p2,p3)
       
   return ()     

@@ -176,8 +176,9 @@ fileLock = unsafePerformIO (newMVar ())
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult  br@BenchmarkResult{..} = do
---    Config{fusionConfig} <- ask
-    fusionConfig <- error "FINISHME - acquire config dynamically"
+    conf <- ask
+    let fusionConfig = getMyConf FusionPlug conf
+--    fusionConfig <- error "FINISHME - acquire config dynamically"
     let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID, serverColumns} = fusionConfig
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
         authclient = OAuth2Client { clientId = cid, clientSecret = sec }
@@ -190,6 +191,8 @@ uploadBenchResult  br@BenchmarkResult{..} = do
         (cols,vals) = unzip tuple
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
+
+------------- FIXME: factor into separate plugin -------------------------
 
     cabalD <- lift $ getAppUserDataDirectory "cabal"
     let csvfile = cabalD </> "hsbencherDribble.csv"
