@@ -228,7 +228,10 @@ runOne (iterNum, totalIters) _bldid bldres
       
   let runFlags = toRunFlags runconfig
       envVars  = toEnvVars  runconfig
-  conf@Config{..} <- ask --- FIXME: I hate the ..
+  conf@Config{ runTimeOut, trials, shortrun, argsBeforeFlags, harvesters } <- ask 
+  -- maxthreads, runID, skipTo, ciBuildID, hostname, startTime, pathRegistry, 
+  -- doClean, keepgoing, benchlist, benchsetName, benchversion, resultsFile, logFile, gitInfo,
+  -- buildMethods, logOut, resultsOut, stdOut, envs, plugIns, plugInConfs 
 
   ----------------------------------------
   -- (1) Gather contextual information
