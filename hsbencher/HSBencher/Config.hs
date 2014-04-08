@@ -31,8 +31,6 @@ import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 
-import HSBencher.Fusion (FusionPlug(FusionPlug))
-
 import HSBencher.Types
 import HSBencher.Utils
 import HSBencher.Methods
@@ -212,11 +210,7 @@ getConfig cmd_line_options benches = do
                           ghcMemFootprintHarvester `mappend`
                           ghcAllocRateHarvester    `mappend`
                           jittimeHarvester
-#ifdef FUSION_TABLES
-           , plugIns = [SomePlugin FusionPlug]
-#else
            , plugIns = []
-#endif
            , plugInConfs = M.empty
 	   }
 

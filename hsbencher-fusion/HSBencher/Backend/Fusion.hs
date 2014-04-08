@@ -9,10 +9,7 @@
 --   flag.  In the future we will probably switch to a new architecture that allows
 --   us to factor this out as its own package.
 
-module HSBencher.Fusion
-#ifndef FUSION_TABLES
-       () where
-#else
+module HSBencher.Backend.Fusion
        ( FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
        , uploadBenchResult
@@ -398,7 +395,4 @@ data FusionConfig =
   deriving (Show,Read,Ord,Eq, Typeable)
 
 
-
-#endif
--- End ifndef FUSION_TABLES
 

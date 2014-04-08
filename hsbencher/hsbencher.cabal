@@ -47,7 +47,7 @@ description: Benchmark frameworks are usually very specific to the
   managing the data that results.
  .
   Benchmark data is stored in simple text files, and optionally
-  uploaded to Google Fusion Tables.
+  uploaded via pluggable backend packages such as `hsbencher-fusion`.
   -- TODO: Describe clusterbench functionality when it's ready.
  .
   `hsbencher` attempts to stradle the divide between language-specific
@@ -113,11 +113,6 @@ extra-source-files:  README.md
                      example/cabal/bench1/bench1.cabal
                      example/cabal/bench1/Hello.hs
 
-Flag fusion
-  description:
-      Add support for Google Fusion Table upload of benchmark data.
-  default: True
-
 Flag hydra
   description:
       Add support for (and dependency on) the hydra-print library.
@@ -152,17 +147,6 @@ Library
 
   default-language:    Haskell2010
 
-  if flag(fusion) {
-    build-depends: handa-gdata  >= 0.6.9.1,
-                   http-conduit 
-    -- exposed-modules: HSBencher.Fusion
-    cpp-options: -DFUSION_TABLES
-  } 
-    -- Haddock and hackage seem to have problems with conditionally exposed modules.
-    -- other-modules: HSBencher.Fusion
-
-  exposed-modules: HSBencher.Fusion
-
 -- [2013.05.28] This will come back later when the new ASCII benchmark file format is finished:
 -----------------------------------------------------------------------------------------------
 -- Executable hsbencher
@@ -176,11 +160,6 @@ Library
 --       -- </DUPLICATED>
 
 --   ghc-options: -threaded 
-
---   if flag(fusion) {
---     build-depends: handa-gdata >= 0.6.2
---     cpp-options: -DFUSION_TABLES
---   }
 --   default-language:    Haskell2010
 
 
@@ -191,7 +170,7 @@ Test-suite hsbencher-unit-tests
     -- <DUPLICATED from above>
     base >= 4.5 && <= 4.7, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
     io-streams >= 1.0,
-    GenericPretty >= 1.2, http-conduit, hsbencher
+    GenericPretty >= 1.2, hsbencher
     -- </DUPLICATED>
   -- Additional deps for testing:
   build-depends: test-framework, test-framework-hunit, test-framework-th, 
@@ -202,10 +181,6 @@ Test-suite hsbencher-unit-tests
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
   }
-  if flag(fusion) {
-    build-depends: handa-gdata >= 0.6.9
-    cpp-options: -DFUSION_TABLES
-  }
 
 Test-suite hsbencher-test1
   main-is: example/cabal/benchmark.hs
@@ -214,16 +189,12 @@ Test-suite hsbencher-test1
     -- <DUPLICATED from above>
     base >= 4.5 && <= 4.7, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
     io-streams >= 1.0,
-    GenericPretty >= 1.2, http-conduit, hsbencher
+    GenericPretty >= 1.2, hsbencher
     -- </DUPLICATED>
   ghc-options: -threaded 
   default-language:  Haskell2010
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
-  }
-  if flag(fusion) {
-    build-depends: handa-gdata >= 0.6.9
-    cpp-options: -DFUSION_TABLES
   }
 
 Test-suite hsbencher-test2
@@ -233,14 +204,10 @@ Test-suite hsbencher-test2
     -- <DUPLICATED from above>
     base >= 4.5 && <= 4.7, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
     io-streams >= 1.0,
-    GenericPretty >= 1.2, http-conduit, hsbencher
+    GenericPretty >= 1.2, hsbencher
     -- </DUPLICATED>
   ghc-options: -threaded 
   default-language:  Haskell2010
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
-  }
-  if flag(fusion) {
-    build-depends: handa-gdata >= 0.6.9
-    cpp-options: -DFUSION_TABLES
   }
