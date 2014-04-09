@@ -123,8 +123,11 @@ Library
     type:  git
     location: https://github.com/rrnewton/HSBencher
 
+  -- First, modules for the end user:
   exposed-modules: HSBencher
-                   HSBencher.App
+                   HSBencher.Backend.Dribble
+  -- Second, internal modules:
+  exposed-modules: HSBencher.App
                    HSBencher.Types
                    HSBencher.Config
                    HSBencher.Logging

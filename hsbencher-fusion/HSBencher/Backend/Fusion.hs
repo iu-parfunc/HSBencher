@@ -174,10 +174,6 @@ getTableId auth tablename = do
     ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
 
 
--- TEMP: Hack
-fileLock :: MVar ()
-fileLock = unsafePerformIO (newMVar ())
--- TODO/FIXME: Make this configurable.
 
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
@@ -197,16 +193,6 @@ uploadBenchResult  br@BenchmarkResult{..} = do
         (cols,vals) = unzip tuple
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
-
-------------- FIXME: factor into separate plugin -------------------------
-
-    cabalD <- lift $ getAppUserDataDirectory "cabal"
-    let csvfile = cabalD </> "hsbencherDribble.csv"
-    log$ " [fusiontable] TEMP: Also dumping data to: "++csvfile
-    lift $ withMVar fileLock $ \ () -> do 
-       b <- doesFileExist csvfile
-       unless b$ writeFile csvfile (concat (L.intersperse "," cols)++"\n")
-       appendFile csvfile (concat (L.intersperse "," (map show vals))++"\n")
 
     -- It's easy to blow the URL size; we need the bulk import version.
     -- stdRetry "insertRows" authclient toks $ insertRows
@@ -268,47 +254,6 @@ fusionSchema =
   , ("ALLJITTIMES", STRING) -- In order of trials like ALLTIMES.
   ]
 
--- | Convert the Haskell representation of a benchmark result into a tuple for Fusion
--- table upload.
-resultToTuple :: BenchmarkResult -> [(String,String)]
-resultToTuple r =
-  [ ("PROGNAME", _PROGNAME r)
-  , ("VARIANT",  _VARIANT r)
-  , ("ARGS",     unwords$ _ARGS r)    
-  , ("HOSTNAME", _HOSTNAME r)
-  , ("RUNID",    _RUNID r)
-  , ("CI_BUILD_ID", _CI_BUILD_ID r)    
-  , ("THREADS",  show$ _THREADS r)
-  , ("DATETIME", _DATETIME r)
-  , ("MINTIME",     show$ _MINTIME r)
-  , ("MEDIANTIME",  show$ _MEDIANTIME r)
-  , ("MAXTIME",     show$ _MAXTIME r)
-  , ("MINTIME_PRODUCTIVITY",    fromMaybe "" $ fmap show $ _MINTIME_PRODUCTIVITY r)
-  , ("MEDIANTIME_PRODUCTIVITY", fromMaybe "" $ fmap show $ _MEDIANTIME_PRODUCTIVITY r)
-  , ("MAXTIME_PRODUCTIVITY",    fromMaybe "" $ fmap show $ _MAXTIME_PRODUCTIVITY r)
-  , ("ALLTIMES",       _ALLTIMES r)
-  , ("TRIALS",   show$ _TRIALS r)
-  , ("COMPILER",       _COMPILER r)
-  , ("COMPILE_FLAGS",  _COMPILE_FLAGS r)
-  , ("RUNTIME_FLAGS",  _RUNTIME_FLAGS r)
-  , ("ENV_VARS",       _ENV_VARS r)
-  , ("BENCH_VERSION",  _BENCH_VERSION r)
-  , ("BENCH_FILE",     _BENCH_FILE r)
-  , ("UNAME",          _UNAME r)
-  , ("PROCESSOR",      _PROCESSOR r)
-  , ("TOPOLOGY",       _TOPOLOGY r)
-  , ("GIT_BRANCH",     _GIT_BRANCH r)
-  , ("GIT_HASH",       _GIT_HASH r)
-  , ("GIT_DEPTH", show$ _GIT_DEPTH r)
-  , ("WHO",            _WHO r)
-  , ("ETC_ISSUE", _ETC_ISSUE r)
-  , ("LSPCI", _LSPCI r)    
-  , ("FULL_LOG", _FULL_LOG r)
-  , ("MEDIANTIME_ALLOCRATE",    fromMaybe "" $ fmap show $ _MEDIANTIME_ALLOCRATE r)
-  , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
-  , ("ALLJITTIMES", _ALLJITTIMES r)
-  ]
-
 -- | The type of Fusion table plugins.  Currently this is a singleton type; there is
 -- really only one fusion plugin.
 data FusionPlug = FusionPlug
@@ -352,7 +297,7 @@ instance PlugIn FusionPlug where
    putStrLn " [fusiontable] Second, lets retrieved cached auth tokens on the file system..."
    toks  <- getCachedTokens authclient
 
-   -- TEMP: This should become another command line flag: --fusion-list
+   -- TEMP: This should become another command line flag: --fusion-list to list the tables.
 {-
    putStrLn " [fusiontable] Next, to test our connections, attempt to list tables:"
    strs <- fmap (map tab_name) (listTables (B.pack (accessToken toks)))

@@ -40,7 +40,7 @@ module HSBencher.Types
          SubProcess(..), LineHarvester(..), orHarvest,
 
          -- * Benchmark outputs for upload
-         BenchmarkResult(..), emptyBenchmarkResult,
+         BenchmarkResult(..), emptyBenchmarkResult, resultToTuple,
 --         Uploader(..), Plugin(..),
          SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
 
@@ -56,6 +56,7 @@ import Data.Char
 import Data.Word
 import Data.List
 import Data.Monoid
+import Data.Maybe (fromMaybe)
 import Data.Dynamic
 import qualified Data.Map as M
 import Data.Maybe (catMaybes)
@@ -544,6 +545,48 @@ emptyBenchmarkResult = BenchmarkResult
   , _MEDIANTIME_MEMFOOTPRINT = Nothing
   , _ALLJITTIMES = ""
   }
+
+-- | Convert the Haskell representation of a benchmark result into a tuple for upload
+-- to a typical database backend.
+resultToTuple :: BenchmarkResult -> [(String,String)]
+resultToTuple r =
+  [ ("PROGNAME", _PROGNAME r)
+  , ("VARIANT",  _VARIANT r)
+  , ("ARGS",     unwords$ _ARGS r)    
+  , ("HOSTNAME", _HOSTNAME r)
+  , ("RUNID",    _RUNID r)
+  , ("CI_BUILD_ID", _CI_BUILD_ID r)    
+  , ("THREADS",  show$ _THREADS r)
+  , ("DATETIME", _DATETIME r)
+  , ("MINTIME",     show$ _MINTIME r)
+  , ("MEDIANTIME",  show$ _MEDIANTIME r)
+  , ("MAXTIME",     show$ _MAXTIME r)
+  , ("MINTIME_PRODUCTIVITY",    fromMaybe "" $ fmap show $ _MINTIME_PRODUCTIVITY r)
+  , ("MEDIANTIME_PRODUCTIVITY", fromMaybe "" $ fmap show $ _MEDIANTIME_PRODUCTIVITY r)
+  , ("MAXTIME_PRODUCTIVITY",    fromMaybe "" $ fmap show $ _MAXTIME_PRODUCTIVITY r)
+  , ("ALLTIMES",       _ALLTIMES r)
+  , ("TRIALS",   show$ _TRIALS r)
+  , ("COMPILER",       _COMPILER r)
+  , ("COMPILE_FLAGS",  _COMPILE_FLAGS r)
+  , ("RUNTIME_FLAGS",  _RUNTIME_FLAGS r)
+  , ("ENV_VARS",       _ENV_VARS r)
+  , ("BENCH_VERSION",  _BENCH_VERSION r)
+  , ("BENCH_FILE",     _BENCH_FILE r)
+  , ("UNAME",          _UNAME r)
+  , ("PROCESSOR",      _PROCESSOR r)
+  , ("TOPOLOGY",       _TOPOLOGY r)
+  , ("GIT_BRANCH",     _GIT_BRANCH r)
+  , ("GIT_HASH",       _GIT_HASH r)
+  , ("GIT_DEPTH", show$ _GIT_DEPTH r)
+  , ("WHO",            _WHO r)
+  , ("ETC_ISSUE", _ETC_ISSUE r)
+  , ("LSPCI", _LSPCI r)    
+  , ("FULL_LOG", _FULL_LOG r)
+  , ("MEDIANTIME_ALLOCRATE",    fromMaybe "" $ fmap show $ _MEDIANTIME_ALLOCRATE r)
+  , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
+  , ("ALLJITTIMES", _ALLJITTIMES r)
+  ]
+
 
 --------------------------------------------------------------------------------
 -- Generic uploader interface
