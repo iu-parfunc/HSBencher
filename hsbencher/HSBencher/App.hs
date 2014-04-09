@@ -42,7 +42,7 @@ import Data.Version (versionBranch, versionTags)
 import GHC.Conc (getNumProcessors)
 import Numeric (showFFloat)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
-import System.Environment (getArgs, getEnv, getEnvironment)
+import System.Environment (getArgs, getEnv, getEnvironment, getProgName)
 import System.Directory
 import System.Posix.Env (setEnv)
 import System.Random (randomIO)
@@ -87,53 +87,23 @@ hsbencherVersion :: String
 hsbencherVersion = concat $ intersperse "." $ map show $ 
                    versionBranch version
 
--- | USAGE
-usageStr :: String
-usageStr = unlines $
+-- | General usage information.
+generalUsageStr :: String
+generalUsageStr = unlines $
  [
    "   ",         
+{-
    " Many of these options can redundantly be set either when the benchmark driver is run,",
    " or in the benchmark descriptions themselves.  E.g. --with-ghc is just for convenience.",
    "\n ENV VARS:",
+
+-- No ENV vars currently! [2014.04.09]
+
    "   These environment variables control the behavior of the benchmark script:",
-   "",
-#ifndef DISABLED
-   "     SHORTRUN=1 to get a shorter run for testing rather than benchmarking.",
-   "",
-   "     THREADS=\"1 2 4\" to run with # threads = 1, 2, or 4.",
-   "",
-   "     BENCHLIST=foo.txt to select the benchmarks and their arguments",
-   "               (uses benchlist.txt by default)",
-   "",
-   "     SCHEDS=\"Trace Direct Sparks\" -- Restricts to a subset of schedulers.",
-   "",
-   "     GENERIC=1 to go through the generic (type class) monad par",
-   "               interface instead of using each scheduler directly",
-   "",
-   "     KEEPGOING=1 to keep going after the first error.",
-   "",
-   "     TRIALS=N to control the number of times each benchmark is run.",
-   "",
-#endif
-#ifdef FUSION_TABLES   
-   "     HSBENCHER_GOOGLE_CLIENTID, HSBENCHER_GOOGLE_CLIENTSECRET: if FusionTable upload is enabled, the",
-   "               client ID and secret can be provided by env vars OR command line options. ",
-#endif
    " ",
-#ifndef DISABLED
-   "     ENVS='[[(\"KEY1\", \"VALUE1\")], [(\"KEY1\", \"VALUE2\")]]' to set",
-   "     different configurations of environment variables to be set *at",
-   "     runtime*. Useful for NUMA_TOPOLOGY, for example.  Note that this",
-   "     can change multiple env variables in multiple distinct",
-   "     configurations, with each configuration tested separately.",
-   "",
-   "   Additionally, this script will propagate any flags placed in the",
-   "   environment variables $GHC_FLAGS and $GHC_RTS.  It will also use",
-   "   $GHC or $CABAL, if available, to select the executable paths.", 
-   "   ",
-#endif
    "   Command line arguments take precedence over environment variables, if both apply.",
    "   ",
+-}
    " NOTE: This bench harness build against hsbencher library version "++hsbencherVersion
  ]
 
@@ -370,6 +340,7 @@ runOne (iterNum, totalIters) _bldid bldres
       -- Upload results to plugin backends:
       conf2@Config{ plugIns } <- ask 
       forM_ plugIns $ \ (SomePlugin p) -> do 
+        -- TODO/FIXME: catch exceptions:
         lift $ plugUploadRow p conf2 result'
         return ()
 
@@ -452,10 +423,9 @@ defaultMainWithBechmarks benches = do
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
 fullUsageInfo = 
-    -- "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]\n" ++
-    "USAGE: naked command line arguments are patterns that select the benchmarks to run\n"++
+    "\nUSAGE: naked command line arguments are patterns that select the benchmarks to run.\n"++
     (concat (map (uncurry usageInfo) all_cli_options)) ++
-    usageStr 
+    generalUsageStr 
 
 -- | An even more flexible version allows the user to install a hook which modifies
 -- the configuration just before bencharking begins.  All trawling of the execution
@@ -468,8 +438,9 @@ defaultMainModifyConfig :: (Config -> Config) -> IO ()
 defaultMainModifyConfig modConfig = do    
   id <- myThreadId
   writeIORef main_threadid id
-
+  my_name  <- getProgName
   cli_args <- getArgs
+
   let (options,plainargs,_unrec,errs) = getOpt' Permute (concat$ map snd all_cli_options) cli_args
 
   -- This ugly method avoids needing an Eq instance:
@@ -483,46 +454,42 @@ defaultMainModifyConfig modConfig = do
     putStrLn$ "hsbencher version "++ hsbencherVersion
       -- (unwords$ versionTags version)
     exitSuccess 
-      
-  when (not (null errs) || showHelp) $ do
-    unless showHelp $ putStrLn$ "Errors parsing command line options:"
-    mapM_ (putStr . ("   "++)) errs       
-    putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTIONS]"
-    putStrLn$ "USAGE: command line options include patterns that select the benchmarks to run"
-    mapM putStr (map (uncurry usageInfo) all_cli_options)
-    putStrLn$ usageStr
-    if showHelp then exitSuccess else exitFailure
+
+  let printHelp :: [OptDescr ()] -> IO ()
+      printHelp opts = 
+        error "FINISHME"
 
   putStrLn$ "\n"++hsbencher_tag++"Harvesting environment data to build Config."
   conf0 <- getConfig options []
-
   -- The list of benchmarks can optionally be narrowed to match any of the given patterns.
   let conf1 = modConfig conf0
-
   -- The phasing here is rather funny.  We need to get the initial config to know
   -- WHICH plugins are active.  And then their individual per-plugin configs need to
   -- be computed and added to the global config.
   let allplugs = plugIns conf1
 
--- Hmm, not really a strong reason to combine the options lists:
-{-
-  let allPlugOpts = concatMap (\ (SomePlugin p) -> genericCmdOpts p) allplugs
-  let plugFlgs :: [SomePluginFlag]
-      (plugFlgs,_,_,_) = getOpt' Permute allPlugOpts cli_args 
-      flgMap = M.fromListWith (++) $ 
-               [ (SomePlugin p, [spf]) 
-               | spf@(SomePluginFlag p f) <- plugFlgs ]
--}
-  -- forM_ (plugIns conf1) $ \ (SomePlugin p) -> do
-  --   let pconf0 = defaultPlugConf p
-  --   case M.lookup (SomePlugin p) flgMap of 
-  --     Just [SomePluginFlag p2 f] -> 
-  --       -- Can't prove p2 is the same type as p...
-  --       undefined
 
+  when (not (null errs) || showHelp) $ do
+    unless showHelp $ putStrLn$ "Errors parsing command line options:"
+    mapM_ (putStr . ("   "++)) errs       
+    putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTS]"
+    putStrLn$ "\nNote: \"CMDLN OPTS\" includes patterns that select which benchmarks"
+    putStrLn$ "     to run, based on name."
+
+    mapM putStr (map (uncurry usageInfo) all_cli_options)
+    putStrLn ""
+    forM_ allplugs $ \ (SomePlugin p) -> do  
+      putStrLn $ ((uncurry usageInfo) (plugCmdOpts p))
+    putStrLn$ generalUsageStr
+    if showHelp then exitSuccess else exitFailure
+
+
+  -- Hmm, not really a strong reason to *combine* the options lists, rather we do
+  -- them one at a time:
   let pconfs = [ (plugName p, SomePluginConf p pconf)
                | (SomePlugin p) <- (plugIns conf1)
-               , let (o2,_,_,_) = getOpt' Permute (plugCmdOpts p) cli_args 
+               , let (_pusage,popts) = plugCmdOpts p
+               , let (o2,_,_,_) = getOpt' Permute popts cli_args 
                , let pconf = foldFlags p o2 (defaultPlugConf p)
                ]
 
@@ -530,11 +497,13 @@ defaultMainModifyConfig modConfig = do
   -- Combine all plugins command line options, and reparse the command line.
 
   putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured, now initializing them."
---  forM_ allplugs $ \ (SomePlugin p) ->  plugInitialize p conf2
+
+  -- TODO/FIXME: CATCH ERRORS... should remove the plugin from the list if it errors on init.
   conf_final <- foldM (\ cfg (SomePlugin p) -> plugInitialize p cfg)
                   conf2 allplugs 
   putStrLn$ hsbencher_tag++" plugin init complete."
 
+  -------------------------------------------------------------------
   -- Next prune the list of benchmarks to those selected by the user:
   let cutlist = case plainargs of
                  [] -> benchlist conf_final

@@ -270,9 +270,11 @@ instance PlugIn FusionPlug where
     , serverColumns      = []
     }
 
-  plugName _ = "Google_FusionTable_Backend"
+  -- | Better be globally unique!  Careful.
+  plugName _ = "fusion" 
+  --  plugName _ = "Google_FusionTable_Backend"
 
-  plugCmdOpts _ = snd fusion_cli_options
+  plugCmdOpts _ = fusion_cli_options
 
   plugUploadRow p cfg row = runReaderT (uploadBenchResult row) cfg
 
@@ -325,7 +327,7 @@ theEnv = unsafePerformIO getEnvironment
 -- | All the command line options understood by this plugin.
 fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
 fusion_cli_options =
-  ("\n Fusion Table Options:",
+  ("Fusion Table Options:",
       [ Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
         "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
       , Option [] ["clientid"]     (ReqArg ClientID "ID")     "Use (and cache) Google client ID"

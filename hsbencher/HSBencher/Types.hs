@@ -620,8 +620,11 @@ class (Show p, Eq p, Ord p,
   plugName  :: p -> String
 
   -- | Options for command line parsing.  These should probably be disjoint from the
-  -- options used by other plugins; so use specific names.
-  plugCmdOpts :: p -> [OptDescr (PlugFlag p)]
+  --   options used by other plugins; so use very specific names.
+  -- 
+  --   Finally, note that the String returned here is a header line that is printed
+  --   before the usage documentation when the benchmark executable is invoked with `-h`.
+  plugCmdOpts :: p -> (String, [OptDescr (PlugFlag p)])
 
   -- | Process flags and update a configuration accordingly.
   foldFlags :: p -> [PlugFlag p] -> PlugConf p -> PlugConf p
@@ -680,7 +683,7 @@ instance Show SomePluginFlag where
 -- | Make the command line flags for a particular plugin generic so that they can be
 -- mixed together with other plugins options.
 genericCmdOpts :: PlugIn p => p -> [OptDescr SomePluginFlag]
-genericCmdOpts p = map (fmap lift) (plugCmdOpts p)
+genericCmdOpts p = map (fmap lift) (snd (plugCmdOpts p))
  where 
  lift pf = SomePluginFlag p pf
 
@@ -701,12 +704,6 @@ getMyConf p Config{plugInConfs} =
 setMyConf :: forall p . PlugIn p => p -> PlugConf p -> Config -> Config 
 setMyConf p new cfg@Config{plugInConfs} = 
   cfg { plugInConfs= (M.insert (plugName p) (SomePluginConf p new) plugInConfs) }
-
-test :: PlugIn p => p -> String
-test p = show (defaultPlugConf p)
-
-toDyno' :: [SomePlugin] -> [[OptDescr Dynamic]]
-toDyno' ps = [ map (fmap toDyn) (plugCmdOpts p) | SomePlugin p <- ps ]
 
 ----------------------------------------
 -- Small convenience functions
