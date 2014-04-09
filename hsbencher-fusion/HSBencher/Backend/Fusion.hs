@@ -10,11 +10,14 @@
 --   us to factor this out as its own package.
 
 module HSBencher.Backend.Fusion
-       ( FusionConfig(..), stdRetry, getTableId
+       ( -- * The plugin, what you probably want from this module.
+         defaultFusionPlugin
+
+         -- * The details and configuration options.
+       , FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
        , uploadBenchResult
-       , FusionPlug(..), FusionCmdLnFlag(..),
---       , fusionPlugin, fusionUploader
+       , FusionPlug(), FusionCmdLnFlag(..),
        )
        where
 
@@ -49,6 +52,12 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getEnvironment)
 import System.Exit
 import Control.Concurrent.MVar
+
+
+-- | A default plugin.  This may seem pointless, but we abstract over the internals
+-- of FusionPlug to enable backwards compatibility in the phase of future extensions.
+defaultFusionPlugin :: FusionPlug
+defaultFusionPlugin = FusionPlug
 
 ----------------------------------------------------------------------------------------------------
 -- #ifdef FUSION_TABLES
@@ -300,7 +309,8 @@ resultToTuple r =
   , ("ALLJITTIMES", _ALLJITTIMES r)
   ]
 
-
+-- | The type of Fusion table plugins.  Currently this is a singleton type; there is
+-- really only one fusion plugin.
 data FusionPlug = FusionPlug
   deriving (Eq,Show,Ord,Read)
 
@@ -367,7 +377,7 @@ instance PlugIn FusionPlug where
 theEnv :: [(String,String)] 
 theEnv = unsafePerformIO getEnvironment
 
-
+-- | All the command line options understood by this plugin.
 fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
 fusion_cli_options =
   ("\n Fusion Table Options:",
@@ -378,6 +388,7 @@ fusion_cli_options =
       , Option [] ["fusion-test"]  (NoArg FusionTest)   "Test authentication and list tables if possible." 
       ])
 
+-- | Parsed command line options provided by the user initiating benchmarking.
 data FusionCmdLnFlag = 
    FusionTables (Maybe TableId)
  | ClientID     String
@@ -385,6 +396,7 @@ data FusionCmdLnFlag =
  | FusionTest
  deriving (Show,Read,Ord,Eq, Typeable)
 
+-- | Configuration options for Google Fusion Table uploading.
 data FusionConfig = 
   FusionConfig
   { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.

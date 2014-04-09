@@ -166,7 +166,7 @@ instance Show BuildMethod where
 -- HSBench Configuration
 ----------------------------------------------------------------------------------------------------
 
--- | A monad for benchamrking.  This provides access to configuration options, but
+-- | A monad for benchmarking  This provides access to configuration options, but
 -- really, its main purpose is enabling logging.
 type BenchM a = ReaderT Config IO a
 
@@ -178,17 +178,22 @@ data Config = Config
                      -- In some upload backends this is the name of the dataset or table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
 -- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
- , runTimeOut     :: Maybe Double -- ^ Timeout in seconds for running benchmarks (if not specified by the benchmark specifically)
- , maxthreads     :: Int
- , trials         :: Int    -- ^ number of runs of each configuration
+ , runTimeOut     :: Maybe Double -- ^ Timeout in seconds for running benchmarks 
+                                  -- (if not specified by the benchmark specifically)
+ , maxthreads     :: Int  -- ^ In parallel compile/run phases use at most this many threads.  
+                          -- Defaults to `getNumProcessors`.
+ , trials         :: Int  -- ^ number of runs of each configuration
  , skipTo         :: Maybe Int -- ^ Where to start in the config space.
  , runID          :: Maybe String -- ^ An over-ride for the run ID.
  , ciBuildID      :: Maybe String -- ^ The build ID from the continuous integration system.
- , shortrun       :: Bool
- , doClean        :: Bool
- , keepgoing      :: Bool   -- ^ keep going after error
- , pathRegistry   :: PathRegistry -- ^ Paths to executables.
- , hostname       :: String
+ , shortrun       :: Bool  -- ^ An alternate mode to run very small sizes of benchmarks for testing.
+                           --   HSBencher relies on a convention where benchmarks WITHOUT command-line
+                           --   arguments must do a short run.
+ , doClean        :: Bool  -- ^ Invoke the build methods clean operation before compilation.
+ , keepgoing      :: Bool  -- ^ Keep going after error.
+ , pathRegistry   :: PathRegistry -- ^ Paths to executables
+ , hostname       :: String  -- ^ Manually override the machine hostname.  
+                             --   Defaults to the output of the `hostname` command.
  , startTime      :: Integer -- ^ Seconds since Epoch. 
  , resultsFile    :: String -- ^ Where to put timing results.
  , logFile        :: String -- ^ Where to put more verbose testing output.
@@ -198,9 +203,9 @@ data Config = Config
  , buildMethods   :: [BuildMethod] -- ^ Starts with cabal/make/ghc, can be extended by user.
    
  -- These are all LINES-streams (implicit newlines).
- , logOut         :: Strm.OutputStream B.ByteString
- , resultsOut     :: Strm.OutputStream B.ByteString
- , stdOut         :: Strm.OutputStream B.ByteString
+ , logOut         :: Strm.OutputStream B.ByteString -- ^ Internal use only
+ , resultsOut     :: Strm.OutputStream B.ByteString -- ^ Internal use only
+ , stdOut         :: Strm.OutputStream B.ByteString -- ^ Internal use only
    -- A set of environment variable configurations to test
  , envs           :: [[(String, String)]]
 

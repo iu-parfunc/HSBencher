@@ -1,12 +1,14 @@
 
 
 import HSBencher
-import qualified Data.Map as M
+import HSBencher.Backend.Fusion (defaultFusionPlugin)
+
 import System.Environment (getEnvironment)
 import System.Directory   (setCurrentDirectory, getDirectoryContents, getCurrentDirectory)
 import System.IO.Unsafe   (unsafePerformIO)
 import GHC.Conc           (getNumProcessors)
 
+main :: IO ()
 main = do
   -- Hack to deal with running from cabal:
   rightDir <- fmap ("benchmark.hs" `elem`) $ getDirectoryContents =<< getCurrentDirectory
@@ -16,16 +18,27 @@ main = do
       let hackD = "./example/make_and_ghc"
       putStrLn$"HACK: changing from "++path++" to "++hackD
       setCurrentDirectory hackD 
-  defaultMainWithBechmarks benches
+--  defaultMainWithBechmarks benches
+  defaultMainModifyConfig myconfig
 
+
+myconfig :: Config -> Config
+myconfig cfg@Config{plugIns=p} = 
+  cfg { benchlist = benches 
+      , plugIns   = SomePlugin defaultFusionPlugin : p
+      } 
+
+benches :: [Benchmark DefaultParamMeaning]
 benches =
   [ mkBenchmark "bench1/"          ["unused_cmdline_arg"] envExample
 --  , mkBenchmark "bench2/Hello.hs"  []                     withthreads  
   ]
 
 -- No benchmark configuration space.
+none :: BenchSpace DefaultParamMeaning
 none = And []
 
+envExample :: BenchSpace DefaultParamMeaning
 envExample =
   Or [ And [ Set NoMeaning   (CompileParam "-DNOTHREADING")
            , Set (Threads 1) (RuntimeEnv "CILK_NPROCS" "1") ]
@@ -36,9 +49,11 @@ envExample =
            ]
      ]
 
+withthreads :: BenchSpace DefaultParamMeaning
 withthreads = defaultHSSettings$
               varyThreads none
 
+defaultHSSettings :: BenchSpace DefaultParamMeaning -> BenchSpace DefaultParamMeaning
 defaultHSSettings spc =
   And [
         Set NoMeaning (CompileParam "-threaded -rtsopts")
