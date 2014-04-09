@@ -9,7 +9,7 @@
 
 module HSBencher.Backend.Dribble 
        ( defaultDribblePlugin, 
-         DribblePlugin() 
+         DribblePlugin(), DribbleConf{..}
        ) 
    where
 
@@ -42,6 +42,10 @@ defaultDribblePlugin = DribblePlugin
 -- during plugin initialization.
 data DribbleConf = DribbleConf { csvfile :: Maybe String }
   deriving (Read,Show,Eq,Ord, Typeable)
+
+-- TODO: expose command line option to change directory for dribbling.  This is not
+-- urgent however, because the user can dig around and set the DribbleConf directly
+-- if they wish.
 
 --------------------------------------------------------------------------------
 
@@ -80,18 +84,6 @@ instance PlugIn DribblePlugin where
       return $! setMyConf p (DribbleConf{csvfile=Just path}) gconf
 
   foldFlags p flgs cnf0 = cnf0
---       foldr ($) cnf0 (map doFlag flgs)
---     where      
---       -- TODO: Move this one to the global config
---       doFlag FusionTest r = r
---       doFlag (ClientID cid) r = r { fusionClientID = Just cid } 
---       doFlag (ClientSecret s) r = r { fusionClientSecret = Just s } 
---       doFlag (FusionTables m) r = 
--- --         let r2 = r { doFusionUpload = True } in
---          case m of 
---            Just tid -> r { fusionTableID = Just tid } 
---            Nothing  -> r
-
 
 --------------------------------------------------------------------------------
 
