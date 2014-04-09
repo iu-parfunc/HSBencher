@@ -104,7 +104,7 @@ generalUsageStr = unlines $
    "   Command line arguments take precedence over environment variables, if both apply.",
    "   ",
 -}
-   " NOTE: This bench harness build against hsbencher library version "++hsbencherVersion
+   " Note: This bench harness was built against hsbencher library version "++hsbencherVersion
  ]
 
 ----------------------------------------------------------------------------------------------------
