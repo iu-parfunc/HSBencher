@@ -9,7 +9,7 @@
 
 module HSBencher.Backend.Dribble 
        ( defaultDribblePlugin, 
-         DribblePlugin(), DribbleConf{..}
+         DribblePlugin(), DribbleConf(..)
        ) 
    where
 
