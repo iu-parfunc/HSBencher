@@ -197,7 +197,7 @@ data Config = Config
                              --   Defaults to the output of the `hostname` command.
  , startTime      :: Integer -- ^ Seconds since Epoch. 
  , resultsFile    :: String -- ^ Where to put timing results.
- , logFile        :: String -- ^ Where to put more verbose testing output.
+ , logFile        :: String -- ^ Where to put full, verbose testing output.
 
  , gitInfo        :: (String,String,Int) -- ^ Branch, revision hash, depth.
 

@@ -57,7 +57,9 @@ instance PlugIn DribblePlugin where
 
   defaultPlugConf _ = DribbleConf { csvfile = Nothing }
 
-  plugName _ = "DribbleToFile_Backend"
+  -- | Going with simple names, but had better make them unique!
+  plugName _ = "dribble"
+  -- plugName _ = "DribbleToFile_Backend"  
 
   plugCmdOpts _ = ("Dribble plugin loaded: (But it has no command line options.)",[])
 
