@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module HSBencher.Logging 
+module HSBencher.Internal.Logging 
        (LogDest(..), log, logOn, 
         logT, hsbencher_tag, chatter) where 
 

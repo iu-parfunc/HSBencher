@@ -6,7 +6,7 @@
 -- Disabling some stuff until we can bring it back up after the big transition [2013.05.28]:
 #define DISABLED
 
-module HSBencher.Config
+module HSBencher.Internal.Config
        ( -- * Configurations
          getConfig, augmentResultWithConfig,
 
@@ -32,9 +32,9 @@ import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 
 import HSBencher.Types
-import HSBencher.Utils
-import HSBencher.Methods
-import HSBencher.MeasureProcess
+import HSBencher.Internal.Utils
+import HSBencher.Internal.Methods
+import HSBencher.Internal.MeasureProcess
 
 ----------------------------------------------------------------------------------------------------
 

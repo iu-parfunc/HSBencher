@@ -38,7 +38,7 @@ import Network.Google.FusionTables (createTable, createColumn, listTables, listC
                                     TableId, CellType(..), TableMetadata(..), ColumnMetadata(..))
 import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
-import HSBencher.Logging (log, chatter)
+import HSBencher.Internal.Logging (log)
 import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)

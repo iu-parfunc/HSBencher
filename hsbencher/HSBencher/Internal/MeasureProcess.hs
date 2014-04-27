@@ -4,7 +4,7 @@
 -- facility for self-reporting execution time and reporting garbage collector
 -- overhead for GHC-compiled programs.
 
-module HSBencher.MeasureProcess
+module HSBencher.Internal.MeasureProcess
        (measureProcess,
         selftimedHarvester, jittimeHarvester,
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,

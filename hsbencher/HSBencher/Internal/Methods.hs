@@ -2,7 +2,7 @@
 
 -- | These are the built-in build methods for HSBencher.
 
-module HSBencher.Methods
+module HSBencher.Internal.Methods
        (makeMethod, ghcMethod, cabalMethod,        
         )
        where
@@ -20,9 +20,9 @@ import Text.Printf
 import Prelude hiding (log)
 
 import HSBencher.Types
-import HSBencher.Logging (log)
-import HSBencher.MeasureProcess
-import HSBencher.Utils (runLogged, defaultTimeout)
+import HSBencher.Internal.Logging (log)
+import HSBencher.Internal.MeasureProcess
+import HSBencher.Internal.Utils (runLogged, defaultTimeout)
 
 --------------------------------------------------------------------------------
 -- Some useful build methods

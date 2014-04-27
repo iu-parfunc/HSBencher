@@ -34,7 +34,7 @@ version:             1.8
 -- 1.8 : plugins
 
 
-synopsis:  Flexible benchmark runner for Haskell and non-Haskell benchmarks.
+synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 
 description: Benchmark frameworks are usually very specific to the
   host language/environment.  Hence they are usually about as reusable
@@ -130,13 +130,14 @@ Library
   exposed-modules: HSBencher
                    HSBencher.Backend.Dribble
   -- Second, internal modules:
-  exposed-modules: HSBencher.App
+  exposed-modules: 
                    HSBencher.Types
-                   HSBencher.Config
-                   HSBencher.Logging
-                   HSBencher.Methods
-                   HSBencher.Utils
-                   HSBencher.MeasureProcess
+                   HSBencher.Internal.App
+                   HSBencher.Internal.Config
+                   HSBencher.Internal.Logging
+                   HSBencher.Internal.Methods
+                   HSBencher.Internal.Utils
+                   HSBencher.Internal.MeasureProcess
   other-modules: Paths_hsbencher
   build-depends:   
       -- base ==4.6.*, bytestring ==0.10.*, process ==1.1.*, directory ==1.2.*, filepath ==1.3.*, random ==1.0.*, 

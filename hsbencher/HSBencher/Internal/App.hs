@@ -14,7 +14,7 @@
 {- | The Main module defining the HSBencher driver.
 -}
 
-module HSBencher.App
+module HSBencher.Internal.App
        (defaultMainWithBechmarks, defaultMainModifyConfig,
         Flag(..), all_cli_options, fullUsageInfo)
        where 
@@ -73,12 +73,12 @@ import Scripting.Parallel.ThreadPool (parForM)
 ----------------------------
 -- Self imports:
 
-import HSBencher.Utils
-import HSBencher.Logging
 import HSBencher.Types
-import HSBencher.Config
-import HSBencher.Methods
-import HSBencher.MeasureProcess 
+import HSBencher.Internal.Utils
+import HSBencher.Internal.Logging
+import HSBencher.Internal.Config
+import HSBencher.Internal.Methods
+import HSBencher.Internal.MeasureProcess 
 import Paths_hsbencher (version) -- Thanks, cabal!
 
 ----------------------------------------------------------------------------------------------------

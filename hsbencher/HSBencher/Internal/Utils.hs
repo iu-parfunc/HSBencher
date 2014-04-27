@@ -2,7 +2,7 @@
 
 -- | Misc Small Helpers
 
-module HSBencher.Utils where
+module HSBencher.Internal.Utils where
 
 import Control.Concurrent
 import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
@@ -28,8 +28,8 @@ import Text.Printf
 import Prelude hiding (log)
 
 import HSBencher.Types 
-import HSBencher.Logging
-import HSBencher.MeasureProcess
+import HSBencher.Internal.Logging
+import HSBencher.Internal.MeasureProcess
 
 import Debug.Trace
 

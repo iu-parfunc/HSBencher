@@ -14,7 +14,7 @@ module HSBencher.Backend.Dribble
    where
 
 import HSBencher.Types
-import HSBencher.Logging (log, chatter)
+import HSBencher.Internal.Logging (log, chatter)
 
 import Control.Concurrent.MVar
 import Control.Monad.Reader
