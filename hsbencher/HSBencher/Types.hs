@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE CPP #-}
 
 -- | All the core types used by the rest of the HSBencher codebase.
 
@@ -592,6 +593,7 @@ resultToTuple r =
 -- Generic uploader interface
 --------------------------------------------------------------------------------
 
+#if !MIN_VERSION_base(4,7,0)
 instance Functor OptDescr where
   fmap fn (Option shrt long args str) = 
     Option shrt long (fmap fn args) str
@@ -602,6 +604,7 @@ instance Functor ArgDescr where
       NoArg x ->  NoArg (fn x)
       ReqArg fn2 str -> ReqArg (fn . fn2) str
       OptArg fn2 str -> OptArg (fn . fn2) str
+#endif
 
 --------------------------------------------------------------------------------
 

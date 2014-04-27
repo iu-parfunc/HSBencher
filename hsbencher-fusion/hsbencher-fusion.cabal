@@ -3,7 +3,7 @@
 
 name:                hsbencher-fusion
 version:             0.1.0.0
-synopsis:            Backend for Google Fusion Table upload of benchmark data from HSBencher.
+synopsis:            Backend for uploading benchmark data to Google Fusion Tables.
 -- description:         
 license:             MIT
 -- license-file:        LICENSE

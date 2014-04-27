@@ -3,11 +3,9 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Google Fusion Table upload of benchmark data.
---   Built conditionally based on the -ffusion flag.
---
---   Be careful!  This module will appear empty if hsbencher is not built with that
---   flag.  In the future we will probably switch to a new architecture that allows
---   us to factor this out as its own package.
+-- 
+--   This module must be used in conjunction with the main "hsbencher" package,
+--   e.g. `import HSBencher`.
 
 module HSBencher.Backend.Fusion
        ( -- * The plugin, what you probably want from this module.
