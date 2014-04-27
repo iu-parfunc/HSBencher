@@ -121,10 +121,11 @@ Flag hydra
       Add support for (and dependency on) the hydra-print library.
   default: False
 
+Source-repository head
+  type:  git
+  location: https://github.com/rrnewton/HSBencher
+
 Library 
-  source-repository head
-    type:  git
-    location: https://github.com/rrnewton/HSBencher
 
   -- First, modules for the end user:
   exposed-modules: HSBencher

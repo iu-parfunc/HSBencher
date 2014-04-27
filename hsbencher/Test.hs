@@ -2,9 +2,9 @@
 
 import Data.List
 import Data.Maybe
-import HSBencher.MeasureProcess
 import HSBencher.Types
-import HSBencher.Config (getConfig)
+import HSBencher.Internal.Config (getConfig)
+import HSBencher.Internal.MeasureProcess ()
 import qualified Data.ByteString.Char8 as B
 
 import Test.Framework.Providers.HUnit 
@@ -60,7 +60,8 @@ case_harvest = do
   putStrLn$ "Lines harvested: "++show (length hits)
   let result = foldl' (\ r (f,_) -> f r) emptyRunResult hits
   let expected = RunCompleted {realtime = 3.3, productivity = Just 73.8,
-                               allocRate = Just 1855954977, memFootprint = Just 5372024}
+                               allocRate = Just 1855954977, memFootprint = Just 5372024,
+                               jittime = Nothing }
 
   assertEqual "Test harvesters" expected result
 
