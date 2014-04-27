@@ -47,7 +47,8 @@ description: Benchmark frameworks are usually very specific to the
   managing the data that results.
  .
   Benchmark data is stored in simple text files, and optionally
-  uploaded via pluggable backend packages such as `hsbencher-fusion`.
+  uploaded via pluggable backend packages such as `hsbencher-fusion`, 
+  which uploads to Google Fusion Tables.
   -- TODO: Describe clusterbench functionality when it's ready.
  .
   `hsbencher` attempts to stradle the divide between language-specific
@@ -59,7 +60,7 @@ description: Benchmark frameworks are usually very specific to the
   protocol, for example printing out a line "SELFTIMED: 3.3s" if they
   wish to report their own timing.  The focus is on benchmarks that
   run long enough to run in their own process.  This is typical of
-  parallelism benchmarks and different than the fine grained
+  parallelism benchmarks and different than the fine-grained
   benchmarks that are well supported by "Criterion".
  .
  .
@@ -71,7 +72,7 @@ description: Benchmark frameworks are usually very specific to the
  @
  import HSBencher
  main = defaultMainWithBechmarks
- .      [ Benchmark \"bench1/bench1.cabal\" [\"1000\"] $
+ .      [ mkBenchmark \"bench1/bench1.cabal\" [\"1000\"] $
  .        Or [ Set NoMeaning (RuntimeParam \"+RTS -qa -RTS\")
  .            , Set NoMeaning (RuntimeEnv \"HELLO\" \"yes\") ] ]
  @
@@ -91,6 +92,8 @@ description: Benchmark frameworks are usually very specific to the
  * (1.4.2) Breaking changes, don't use Benchmark constructor directly.  Use mkBenchmark.
  .
  * (1.5) New columns in schema.
+ .
+ * (1.8) Backend plugins.
 
 
 license:             BSD3
