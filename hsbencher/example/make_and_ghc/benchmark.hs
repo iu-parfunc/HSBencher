@@ -1,7 +1,7 @@
 
 
 import HSBencher
-import HSBencher.Backend.Fusion  (defaultFusionPlugin)
+-- import HSBencher.Backend.Fusion  (defaultFusionPlugin)
 import HSBencher.Backend.Dribble (defaultDribblePlugin)
 
 import System.Environment (getEnvironment)
@@ -26,8 +26,10 @@ main = do
 myconfig :: Config -> Config
 myconfig cfg@Config{plugIns=p} = 
   cfg { benchlist = benches 
-      , plugIns   = SomePlugin defaultFusionPlugin : 
-                    SomePlugin defaultDribblePlugin : p
+      , plugIns   =
+--                    SomePlugin defaultFusionPlugin : 
+                    SomePlugin defaultDribblePlugin :
+                    p
       } 
 
 benches :: [Benchmark DefaultParamMeaning]
