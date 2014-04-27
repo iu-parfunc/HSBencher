@@ -49,7 +49,7 @@ data DribbleConf = DribbleConf { csvfile :: Maybe String }
 
 --------------------------------------------------------------------------------
 
-instance PlugIn DribblePlugin where
+instance Plugin DribblePlugin where
   -- | No configuration info for this plugin currently:
   type PlugConf DribblePlugin = DribbleConf
   -- | No command line flags either:

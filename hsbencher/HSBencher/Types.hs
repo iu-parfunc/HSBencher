@@ -45,7 +45,7 @@ module HSBencher.Types
 --         Uploader(..), Plugin(..),
          SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
 
-         PlugIn(..), genericCmdOpts, getMyConf, setMyConf,
+         Plugin(..), genericCmdOpts, getMyConf, setMyConf,
 
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -613,7 +613,7 @@ instance Functor ArgDescr where
 class (Show p, Eq p, Ord p,
        Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p), 
        Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p)) => 
-      PlugIn p where
+      Plugin p where
   -- | A configuration flag for the plugin (parsed from the command line)
   type PlugFlag p 
   -- | The full configuration record for the plugin.
@@ -646,18 +646,18 @@ class (Show p, Eq p, Ord p,
   plugUploadRow  :: p -> Config -> BenchmarkResult -> IO () 
 
 
-data SomePlugin  = forall p . PlugIn p => SomePlugin p 
+data SomePlugin  = forall p . Plugin p => SomePlugin p 
 
 -- | Keep a single flag together with the plugin it goes with.
 data SomePluginFlag = 
---  forall p . (PlugIn p, Typeable (PlugFlag p), Show (PlugFlag p)) => 
-  forall p . (PlugIn p) =>
+--  forall p . (Plugin p, Typeable (PlugFlag p), Show (PlugFlag p)) => 
+  forall p . (Plugin p) =>
   SomePluginFlag p (PlugFlag p)
 
 -- | Keep a full plugin configuration together with the plugin it goes with.
 data SomePluginConf = 
---  forall p . (PlugIn p, Typeable (PlugConf p), Show (PlugConf p)) => 
-  forall p . (PlugIn p) =>
+--  forall p . (Plugin p, Typeable (PlugConf p), Show (PlugConf p)) => 
+  forall p . (Plugin p) =>
   SomePluginConf p (PlugConf p)
 
 ------------------------------------------------------------
@@ -685,14 +685,14 @@ instance Show SomePluginFlag where
 
 -- | Make the command line flags for a particular plugin generic so that they can be
 -- mixed together with other plugins options.
-genericCmdOpts :: PlugIn p => p -> [OptDescr SomePluginFlag]
+genericCmdOpts :: Plugin p => p -> [OptDescr SomePluginFlag]
 genericCmdOpts p = map (fmap lift) (snd (plugCmdOpts p))
  where 
  lift pf = SomePluginFlag p pf
 
--- | Retrieve our own PlugIn's configuration from the global config.
+-- | Retrieve our own Plugin's configuration from the global config.
 --   This involves a dynamic type cast.
-getMyConf :: forall p . PlugIn p => p -> Config -> PlugConf p 
+getMyConf :: forall p . Plugin p => p -> Config -> PlugConf p 
 getMyConf p Config{plugInConfs} = 
   case M.lookup (plugName p) plugInConfs of 
    Nothing -> error$ "getMyConf: expected to find plugin config for "++show p
@@ -702,9 +702,9 @@ getMyConf p Config{plugInConfs} =
                           ++show p++" got back a conf for a different plugin " ++ show p2
        Just pc2 -> pc2
 
--- | Encapsulate the policy for where/how to inject the PlugIn's conf into the global
+-- | Encapsulate the policy for where/how to inject the Plugin's conf into the global
 -- Config.
-setMyConf :: forall p . PlugIn p => p -> PlugConf p -> Config -> Config 
+setMyConf :: forall p . Plugin p => p -> PlugConf p -> Config -> Config 
 setMyConf p new cfg@Config{plugInConfs} = 
   cfg { plugInConfs= (M.insert (plugName p) (SomePluginConf p new) plugInConfs) }
 

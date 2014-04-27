@@ -5,13 +5,13 @@
 -- | Google Fusion Table upload of benchmark data.
 -- 
 --   This module must be used in conjunction with the main "hsbencher" package,
---   e.g. `import HSBencher`.
+--   e.g. "import HSBencher".
 
 module HSBencher.Backend.Fusion
-       ( -- * The plugin, what you probably want from this module.
+       ( -- * The plugin itself, what you probably want 
          defaultFusionPlugin
 
-         -- * The details and configuration options.
+         -- * Details and configuration options.
        , FusionConfig(..), stdRetry, getTableId
        , fusionSchema, resultToTuple
        , uploadBenchResult
@@ -257,7 +257,7 @@ fusionSchema =
 data FusionPlug = FusionPlug
   deriving (Eq,Show,Ord,Read)
 
-instance PlugIn FusionPlug where
+instance Plugin FusionPlug where
   type PlugConf FusionPlug = FusionConfig
   type PlugFlag FusionPlug = FusionCmdLnFlag
 
