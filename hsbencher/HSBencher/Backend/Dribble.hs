@@ -61,7 +61,9 @@ instance Plugin DribblePlugin where
   plugName _ = "dribble"
   -- plugName _ = "DribbleToFile_Backend"  
 
-  plugCmdOpts _ = ("Dribble plugin loaded: (But it has no command line options.)",[])
+  plugCmdOpts _ = ("Dribble plugin loaded.\n"++
+                   "  No additional flags, but uses --name for the base filename.\n"
+                   ,[])
 
   plugUploadRow p cfg row = runReaderT (uploadBenchResult row) cfg
 

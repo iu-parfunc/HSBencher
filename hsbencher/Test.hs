@@ -1,5 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
 
+-- | Unit testing for functions in the HSBencher implementation.
+
+module Main where
+
 import Data.List
 import Data.Maybe
 import HSBencher.Types
