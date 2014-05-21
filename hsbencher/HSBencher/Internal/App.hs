@@ -25,7 +25,7 @@ import Prelude hiding (log)
 import Control.Applicative    
 import Control.Concurrent
 import Control.Monad.Reader
-import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
+import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled),try)
 import Debug.Trace
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
@@ -340,8 +340,12 @@ runOne (iterNum, totalIters) _bldid bldres
       -- Upload results to plugin backends:
       conf2@Config{ plugIns } <- ask 
       forM_ plugIns $ \ (SomePlugin p) -> do 
-        -- TODO/FIXME: catch exceptions:
-        lift $ plugUploadRow p conf2 result'
+
+        --JS: May 21 2014, added try and case on result. 
+        result <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ()) 
+        case result of
+          Left _ -> logT$"plugUploadRow:Failed"
+          Right () -> logT$"plugUploadRow: Successful"
         return ()
 
       return (t1,t2,t3,p1,p2,p3)
@@ -427,6 +431,11 @@ fullUsageInfo =
     (concat (map (uncurry usageInfo) all_cli_options)) ++
     generalUsageStr 
 
+removePlugin p cfg = 
+  cfg { plugIns = filter byNom  (plugIns cfg)}
+  where
+    byNom (SomePlugin p1) =  plugName p1 /= plugName p
+
 -- | An even more flexible version allows the user to install a hook which modifies
 -- the configuration just before bencharking begins.  All trawling of the execution
 -- environment (command line args, environment variables) happens BEFORE the user
@@ -499,8 +508,14 @@ defaultMainModifyConfig modConfig = do
   putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured, now initializing them."
 
   -- TODO/FIXME: CATCH ERRORS... should remove the plugin from the list if it errors on init.
-  conf_final <- foldM (\ cfg (SomePlugin p) -> plugInitialize p cfg)
-                  conf2 allplugs 
+  conf_final <- foldM (\ cfg (SomePlugin p) ->
+                        do result <- try (plugInitialize p cfg) :: IO (Either SomeException Config) 
+                           case result of
+                             Left _ ->
+                               return $ removePlugin p cfg 
+                             Right c -> return c 
+                        ) conf2 allplugs
+
   putStrLn$ hsbencher_tag++" plugin init complete."
 
   -------------------------------------------------------------------
