@@ -82,7 +82,8 @@ type RunFlags     = [String]
 -- | The arguments passed (in a build-method specific way) into the compilation process.
 type CompileFlags = [String]
 
--- | Maps canonical command names, e.g. 'ghc', to absolute system paths.
+-- | Maps canonical command names, e.g. 'ghc', to absolute system paths.  This is a
+--   global configuration mechanism that all BuildMethods have access to.
 type PathRegistry = M.Map String String
 
 -- | A description of a set of files.  The description may take one of multiple
@@ -155,6 +156,7 @@ data BuildMethod =
   , concurrentBuild :: Bool -- ^ More than one build can happen at once.  This
                             -- implies that compile always returns StandAloneBinary.
   , compile :: PathRegistry -> BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
+              -- ^ Identify the benchmark to build by its target FilePath.  Compile it.
   , clean   :: PathRegistry -> BuildID -> FilePath -> BenchM () -- ^ Clean any left-over build results.
   , setThreads :: Maybe (Int -> [ParamSetting])
                   -- ^ Synthesize a list of compile/runtime settings that
@@ -202,7 +204,8 @@ data Config = Config
 
  , gitInfo        :: (String,String,Int) -- ^ Branch, revision hash, depth.
 
- , buildMethods   :: [BuildMethod] -- ^ Starts with cabal/make/ghc, can be extended by user.
+ , buildMethods   :: [BuildMethod] -- ^ Known methods for building benchmark targets.
+                                   -- Starts with cabal/make/ghc, can be extended by user.
    
  -- These are all LINES-streams (implicit newlines).
  , logOut         :: Strm.OutputStream B.ByteString -- ^ Internal use only
@@ -234,12 +237,23 @@ instance Show (Strm.OutputStream a) where
 -- addition of fields to this datatype.  Use `mkBenchmark` followed by customizing
 -- only the fields you need.
 data Benchmark a = Benchmark
- { target  :: FilePath      -- ^ The target file or directory.
+ { target  :: FilePath  -- ^ Where is the benchmark to run?  This must be a single
+                        -- target file or directory.  The convention is that this
+                        -- file or directory, when combined with a BuildMethod,
+                        -- provides a self-contained way to build one benchmark.  The
+                        -- `buildMethods` field of the `Config` had better contain
+                        -- some build method that knows how to handle this file or
+                        -- directory.
  , cmdargs :: [String]      -- ^ Command line argument to feed the benchmark executable.
  , configs :: BenchSpace a  -- ^ The configration space to iterate over.
- , progname :: Maybe String -- ^ Optional name to use INSTEAD of the basename from `target`.
+ , progname :: Maybe String -- ^ Optional name to use to identify this benchmark, INSTEAD of the basename from `target`.
  , benchTimeOut :: Maybe Double -- ^ Specific timeout for this benchmark in seconds.  Overrides global setting.
  } deriving (Eq, Show, Ord, Generic)
+
+-- TODO: We could allow arbitrary shell scripts in lieu of the "target" file:
+-- data BenchTarget
+--   = PathTarget FilePath 
+--   | ShellCmd String -- ^ A shell script to run the benchmark.  
 
 
 -- | Make a Benchmark data structure given the core, required set of fields, and uses

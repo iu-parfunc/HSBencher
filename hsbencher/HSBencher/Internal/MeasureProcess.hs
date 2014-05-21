@@ -172,7 +172,7 @@ jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{jittime=Just d})
 
 -- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
 --   Take a function that puts the result into place (the write half of a lens).
-taggedLineHarvester :: B.ByteString -> (Double -> RunResult -> RunResult) -> LineHarvester
+taggedLineHarvester :: Read a => B.ByteString -> (a -> RunResult -> RunResult) -> LineHarvester
 taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
   let fail = (id, False) in 
   case B.words ln of
