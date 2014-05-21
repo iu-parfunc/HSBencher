@@ -429,8 +429,11 @@ fullUsageInfo :: String
 fullUsageInfo = 
     "\nUSAGE: naked command line arguments are patterns that select the benchmarks to run.\n"++
     (concat (map (uncurry usageInfo) all_cli_options)) ++
-    generalUsageStr 
+    generalUsageStr
 
+    
+-- | Remove a plugin from the configuration based on its plugName
+removePlugin :: Plugin p => p -> Config -> Config 
 removePlugin p cfg = 
   cfg { plugIns = filter byNom  (plugIns cfg)}
   where
