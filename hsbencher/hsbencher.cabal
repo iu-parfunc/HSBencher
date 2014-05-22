@@ -133,6 +133,7 @@ Library
   -- Second, internal modules:
   exposed-modules: 
                    HSBencher.Types
+                   HSBencher.Harvesters
                    HSBencher.Internal.App
                    HSBencher.Internal.Config
                    HSBencher.Internal.Logging
