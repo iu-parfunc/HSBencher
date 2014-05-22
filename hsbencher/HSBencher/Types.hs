@@ -485,9 +485,11 @@ data SomeResult = IntResult Int
                 | DoubleResult Double 
                 | StringResult String
                   -- expand here 
-                deriving (Eq, Show, Read, Ord)
--- Will lead to "IntResult, DoubleResult, and so on annotations on these fields int
--- the fusion table. Find work around. 
+                deriving (Eq, Read, Ord)
+instance Show SomeResult where
+  show (IntResult i) = show i
+  show (DoubleResult d) = show d
+  show (StringResult str) = str 
 
 -- | This contains all the contextual information for a single benchmark run, which
 --   makes up a "row" in a table of benchmark results.
@@ -534,7 +536,7 @@ data BenchmarkResult =
                               -- Time should not be double counted as JIT and exec time; these should be disjoint.
                         
   , _CUSTOM :: [(Tag, SomeResult)]
-               -- A List of custom results.
+               -- A List of custom results
                -- The tag corresponds to column "title"
   }
   deriving (Show,Read,Ord,Eq)
