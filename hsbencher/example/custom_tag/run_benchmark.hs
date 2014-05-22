@@ -32,7 +32,8 @@ all_benchmarks =
 defaultCfgSpc = And []
 
 -- Interface needs some work
-customHarvester = taggedLineHarvester (B.pack "MYTAG") (\d r -> r {custom=[("MYTAG",IntResult d)]})
+customHarvester = taggedLineHarvester (B.pack "MYTAG") (\d r -> r {custom = ("MYTAG",IntResult d) : custom r})
+customHarvester1 = taggedLineHarvester (B.pack "ANOTHERTAG") (\d r -> r {custom= ("ANOTHERTAG",DoubleResult d) : custom r})
 
 -- | Here we have the option of changing the HSBencher config
 myconf :: Config -> Config
@@ -40,7 +41,7 @@ myconf conf =
   conf
    { benchlist = all_benchmarks,
      plugIns = [SomePlugin defaultDribblePlugin],
-     harvesters = customHarvester `mappend` (harvesters conf)
+     harvesters = customHarvester1 `mappend` customHarvester `mappend` (harvesters conf)
    }
 
 
