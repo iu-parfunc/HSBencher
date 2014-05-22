@@ -334,6 +334,11 @@ runOne (iterNum, totalIters) _bldid bldres
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
             , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials
+
+                                -- Should the user specify how the
+                                -- results over many goodruns are reduced ?
+                                -- I think so. 
+            , _CUSTOM        = custom (head goodruns) -- experimenting 
             }
       result' <- liftIO$ augmentResultWithConfig conf result
 

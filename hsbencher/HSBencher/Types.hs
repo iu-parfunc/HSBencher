@@ -48,6 +48,8 @@ module HSBencher.Types
 
          Plugin(..), genericCmdOpts, getMyConf, setMyConf,
 
+         SomeResult(..),
+         
          -- * For convenience -- large records demand pretty-printing
          doc
        )
@@ -413,6 +415,8 @@ data RunResult =
                  , allocRate    :: Maybe Word64 -- ^ Bytes allocated per mutator-second
                  , memFootprint :: Maybe Word64 -- ^ High water mark of allocated memory, in bytes.
                  , jittime      :: Maybe Double -- ^ Time to JIT compile the benchmark, counted separately from realtime.
+                    -- 
+                 , custom       :: [(Tag,SomeResult)]
                  }
   | RunTimeOut
   | ExitError Int -- ^ Contains the returned error code.
@@ -426,7 +430,8 @@ emptyRunResult = RunCompleted { realtime = (-1.0)
                               , productivity = Nothing 
                               , allocRate = Nothing 
                               , memFootprint = Nothing
-                              , jittime = Nothing }
+                              , jittime = Nothing
+                              , custom = []}
 
 -- | A running subprocess.
 data SubProcess =
