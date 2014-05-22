@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
 
+
 -- | All the core types used by the rest of the HSBencher codebase.
 
 module HSBencher.Types
@@ -474,6 +475,14 @@ instance Show LineHarvester where
 ----------------------------------------------------------------------------------------------------
 -- Benchmark Results Upload
 ----------------------------------------------------------------------------------------------------
+type Tag = String
+data SomeResult = IntResult Int
+                | DoubleResult Double 
+                | StringResult String
+                  -- expand here 
+                deriving (Eq, Show, Read, Ord)
+-- Will lead to "IntResult, DoubleResult, and so on annotations on these fields int
+-- the fusion table. Find work around. 
 
 -- | This contains all the contextual information for a single benchmark run, which
 --   makes up a "row" in a table of benchmark results.
@@ -518,6 +527,10 @@ data BenchmarkResult =
   , _ALLJITTIMES   ::  String -- ^ Space separated list of numbers, JIT compile times
                               -- (if applicable), with a 1-1 correspondence to the exec times in ALLTIMES.
                               -- Time should not be double counted as JIT and exec time; these should be disjoint.
+                        
+  , _CUSTOM :: [(Tag, SomeResult)]
+               -- A List of custom results.
+               -- The tag corresponds to column "title"
   }
   deriving (Show,Read,Ord,Eq)
 
@@ -559,6 +572,7 @@ emptyBenchmarkResult = BenchmarkResult
   , _MEDIANTIME_ALLOCRATE    = Nothing
   , _MEDIANTIME_MEMFOOTPRINT = Nothing
   , _ALLJITTIMES = ""
+  , _CUSTOM = [] 
   }
 
 -- | Convert the Haskell representation of a benchmark result into a tuple for upload
@@ -600,7 +614,7 @@ resultToTuple r =
   , ("MEDIANTIME_ALLOCRATE",    fromMaybe "" $ fmap show $ _MEDIANTIME_ALLOCRATE r)
   , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
   , ("ALLJITTIMES", _ALLJITTIMES r)
-  ]
+  ] ++ map (\ (t,s) -> (t, show s)) (_CUSTOM r)
 
 
 --------------------------------------------------------------------------------

@@ -345,7 +345,7 @@ runOne (iterNum, totalIters) _bldid bldres
         result <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ()) 
         case result of
           Left _ -> logT$"plugUploadRow:Failed"
-          Right () -> logT$"plugUploadRow: Successful"
+          Right () -> return ()
         return ()
 
       return (t1,t2,t3,p1,p2,p3)
@@ -511,11 +511,13 @@ defaultMainModifyConfig modConfig = do
   putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured, now initializing them."
 
   -- TODO/FIXME: CATCH ERRORS... should remove the plugin from the list if it errors on init.
+  -- JS attempted fix
   conf_final <- foldM (\ cfg (SomePlugin p) ->
                         do result <- try (plugInitialize p cfg) :: IO (Either SomeException Config) 
                            case result of
                              Left _ ->
-                               return $ removePlugin p cfg 
+                               return $ removePlugin p cfg
+                               -- cannot log here, only "chatter". 
                              Right c -> return c 
                         ) conf2 allplugs
 
