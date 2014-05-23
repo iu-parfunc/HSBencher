@@ -120,6 +120,7 @@ Flag hydra
   description:
       Add support for (and dependency on) the hydra-print library.
   default: False
+  manual: True
 
 Source-repository head
   type:  git
