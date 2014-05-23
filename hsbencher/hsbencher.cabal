@@ -57,8 +57,8 @@ description: Benchmark frameworks are usually very specific to the
   about Make, but it can be taught more.
  .
   The general philosophy is to have benchmarks follow a simple
-  protocol, for example printing out a line "SELFTIMED: 3.3s" if they
-  wish to report their own timing.  The focus is on benchmarks that
+  protocol, for example printing out a line "SELFTIMED: 3.3" if they
+  wish to report their own timing, in seconds.  The focus is on benchmarks that
   run long enough to run in their own process.  This is typical of
   parallelism benchmarks and different than the fine-grained
   benchmarks that are well supported by "Criterion".
