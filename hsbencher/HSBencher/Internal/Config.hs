@@ -33,7 +33,7 @@ import qualified System.IO.Streams.Combinators as Strm
 
 import HSBencher.Types
 import HSBencher.Internal.Utils
-import HSBencher.Internal.Methods
+import HSBencher.Methods.Builtin
 import HSBencher.Internal.MeasureProcess
 
 ----------------------------------------------------------------------------------------------------

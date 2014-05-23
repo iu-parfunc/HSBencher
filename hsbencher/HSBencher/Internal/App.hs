@@ -77,7 +77,7 @@ import HSBencher.Types
 import HSBencher.Internal.Utils
 import HSBencher.Internal.Logging
 import HSBencher.Internal.Config
-import HSBencher.Internal.Methods
+import HSBencher.Methods.Builtin
 import HSBencher.Internal.MeasureProcess 
 import Paths_hsbencher (version) -- Thanks, cabal!
 
