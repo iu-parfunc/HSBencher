@@ -81,7 +81,7 @@ description: Benchmark frameworks are usually very specific to the
    <https://gist.github.com/rrnewton/5667800>
  .
  More examples can be found here:
-   <https://github.com/rrnewton/HSBencher/tree/master/example>
+   <https://github.com/rrnewton/HSBencher/tree/master/hsbencher/example>
  . 
  ChangesLog:
  .
