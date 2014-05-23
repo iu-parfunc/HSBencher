@@ -42,7 +42,7 @@ my_name = "hsbencher"
 
 -- | In seconds.
 defaultTimeout :: Double
-defaultTimeout = 150
+defaultTimeout = 200
 
 -- | Global variable holding the main thread id.
 main_threadid :: IORef ThreadId

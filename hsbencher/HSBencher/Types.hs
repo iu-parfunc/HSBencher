@@ -105,31 +105,6 @@ data FilePredicate =
 -- instance Show FilePredicate where
 --   show (WithExtension s) = "<FilePredicate: *."++s++">"    
 
-
--- | This function gives meaning to the `FilePred` type.
---   It returns a filepath to signal "True" and Nothing otherwise.
-filePredCheck :: FilePredicate -> FilePath -> IO (Maybe FilePath)
-filePredCheck pred path =
-  let filename = takeFileName path in 
-  case pred of
-    AnyFile           -> return (Just path)
-    IsExactly str     -> return$ if str == filename
-                                 then Just path else Nothing
-    WithExtension ext -> return$ if takeExtension filename == ext
-                                 then Just path else Nothing
-    PredOr p1 p2 -> do
-      x <- filePredCheck p1 path
-      case x of
-        Just _  -> return x
-        Nothing -> filePredCheck p2 path
-    InDirectoryWithExactlyOne p2 -> do
-      ls  <- getDirectoryContents (takeDirectory path)
-      ls' <- fmap catMaybes $
-             mapM (filePredCheck p2) ls
-      case ls' of
-        [x] -> return (Just$ takeDirectory path </> x)
-        _   -> return Nothing
-
 -- instance Show FilePredicate where
 --   show (WithExtension s) = "<FilePredicate: *."++s++">"  
 
@@ -140,10 +115,6 @@ data BuildResult =
     -- ^ In this case the build return what you need to do the benchmark run, but the
     -- directory contents cannot be touched until after than run is finished.
 
-instance Show BuildResult where
-  show (StandAloneBinary p) = "StandAloneBinary "++p
---  show (RunInPlace fn)      = "RunInPlace "++show (fn [] [])
-  show (RunInPlace fn)      = "RunInPlace <fn>"
 
 -- | A completely encapsulated method of building benchmarks.  Cabal and Makefiles
 -- are two examples of this.  The user may extend it with their own methods.
@@ -163,8 +134,6 @@ data BuildMethod =
                   -- will control the number of threads.
   }
 
-instance Show BuildMethod where
-  show BuildMethod{methodName, canBuild} = "<buildMethod "++methodName++" "++show canBuild ++">"
 
 ----------------------------------------------------------------------------------------------------
 -- HSBench Configuration
@@ -224,10 +193,6 @@ data Config = Config
  }
  deriving Show
 
-
-instance Show (Strm.OutputStream a) where
-  show _ = "<OutputStream>"
-
 ----------------------------------------------------------------------------------------------------
 -- Configuration Spaces
 ----------------------------------------------------------------------------------------------------
@@ -256,13 +221,6 @@ data Benchmark a = Benchmark
 --   | ShellCmd String -- ^ A shell script to run the benchmark.  
 
 
--- | Make a Benchmark data structure given the core, required set of fields, and uses
--- defaults to fill in the rest.  Takes target, cmdargs, configs.
-mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a 
-mkBenchmark  target  cmdargs configs = 
-  Benchmark {target, cmdargs, configs, progname=Nothing, benchTimeOut=Nothing }
-
-
 -- | A datatype for describing (generating) benchmark configuration spaces.
 --   This is accomplished by nested conjunctions and disjunctions.
 --   For example, varying threads from 1-32 would be a 32-way Or.  Combining that
@@ -283,92 +241,11 @@ data DefaultParamMeaning
   | NoMeaning
  deriving (Show,Eq,Ord,Read, Generic)
 
--- | Exhaustively compute all configurations described by a benchmark configuration space.
-enumerateBenchSpace :: BenchSpace a -> [ [(a,ParamSetting)] ] 
-enumerateBenchSpace bs =
-  case bs of
-    Set m p -> [ [(m,p)] ]
-    Or ls -> concatMap enumerateBenchSpace ls
-    And ls -> loop ls
-  where
-    loop [] = [ [] ]  -- And [] => one config
-    loop [lst] = enumerateBenchSpace lst
-    loop (hd:tl) =
-      let confs = enumerateBenchSpace hd in
-      [ c++r | c <- confs
-             , r <- loop tl ]
-
--- | Is it a setting that affects compile time?
-isCompileTime :: ParamSetting -> Bool
-isCompileTime CompileParam{} = True
-isCompileTime CmdPath     {} = True
-isCompileTime RuntimeParam{} = False
-isCompileTime RuntimeEnv  {} = False
-
--- | Extract the parameters that affect the compile-time arguments.
-toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
-toCompileFlags [] = []
-toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl
-toCompileFlags (_ : tl)                   =      toCompileFlags tl
-
--- | Extract the parameters that affect the runtime arguments.
-toRunFlags :: [(a,ParamSetting)] -> RunFlags
-toRunFlags [] = []
-toRunFlags ((_,RuntimeParam s1) : tl) = (s1) : toRunFlags tl
-toRunFlags (_ : tl)                  =            toRunFlags tl
-
-toCmdPaths :: [(a,ParamSetting)] -> [(String,String)]
-toCmdPaths = catMaybes . map fn
- where
-   fn (_,CmdPath c p) = Just (c,p)
-   fn _               = Nothing
-
-toEnvVars :: [(a,ParamSetting)] -> [(String,String)]
-toEnvVars [] = []
-toEnvVars ((_,RuntimeEnv s1 s2)
-           : tl) = (s1,s2) : toEnvVars tl
-toEnvVars (_ : tl)                =           toEnvVars tl
-
-
 -- | A BuildID should uniquely identify a particular (compile-time) configuration,
 -- but consist only of characters that would be reasonable to put in a filename.
 -- This is used to keep build results from colliding.
 type BuildID = String
 
--- | Performs a simple reformatting (stripping disallowed characters) to create a
--- build ID corresponding to a set of compile flags.  To make it unique we also
--- append the target path.
-makeBuildID :: FilePath -> CompileFlags -> BuildID
-makeBuildID target strs =
-  encodedTarget ++ 
-  (intercalate "_" $
-   map (filter charAllowed) strs)
- where
-  charAllowed = isAlphaNum
-  encodedTarget = map (\ c -> if charAllowed c then c else '_') target
-
--- | Strip all runtime options, leaving only compile-time options.  This is useful
---   for figuring out how many separate compiles need to happen.
-compileOptsOnly :: BenchSpace a -> BenchSpace a 
-compileOptsOnly x =
-  case loop x of
-    Nothing -> And []
-    Just b  -> b
- where
-   loop bs = 
-     case bs of
-       And ls -> mayb$ And$ catMaybes$ map loop ls
-       Or  ls -> mayb$ Or $ catMaybes$ map loop ls
-       Set m (CompileParam {}) -> Just bs
-       Set m (CmdPath      {}) -> Just bs -- These affect compilation also...
-       Set _ _                 -> Nothing
-   mayb (And []) = Nothing
-   mayb (Or  []) = Nothing
-   mayb x        = Just x
-
-test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32])
-test2 = Or$ map (Set () . RuntimeParam . ("-A"++)) ["1M", "2M"]
-test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
 data ParamSetting 
@@ -399,12 +276,6 @@ data CommandDescr =
   }
  deriving (Show,Eq,Ord,Read,Generic)
 
--- Umm... these should be defined in base:
-deriving instance Eq   CmdSpec   
-deriving instance Show CmdSpec
-deriving instance Ord  CmdSpec
-deriving instance Read CmdSpec   
-
 -- | Measured results from running a subprocess (benchmark).
 data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
@@ -417,16 +288,6 @@ data RunResult =
   | ExitError Int -- ^ Contains the returned error code.
  deriving (Eq,Show)
 
--- | A default `RunResult` that is a good starting point for filling in desired
--- fields.  (This way, one remains robust to additional fields that are added in the
--- future.)
-emptyRunResult :: RunResult
-emptyRunResult = RunCompleted { realtime = (-1.0)
-                              , productivity = Nothing 
-                              , allocRate = Nothing 
-                              , memFootprint = Nothing
-                              , jittime = Nothing }
-
 -- | A running subprocess.
 data SubProcess =
   SubProcess
@@ -435,16 +296,6 @@ data SubProcess =
   , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
   }
 
-instance Out ParamSetting
-instance Out FilePredicate
-instance Out DefaultParamMeaning
-instance Out a => Out (BenchSpace a)
-instance Out a => Out (Benchmark a)
-
-instance (Out k, Out v) => Out (M.Map k v) where
-  docPrec n m = docPrec n $ M.toList m
-  doc         = docPrec 0 
-
 
 -- | A line harvester takes a single line of input and possible extracts data from it
 -- which it can then add to a RunResult.
@@ -452,24 +303,6 @@ instance (Out k, Out v) => Out (M.Map k v) where
 -- The boolean result indicates whether the line was used or not.
 newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, Bool))
 -- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe (RunResult -> RunResult))
-
--- | We can stack up line harvesters.  ALL of them get to run on each line.
-instance Monoid LineHarvester where
-  mempty = LineHarvester (\ _ -> (id,False))
-  mappend (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
-    let (f,b1) = lh1 ln 
-        (g,b2) = lh2 ln in
-    (f . g, b1 || b2)
-
--- | Run the second harvester only if the first fails.
-orHarvest :: LineHarvester -> LineHarvester -> LineHarvester
-orHarvest (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
-  case lh1 ln of
-    x@(_,True) -> x
-    (_,False) -> lh2 ln 
-
-instance Show LineHarvester where
-  show _ = "<LineHarvester>"
 
 ----------------------------------------------------------------------------------------------------
 -- Benchmark Results Upload
@@ -520,6 +353,286 @@ data BenchmarkResult =
                               -- Time should not be double counted as JIT and exec time; these should be disjoint.
   }
   deriving (Show,Read,Ord,Eq)
+
+
+--------------------------------------------------------------------------------
+-- Generic uploader interface
+--------------------------------------------------------------------------------
+
+#if !MIN_VERSION_base(4,7,0)
+instance Functor OptDescr where
+  fmap fn (Option shrt long args str) = 
+    Option shrt long (fmap fn args) str
+
+instance Functor ArgDescr where
+  fmap fn x = 
+    case x of 
+      NoArg x ->  NoArg (fn x)
+      ReqArg fn2 str -> ReqArg (fn . fn2) str
+      OptArg fn2 str -> OptArg (fn . fn2) str
+#endif
+
+--------------------------------------------------------------------------------
+
+-- | An interface for plugins provided in separate packages.  These plugins provide
+-- new backends for uploading benchmark data.
+class (Show p, Eq p, Ord p,
+       Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p), 
+       Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p)) => 
+      Plugin p where
+  -- | A configuration flag for the plugin (parsed from the command line)
+  type PlugFlag p 
+  -- | The full configuration record for the plugin.
+  type PlugConf p 
+
+  -- | Each plugin must have a unique name.
+  plugName  :: p -> String
+
+  -- | Options for command line parsing.  These should probably be disjoint from the
+  --   options used by other plugins; so use very specific names.
+  -- 
+  --   Finally, note that the String returned here is a header line that is printed
+  --   before the usage documentation when the benchmark executable is invoked with `-h`.
+  plugCmdOpts :: p -> (String, [OptDescr (PlugFlag p)])
+
+  -- | Process flags and update a configuration accordingly.
+  foldFlags :: p -> [PlugFlag p] -> PlugConf p -> PlugConf p
+
+  -- | The default configuration for this plugin.
+  defaultPlugConf :: p -> PlugConf p
+
+  -- | Take any initialization actions, which may include reading or writing files
+  -- and connecting to network services, as the main purpose of plugin is to provide
+  -- backends for data upload.
+  --
+  -- Note that the initialization process can CHANGE the Config (it returns a new one).
+  plugInitialize :: p -> Config -> IO Config
+
+  -- | This is the raison d'etre for the class.  Upload a single row of benchmark data.
+  plugUploadRow  :: p -> Config -> BenchmarkResult -> IO () 
+
+
+data SomePlugin  = forall p . Plugin p => SomePlugin p 
+
+-- | Keep a single flag together with the plugin it goes with.
+data SomePluginFlag = 
+--  forall p . (Plugin p, Typeable (PlugFlag p), Show (PlugFlag p)) => 
+  forall p . (Plugin p) =>
+  SomePluginFlag p (PlugFlag p)
+
+-- | Keep a full plugin configuration together with the plugin it goes with.
+data SomePluginConf = 
+--  forall p . (Plugin p, Typeable (PlugConf p), Show (PlugConf p)) => 
+  forall p . (Plugin p) =>
+  SomePluginConf p (PlugConf p)
+
+
+----------------------------------------------------------------------------------------------------
+-- Instances
+----------------------------------------------------------------------------------------------------
+
+instance Show BuildResult where
+  show (StandAloneBinary p) = "StandAloneBinary "++p
+--  show (RunInPlace fn)      = "RunInPlace "++show (fn [] [])
+  show (RunInPlace fn)      = "RunInPlace <fn>"
+
+instance Show BuildMethod where
+  show BuildMethod{methodName, canBuild} = "<buildMethod "++methodName++" "++show canBuild ++">"
+
+instance Show (Strm.OutputStream a) where
+  show _ = "<OutputStream>"
+
+-- Umm... these should be defined in base:
+deriving instance Eq   CmdSpec   
+deriving instance Show CmdSpec
+deriving instance Ord  CmdSpec
+deriving instance Read CmdSpec   
+
+instance Out ParamSetting
+instance Out FilePredicate
+instance Out DefaultParamMeaning
+instance Out a => Out (BenchSpace a)
+instance Out a => Out (Benchmark a)
+
+instance (Out k, Out v) => Out (M.Map k v) where
+  docPrec n m = docPrec n $ M.toList m
+  doc         = docPrec 0 
+
+instance Show LineHarvester where
+  show _ = "<LineHarvester>"
+
+-- | We can stack up line harvesters.  ALL of them get to run on each line.
+instance Monoid LineHarvester where
+  mempty = LineHarvester (\ _ -> (id,False))
+  mappend (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
+    let (f,b1) = lh1 ln 
+        (g,b2) = lh2 ln in
+    (f . g, b1 || b2)
+
+
+-- Instances that are very boring:
+
+instance Show SomePlugin where
+  show (SomePlugin p) = show p
+
+instance Eq SomePlugin where 
+  (SomePlugin p1) == (SomePlugin p2) = 
+--    show p1 == show p2
+    plugName p1 == plugName p2
+
+instance Ord SomePlugin where 
+  compare (SomePlugin p1) (SomePlugin p2) = 
+    compare (plugName p1) (plugName p2)
+
+instance Show SomePluginConf where
+  show (SomePluginConf p pc) = show pc
+
+instance Show SomePluginFlag where
+  show (SomePluginFlag p f) = show f
+
+
+
+
+----------------------------------------------------------------------------------------------------
+-- Utility functions -- these aren't "Types" at all!
+----------------------------------------------------------------------------------------------------
+
+-- | This function gives meaning to the `FilePred` type.
+--   It returns a filepath to signal "True" and Nothing otherwise.
+filePredCheck :: FilePredicate -> FilePath -> IO (Maybe FilePath)
+filePredCheck pred path =
+  let filename = takeFileName path in 
+  case pred of
+    AnyFile           -> return (Just path)
+    IsExactly str     -> return$ if str == filename
+                                 then Just path else Nothing
+    WithExtension ext -> return$ if takeExtension filename == ext
+                                 then Just path else Nothing
+    PredOr p1 p2 -> do
+      x <- filePredCheck p1 path
+      case x of
+        Just _  -> return x
+        Nothing -> filePredCheck p2 path
+    InDirectoryWithExactlyOne p2 -> do
+      ls  <- getDirectoryContents (takeDirectory path)
+      ls' <- fmap catMaybes $
+             mapM (filePredCheck p2) ls
+      case ls' of
+        [x] -> return (Just$ takeDirectory path </> x)
+        _   -> return Nothing
+
+
+-- | Make a Benchmark data structure given the core, required set of fields, and uses
+-- defaults to fill in the rest.  Takes target, cmdargs, configs.
+mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a 
+mkBenchmark  target  cmdargs configs = 
+  Benchmark {target, cmdargs, configs, progname=Nothing, benchTimeOut=Nothing }
+
+
+
+-- | Exhaustively compute all configurations described by a benchmark configuration space.
+enumerateBenchSpace :: BenchSpace a -> [ [(a,ParamSetting)] ] 
+enumerateBenchSpace bs =
+  case bs of
+    Set m p -> [ [(m,p)] ]
+    Or ls -> concatMap enumerateBenchSpace ls
+    And ls -> loop ls
+  where
+    loop [] = [ [] ]  -- And [] => one config
+    loop [lst] = enumerateBenchSpace lst
+    loop (hd:tl) =
+      let confs = enumerateBenchSpace hd in
+      [ c++r | c <- confs
+             , r <- loop tl ]
+
+-- | Is it a setting that affects compile time?
+isCompileTime :: ParamSetting -> Bool
+isCompileTime CompileParam{} = True
+isCompileTime CmdPath     {} = True
+isCompileTime RuntimeParam{} = False
+isCompileTime RuntimeEnv  {} = False
+
+-- | Extract the parameters that affect the compile-time arguments.
+toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
+toCompileFlags [] = []
+toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl
+toCompileFlags (_ : tl)                   =      toCompileFlags tl
+
+-- | Extract the parameters that affect the runtime arguments.
+toRunFlags :: [(a,ParamSetting)] -> RunFlags
+toRunFlags [] = []
+toRunFlags ((_,RuntimeParam s1) : tl) = (s1) : toRunFlags tl
+toRunFlags (_ : tl)                  =            toRunFlags tl
+
+toCmdPaths :: [(a,ParamSetting)] -> [(String,String)]
+toCmdPaths = catMaybes . map fn
+ where
+   fn (_,CmdPath c p) = Just (c,p)
+   fn _               = Nothing
+
+toEnvVars :: [(a,ParamSetting)] -> [(String,String)]
+toEnvVars [] = []
+toEnvVars ((_,RuntimeEnv s1 s2)
+           : tl) = (s1,s2) : toEnvVars tl
+toEnvVars (_ : tl)                =           toEnvVars tl
+
+
+
+-- | Performs a simple reformatting (stripping disallowed characters) to create a
+-- build ID corresponding to a set of compile flags.  To make it unique we also
+-- append the target path.
+makeBuildID :: FilePath -> CompileFlags -> BuildID
+makeBuildID target strs =
+  encodedTarget ++ 
+  (intercalate "_" $
+   map (filter charAllowed) strs)
+ where
+  charAllowed = isAlphaNum
+  encodedTarget = map (\ c -> if charAllowed c then c else '_') target
+
+-- | Strip all runtime options, leaving only compile-time options.  This is useful
+--   for figuring out how many separate compiles need to happen.
+compileOptsOnly :: BenchSpace a -> BenchSpace a 
+compileOptsOnly x =
+  case loop x of
+    Nothing -> And []
+    Just b  -> b
+ where
+   loop bs = 
+     case bs of
+       And ls -> mayb$ And$ catMaybes$ map loop ls
+       Or  ls -> mayb$ Or $ catMaybes$ map loop ls
+       Set m (CompileParam {}) -> Just bs
+       Set m (CmdPath      {}) -> Just bs -- These affect compilation also...
+       Set _ _                 -> Nothing
+   mayb (And []) = Nothing
+   mayb (Or  []) = Nothing
+   mayb x        = Just x
+
+test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32])
+test2 = Or$ map (Set () . RuntimeParam . ("-A"++)) ["1M", "2M"]
+test3 = And [test1, test2]
+
+
+-- | A default `RunResult` that is a good starting point for filling in desired
+-- fields.  (This way, one remains robust to additional fields that are added in the
+-- future.)
+emptyRunResult :: RunResult
+emptyRunResult = RunCompleted { realtime = (-1.0)
+                              , productivity = Nothing 
+                              , allocRate = Nothing 
+                              , memFootprint = Nothing
+                              , jittime = Nothing }
+
+
+-- | Run the second harvester only if the first fails.
+orHarvest :: LineHarvester -> LineHarvester -> LineHarvester
+orHarvest (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
+  case lh1 ln of
+    x@(_,True) -> x
+    (_,False) -> lh2 ln 
+
+
 
 -- | A default value, useful for filling in only the fields that are relevant to a particular benchmark.
 emptyBenchmarkResult :: BenchmarkResult
@@ -603,97 +716,6 @@ resultToTuple r =
   ]
 
 
---------------------------------------------------------------------------------
--- Generic uploader interface
---------------------------------------------------------------------------------
-
-#if !MIN_VERSION_base(4,7,0)
-instance Functor OptDescr where
-  fmap fn (Option shrt long args str) = 
-    Option shrt long (fmap fn args) str
-
-instance Functor ArgDescr where
-  fmap fn x = 
-    case x of 
-      NoArg x ->  NoArg (fn x)
-      ReqArg fn2 str -> ReqArg (fn . fn2) str
-      OptArg fn2 str -> OptArg (fn . fn2) str
-#endif
-
---------------------------------------------------------------------------------
-
--- | An interface for plugins provided in separate packages.  These plugins provide
--- new backends for uploading benchmark data.
-class (Show p, Eq p, Ord p,
-       Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p), 
-       Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p)) => 
-      Plugin p where
-  -- | A configuration flag for the plugin (parsed from the command line)
-  type PlugFlag p 
-  -- | The full configuration record for the plugin.
-  type PlugConf p 
-
-  -- | Each plugin must have a unique name.
-  plugName  :: p -> String
-
-  -- | Options for command line parsing.  These should probably be disjoint from the
-  --   options used by other plugins; so use very specific names.
-  -- 
-  --   Finally, note that the String returned here is a header line that is printed
-  --   before the usage documentation when the benchmark executable is invoked with `-h`.
-  plugCmdOpts :: p -> (String, [OptDescr (PlugFlag p)])
-
-  -- | Process flags and update a configuration accordingly.
-  foldFlags :: p -> [PlugFlag p] -> PlugConf p -> PlugConf p
-
-  -- | The default configuration for this plugin.
-  defaultPlugConf :: p -> PlugConf p
-
-  -- | Take any initialization actions, which may include reading or writing files
-  -- and connecting to network services, as the main purpose of plugin is to provide
-  -- backends for data upload.
-  --
-  -- Note that the initialization process can CHANGE the Config (it returns a new one).
-  plugInitialize :: p -> Config -> IO Config
-
-  -- | This is the raison d'etre for the class.  Upload a single row of benchmark data.
-  plugUploadRow  :: p -> Config -> BenchmarkResult -> IO () 
-
-
-data SomePlugin  = forall p . Plugin p => SomePlugin p 
-
--- | Keep a single flag together with the plugin it goes with.
-data SomePluginFlag = 
---  forall p . (Plugin p, Typeable (PlugFlag p), Show (PlugFlag p)) => 
-  forall p . (Plugin p) =>
-  SomePluginFlag p (PlugFlag p)
-
--- | Keep a full plugin configuration together with the plugin it goes with.
-data SomePluginConf = 
---  forall p . (Plugin p, Typeable (PlugConf p), Show (PlugConf p)) => 
-  forall p . (Plugin p) =>
-  SomePluginConf p (PlugConf p)
-
-------------------------------------------------------------
--- Instances, very boring.
-
-instance Show SomePlugin where
-  show (SomePlugin p) = show p
-
-instance Eq SomePlugin where 
-  (SomePlugin p1) == (SomePlugin p2) = 
---    show p1 == show p2
-    plugName p1 == plugName p2
-
-instance Ord SomePlugin where 
-  compare (SomePlugin p1) (SomePlugin p2) = 
-    compare (plugName p1) (plugName p2)
-
-instance Show SomePluginConf where
-  show (SomePluginConf p pc) = show pc
-
-instance Show SomePluginFlag where
-  show (SomePluginFlag p f) = show f
 
 ------------------------------------------------------------
 
@@ -723,5 +745,3 @@ setMyConf p new cfg@Config{plugInConfs} =
   cfg { plugInConfs= (M.insert (plugName p) (SomePluginConf p new) plugInConfs) }
 
 ----------------------------------------
--- Small convenience functions
-
