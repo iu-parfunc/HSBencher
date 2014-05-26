@@ -77,7 +77,7 @@ import HSBencher.Types
 import HSBencher.Internal.Utils
 import HSBencher.Internal.Logging
 import HSBencher.Internal.Config
-import HSBencher.Internal.Methods
+import HSBencher.Methods.Builtin
 import HSBencher.Internal.MeasureProcess 
 import Paths_hsbencher (version) -- Thanks, cabal!
 
@@ -439,6 +439,11 @@ fullUsageInfo =
     
 -- | Remove a plugin from the configuration based on its plugName
 removePlugin :: Plugin p => p -> Config -> Config 
+removePlugin p cfg = 
+  cfg { plugIns = filter byNom  (plugIns cfg)}
+  where
+    byNom (SomePlugin p1) =  plugName p1 /= plugName p
+
 removePlugin p cfg = 
   cfg { plugIns = filter byNom  (plugIns cfg)}
   where

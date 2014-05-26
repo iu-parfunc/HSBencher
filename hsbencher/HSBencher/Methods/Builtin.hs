@@ -1,8 +1,9 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
--- | These are the built-in build methods for HSBencher.
+-- | These are the built-in build methods for HSBencher that come with the main
+-- package.  They are relatively unsophisticated.
 
-module HSBencher.Internal.Methods
+module HSBencher.Methods.Builtin
        (makeMethod, ghcMethod, cabalMethod,        
         )
        where

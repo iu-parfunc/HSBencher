@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.8.0.2
+version:             1.8.0.4
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -31,7 +31,8 @@ version:             1.8.0.2
 -- 1.6.2   : Temp: hack to write to a csv file on disk as well.
 -- 1.6.3   : Change policy such that fusion table upload failure doesn't halt benchmarks.
 -- 1.6.3.1 : BenchmarkResult show instance
--- 1.8 : plugins
+-- 1.8     : Introduce backend plugins
+-- 1.8.0.3 : Most modules in .Internal, but Methods reexposed and moved.
 
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
@@ -57,8 +58,8 @@ description: Benchmark frameworks are usually very specific to the
   about Make, but it can be taught more.
  .
   The general philosophy is to have benchmarks follow a simple
-  protocol, for example printing out a line "SELFTIMED: 3.3s" if they
-  wish to report their own timing.  The focus is on benchmarks that
+  protocol, for example printing out a line "SELFTIMED: 3.3" if they
+  wish to report their own timing, in seconds.  The focus is on benchmarks that
   run long enough to run in their own process.  This is typical of
   parallelism benchmarks and different than the fine-grained
   benchmarks that are well supported by "Criterion".
@@ -81,9 +82,9 @@ description: Benchmark frameworks are usually very specific to the
    <https://gist.github.com/rrnewton/5667800>
  .
  More examples can be found here:
-   <https://github.com/rrnewton/HSBencher/tree/master/example>
+   <https://github.com/rrnewton/HSBencher/tree/master/hsbencher/example>
  . 
- ChangesLog:
+ ChangeLog:
  .
  * (1.3.8) Added @--skipto@ and @--runid@ arguments
  .
@@ -93,7 +94,7 @@ description: Benchmark frameworks are usually very specific to the
  .
  * (1.5) New columns in schema.
  .
- * (1.8) Backend plugins.
+ * (1.8) Backend plugins, hsbencher-fusion package factored out.
 
 
 license:             BSD3
@@ -105,8 +106,7 @@ category:            Development
 build-type:          Simple
 cabal-version:       >=1.10
 
-extra-source-files:  README.md
-                     example/make_and_ghc/runit.sh
+extra-source-files:  example/make_and_ghc/runit.sh
                      example/make_and_ghc/benchmark.hs
                      example/make_and_ghc/bench1/Makefile
                      example/make_and_ghc/bench1/hello.c
@@ -120,6 +120,7 @@ Flag hydra
   description:
       Add support for (and dependency on) the hydra-print library.
   default: False
+  manual: True
 
 Source-repository head
   type:  git
@@ -134,10 +135,10 @@ Library
   exposed-modules: 
                    HSBencher.Types
                    HSBencher.Harvesters
+                   HSBencher.Methods.Builtin
                    HSBencher.Internal.App
                    HSBencher.Internal.Config
                    HSBencher.Internal.Logging
-                   HSBencher.Internal.Methods
                    HSBencher.Internal.Utils
                    HSBencher.Internal.MeasureProcess
   other-modules: Paths_hsbencher
@@ -175,16 +176,15 @@ Library
 Test-suite hsbencher-unit-tests
   main-is: Test.hs
   type: exitcode-stdio-1.0
-  build-depends:
-    -- <DUPLICATED from above>
-    base >= 4.5 && <= 4.8, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
-    io-streams >= 1.0,
-    GenericPretty >= 1.2, hsbencher
-    -- </DUPLICATED>
+  hs-source-dirs: tests/
+  -- Self dependency:
+  build-depends: hsbencher
+  -- Standard stuff:
+  build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10
   -- Additional deps for testing:
-  build-depends: test-framework, test-framework-hunit, test-framework-th, 
+  build-depends: test-framework >= 0.8, 
+                 test-framework-hunit >= 0.3,
                  HUnit, time, text
-
   ghc-options: -threaded 
   default-language:  Haskell2010
   if flag(hydra) {
