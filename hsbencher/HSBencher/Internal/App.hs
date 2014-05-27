@@ -525,7 +525,8 @@ defaultMainModifyConfig modConfig = do
   conf_final <- foldM (\ cfg (SomePlugin p) ->
                         do result <- try (plugInitialize p cfg) :: IO (Either SomeException Config) 
                            case result of
-                             Left _ ->
+                             Left _ -> do
+                               putStrLn (hsbencher_tag++"Plugin Init FAILED!")
                                return $ removePlugin p cfg
                                -- cannot log here, only "chatter". 
                              Right c -> return c 
