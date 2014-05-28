@@ -39,6 +39,7 @@ import Network.Google.FusionTables (createTable, createColumn, listTables, listC
 import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
 import HSBencher.Internal.Logging (log)
+import HSBencher.Internal.Fusion
 import Prelude hiding (log)
 import System.IO (hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -341,15 +342,6 @@ data FusionCmdLnFlag =
  | FusionTest
  deriving (Show,Read,Ord,Eq, Typeable)
 
--- | Configuration options for Google Fusion Table uploading.
-data FusionConfig = 
-  FusionConfig
-  { fusionTableID  :: Maybe TableId -- ^ This must be Just whenever doFusionUpload is true.
-  , fusionClientID :: Maybe String
-  , fusionClientSecret :: Maybe String
-  , serverColumns  :: [String] -- ^ Record the ordering of columns server side.
-  }
-  deriving (Show,Read,Ord,Eq, Typeable)
 
 
 

@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hsbencher-fusion
-version:             0.1.0.0
+version:             0.1.0.1
 synopsis:            Backend for uploading benchmark data to Google Fusion Tables.
 -- description:         
 license:             MIT
@@ -16,7 +16,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     HSBencher.Backend.Fusion
+  exposed-modules:     HSBencher.Backend.Fusion, 
+                       HSBencher.Internal.Fusion
   -- other-modules:       
   other-extensions:    NamedFieldPuns, RecordWildCards, ScopedTypeVariables, CPP, BangPatterns, TupleSections, DeriveDataTypeable, TypeFamilies
   build-depends:  base >=4.5 && < 4.8, 
