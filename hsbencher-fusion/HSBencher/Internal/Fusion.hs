@@ -15,8 +15,6 @@ module HSBencher.Internal.Fusion
 
 -- HSBencher 
 import HSBencher.Types
-import HSBencher.Internal.Logging (log)
-
 
 -- Google API
 import Network.Google.OAuth2 
@@ -44,14 +42,17 @@ import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import Data.Dynamic 
 
 -- Prelude
-import Prelude hiding (log)
+import Prelude hiding
 
 ---------------------------------------------------------------------------
 -- Exception 
-data FusionException = FusionException String  -- come up with specifics
+data FusionException = FusionException String 
+                     | TableNotFoundException
                      deriving (Show, Typeable)
 
 instance E.Exception FusionException 
+ 
+
 
 ---------------------------------------------------------------------------
 --
@@ -84,7 +85,7 @@ getTableId auth table_name = do
   putStrLn $ fusionTag $ "Found " ++ show (length allTables) ++ " tables."
 
   case filter (\t -> tab_name t == table_name) allTables of
-    [] -> error $ fusionTag "Table not found."
+    [] -> E.throwIO TableNotFoundException
           -- Replace with an exception and let user of this library handle that
     [t] -> do
       let table_id = tab_tableId t
@@ -124,8 +125,12 @@ retryIORequest req retryHook times = loop 0 times
 -- Upload
 
 
+
 ---------------------------------------------------------------------------
 -- Download 
+
+
+
 
 
 ---------------------------------------------------------------------------
