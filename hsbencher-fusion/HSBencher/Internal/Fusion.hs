@@ -38,15 +38,15 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.ByteString.Char8 as B
-import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe) 
+import Data.Maybe  (isJust, fromJust, catMaybes, fromMaybe) 
 import Data.Dynamic 
 
 -- Prelude
-import Prelude hiding
+import Prelude 
 
 ---------------------------------------------------------------------------
--- Exception 
-data FusionException = FusionException String 
+-- Exception
+data FusionException = FusionException String
                      | TableNotFoundException
                      deriving (Show, Typeable)
 
