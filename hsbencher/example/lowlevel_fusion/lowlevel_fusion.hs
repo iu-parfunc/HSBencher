@@ -7,8 +7,8 @@ import System.Environment (getArgs)
 import HSBencher.Internal.Fusion 
 
 
-import Prelude hiding (log)
-import Data.List as L 
+import Prelude hiding (log,init )
+import Data.List as L hiding (init) 
 --------------------------------------------------------------------------------
 -- recognizes these commandline args
 -- --clientid=x
@@ -30,8 +30,18 @@ main = do
   putStrLn id
   putStrLn sec
 
-  (_,columns) <- initialize id sec "newtable" 
+  -- (_,columns) <- initialize id sec "newtable" 
 
-  putStrLn $ unwords columns
-             
+  (tid,auth) <- init id sec "newtable" 
+
+  putStrLn "Trying to get something out of a table \n \n" 
+
+  str <- getSomething auth tid "MINTIME" :: IO String
+
+  putStrLn str
+  
+  -- putStrLn $ unwords columns
+
+
+  -- putStrLn $ show r 
 --   putStrLn (head raw_args)

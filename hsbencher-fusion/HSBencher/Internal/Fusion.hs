@@ -8,9 +8,13 @@
 
 
 module HSBencher.Internal.Fusion
-       ( initialize
-       , FusionConfig(..)
-       ) where
+      ( initialize
+      , FusionConfig(..)
+        -- Experiments
+      , getSomething
+      , init 
+      )
+       where
 
 
 -- HSBencher 
@@ -42,7 +46,10 @@ import Data.Maybe  (isJust, fromJust, catMaybes, fromMaybe)
 import Data.Dynamic 
 
 -- Prelude
-import Prelude 
+import Prelude hiding (init) 
+
+-- TEMPORARY
+import Network.HTTP.Conduit (Request(..), RequestBody(..),parseUrl)
 
 ---------------------------------------------------------------------------
 -- Exception
@@ -68,7 +75,24 @@ initialize cid sec table_name = do
   (table_id,cols) <- getTableId auth table_name
   putStrLn $ fusionTag (table_id ++ " " ++ show cols)
   return (table_id,cols)
+
+-- ////  experimenting 
  
+init cid sec table_name = do
+  putStrLn $ fusionTag "Initializing"
+  let auth = OAuth2Client { clientId=cid, clientSecret=sec }
+  (table_id,cols) <- getTableId auth table_name
+  putStrLn $ fusionTag (table_id ++ " " ++ show cols)
+  return (table_id, auth)
+
+
+--getSomething :: OAuth2Client -> TableId -> String -> Request m
+getSomething auth table_id col_name = do
+  tokens <- getCachedTokens auth
+  let atok = B.pack $ accessToken tokens
+  getData atok table_id col_name 
+
+-- \\\\
 
 getTableId :: OAuth2Client -> String -> IO (TableId, [String])
 getTableId auth table_name = do
