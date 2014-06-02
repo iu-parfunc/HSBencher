@@ -136,6 +136,7 @@ getTableId auth tablename = do
   Just allTables <- stdRetry "listTables" auth toks $ listTables atok
   log$ " [fusiontable] Retrieved metadata on "++show (length allTables)++" tables"
 
+
   let ourSchema = map fst fusionSchema
       ourSet    = S.fromList ourSchema
   case filter (\ t -> tab_name t == tablename) allTables of
@@ -210,6 +211,7 @@ uploadBenchResult  br@BenchmarkResult{..} = do
 -- 
 -- Note, order is important here, because this is the preferred order we'd like to
 -- have it in the Fusion table.
+ 
 fusionSchema :: [(String, CellType)]
 fusionSchema =
   [ ("PROGNAME",STRING)
@@ -252,6 +254,56 @@ fusionSchema =
   -- New field: [2014.02.19]
   , ("ALLJITTIMES", STRING) -- In order of trials like ALLTIMES.
   ]
+ 
+
+benchmarkResultToSchema bm = fusionSchema ++ map custom (_CUSTOM bm) 
+  where
+    fusionSchema :: [(String, CellType)]
+    fusionSchema = 
+      [ ("PROGNAME",STRING)
+      , ("VARIANT",STRING)
+      , ("ARGS",STRING)    
+      , ("HOSTNAME",STRING)
+      , ("MINTIME", NUMBER)
+      , ("MEDIANTIME", NUMBER)
+      , ("MAXTIME", NUMBER)
+        -- The run is identified by hostname_secondsSinceEpoch:
+      , ("RUNID",STRING)
+      , ("CI_BUILD_ID",STRING)  
+      , ("THREADS",NUMBER)
+      , ("DATETIME",DATETIME)    
+      , ("MINTIME_PRODUCTIVITY", NUMBER)
+      , ("MEDIANTIME_PRODUCTIVITY", NUMBER)
+      , ("MAXTIME_PRODUCTIVITY", NUMBER)
+      , ("ALLTIMES", STRING)
+      , ("TRIALS", NUMBER)
+      , ("COMPILER",STRING)
+      , ("COMPILE_FLAGS",STRING)
+      , ("RUNTIME_FLAGS",STRING)
+      , ("ENV_VARS",STRING)
+      , ("BENCH_VERSION", STRING)
+      , ("BENCH_FILE", STRING)
+        --  , ("OS",STRING)
+      , ("UNAME",STRING)
+      , ("PROCESSOR",STRING)
+      , ("TOPOLOGY",STRING)
+      , ("GIT_BRANCH",STRING)
+      , ("GIT_HASH",STRING)
+      , ("GIT_DEPTH",NUMBER)
+      , ("WHO",STRING)
+      , ("ETC_ISSUE",STRING)
+      , ("LSPCI",STRING)    
+      , ("FULL_LOG",STRING)
+        -- New fields: [2013.12.01]
+      , ("MEDIANTIME_ALLOCRATE", STRING)
+      , ("MEDIANTIME_MEMFOOTPRINT", STRING)
+        -- New field: [2014.02.19]
+      , ("ALLJITTIMES", STRING) -- In order of trials like ALLTIMES.
+      ]
+    custom (tag, IntResult _) = (tag,NUMBER)
+    custom (tag, DoubleResult _) = (tag,NUMBER)
+    custom (tag, StringResult _) = (tag, STRING) 
+
 
 -- | The type of Fusion table plugins.  Currently this is a singleton type; there is
 -- really only one fusion plugin.

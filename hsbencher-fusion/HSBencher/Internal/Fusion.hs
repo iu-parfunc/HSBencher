@@ -1,6 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE BangPatterns #-} 
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE NamedFieldPuns #-} 
 
 
 -- | Common functionality for uploading and downloading data
@@ -24,7 +25,8 @@ import HSBencher.Types
 
 -- Google API
 import Network.Google.OAuth2 
-import Network.Google.FusionTables 
+import Network.Google.FusionTables hiding (createTable)
+import qualified Network.Google.FusionTables as FT
 
 -- Network
 import Network.HTTP.Conduit (HttpException)
@@ -57,6 +59,8 @@ import Network.HTTP.Conduit (Request(..), RequestBody(..),parseUrl)
 -- Exception
 data FusionException = FusionException String
                      | TableNotFoundException
+                     | FailedCreateTableException
+                     | MoreThanOneTableFoundException 
                      deriving (Show, Typeable)
 
 instance E.Exception FusionException 
@@ -74,7 +78,8 @@ fusionTag str = "[HSBencher.Internal.Fusion] " ++ str
 initialize cid sec table_name = do
   putStrLn $ fusionTag "Initializing"
   let auth = OAuth2Client { clientId=cid, clientSecret=sec }
-  (table_id,cols) <- getTableId auth table_name
+  table_id <- getTableId auth table_name
+  cols     <- getTableColumns auth table_id 
   putStrLn $ fusionTag (table_id ++ " " ++ show cols)
   return (table_id,cols)
 
@@ -83,7 +88,8 @@ initialize cid sec table_name = do
 init cid sec table_name = do
   putStrLn $ fusionTag "Initializing"
   let auth = OAuth2Client { clientId=cid, clientSecret=sec }
-  (table_id,cols) <- getTableId auth table_name
+  table_id <- getTableId auth table_name
+  cols     <- getTableColumns auth table_id 
   putStrLn $ fusionTag (table_id ++ " " ++ show cols)
   return (table_id, auth)
 
@@ -96,7 +102,8 @@ getSomething auth table_id col_name = do
 
 -- \\\\
 
-getTableId :: OAuth2Client -> String -> IO (TableId, [String])
+-- | Obtain the id of a FusionTable
+getTableId :: OAuth2Client -> String -> IO TableId -- [String])
 getTableId auth table_name = do
   putStrLn $ fusionTag "Fetching information from Google"
 
@@ -106,6 +113,7 @@ getTableId auth table_name = do
 
   let atok = B.pack $ accessToken tokens
 
+  -- error check here
   Just allTables <- stdRetry "listTables" auth tokens $ listTables atok 
 
   putStrLn $ fusionTag $ "Found " ++ show (length allTables) ++ " tables."
@@ -115,10 +123,31 @@ getTableId auth table_name = do
           -- Replace with an exception and let user of this library handle that
     [t] -> do
       let table_id = tab_tableId t
-      columns <- fmap (map col_name) $ listColumns atok table_id
-      return (table_id, columns) 
-    _ -> error $ fusionTag "More than one mathing table found!" 
-    
+      return table_id
+    _ -> E.throwIO MoreThanOneTableFoundException 
+
+-- | Obtain the column headings from a FusionTable 
+getTableColumns :: OAuth2Client -> TableId -> IO [String]
+getTableColumns auth table_id = do
+  tokens <- getCachedTokens auth
+  let atok = B.pack $ accessToken tokens
+
+  columns <- fmap (map col_name) $ listColumns atok table_id
+  return columns 
+  
+
+-- | Create a FusionTable with a column schema
+createTable :: OAuth2Client -> String -> [(String,CellType)] -> IO TableId
+createTable auth table_name schema = do
+  tokens <- getCachedTokens auth
+  let atok = B.pack $ accessToken tokens 
+  result  <- stdRetry "createTable" auth tokens $
+             FT.createTable atok table_name schema
+  case result of
+    Just TableMetadata{tab_tableId} -> return tab_tableId
+    Nothing -> E.throwIO FailedCreateTableException
+
+
 
 ---------------------------------------------------------------------------
 -- Internal: HTTP requests retry behaviour
