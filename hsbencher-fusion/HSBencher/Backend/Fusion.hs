@@ -184,12 +184,36 @@ uploadBenchResult  br@BenchmarkResult{..} = do
     let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID, serverColumns} = fusionConfig
     let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
         authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+
+    
     -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
     toks  <- liftIO$ getCachedTokens authclient
+    let atok  = B.pack $ accessToken toks
+    let tid = fromJust fusionTableID 
+    
+-- ////// Enable working with Custom tags
+
+    let ourSchema = map fst $ benchmarkResultToSchema br
+        ourSet    = S.fromList ourSchema 
+    targetSchema <- fmap (map col_name) $ liftIO$ listColumns atok tid      
+    let targetSet = S.fromList targetSchema
+        missing   = S.difference  ourSet targetSet
+        misslist  = L.filter (`S.member` missing) ourSchema
+    log$ " [fusiontable] There were " ++ show (length misslist) ++ "columns missing"
+    unless (S.null missing) $ do
+      forM_ misslist $ \ colname -> do
+        liftIO$ createColumn atok tid (colname, STRING)
+        -- Create with the correct type !? Above just states STRING. 
+         
+ 
+ --   let misslist=[]
+--- \\\\\\ 
+
+        
     let ourData = M.fromList $ resultToTuple br
         -- Any field HSBencher doesn't know about just gets an empty string:
         tuple   = [ (key, fromMaybe "" (M.lookup key ourData))
-                  | key <- serverColumns ]
+                  | key <- serverColumns ++ misslist ]
         (cols,vals) = unzip tuple
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
