@@ -12,7 +12,9 @@ module HSBencher.Internal.Fusion
       , FusionConfig(..)
         -- Experiments
       , getSomething
-      , init 
+      , init
+      , ColData(..) -- export from hgdata
+      , FTValue(..) -- export from hgdata 
       )
        where
 
@@ -90,7 +92,7 @@ init cid sec table_name = do
 getSomething auth table_id col_name = do
   tokens <- getCachedTokens auth
   let atok = B.pack $ accessToken tokens
-  getData atok table_id col_name 
+  tableSelect atok table_id col_name 
 
 -- \\\\
 

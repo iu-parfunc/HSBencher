@@ -36,9 +36,9 @@ main = do
 
   putStrLn "Trying to get something out of a table \n \n" 
 
-  str <- getSomething auth tid "MINTIME" :: IO String
+  str <- getSomething auth tid "MINTIME, UNAME" :: IO ColData
 
-  putStrLn str
+  putStrLn$ show str
   
   -- putStrLn $ unwords columns
 
