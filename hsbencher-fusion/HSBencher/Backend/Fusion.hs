@@ -205,7 +205,7 @@ uploadBenchResult  br@BenchmarkResult{..} = do
         liftIO$ createColumn atok tid (colname, STRING)
         -- Create with the correct type !? Above just states STRING. 
          
---- \\\\\\ 
+--- ////// END
 
         
     let ourData = M.fromList $ resultToTuple br
