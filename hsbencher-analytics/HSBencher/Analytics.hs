@@ -1,23 +1,28 @@
-
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module HSBencher.Analytics where
 
 
 
-import Graphics.Rendering.Chart
-import Graphics.Rendering.Chart.Backend.Cairo
+--import Graphics.Rendering.Chart
+--import Graphics.Rendering.Chart.Backend.Cairo
 
-import Data.Colour
-import Data.Colour.Names
-import Data.Colour.SRGB
-import Data.Default.Class
-import Control.Lens
+--import Data.Colour
+--import Data.Colour.Names
+--import Data.Colour.SRGB
+--import Data.Default.Class
+-- import Control.Lens
+import Numeric 
 
+import Data.Supply
 
 import HSBencher.Internal.Fusion
 
-import Data.List hiding (init)
-import Prelude hiding (init) 
+import System.IO.Unsafe
+
+import Data.List hiding (init, lines)
+import Prelude hiding (init, lines) 
 
 ---------------------------------------------------------------------------
 --
@@ -27,14 +32,9 @@ pullEntireTable cid sec table_name = do
   getSomething auth table_id "*"
   
 
-
-
-
-
-
-
 ---------------------------------------------------------------------------
 --
+{- 
 type Line  = [(Double,Double)] 
 type Lines = [(String, Line)] 
 
@@ -139,3 +139,206 @@ defaultColours = nub$ [ opaque red
                                    , g <- [0.1,0.2..1.0]
                                    , b <- [0.1,0.2..1.0]]
                    
+
+
+-} 
+
+---------------------------------------------------------------------------
+-- Simple ploting with Flot 
+
+-- Class of Plottable values (and axis values (String, Double) ) 
+
+class AxisIndex a where
+  axisKind :: a -> String
+  
+
+data LineGraph x y =
+  LineGraph {lgColor :: String,   -- for now
+             lgLabel :: String, -- What the legend should say. 
+             lgData  :: [(x,y)]} -- data to plot as a line.
+  deriving (Eq,Show, Read, Ord)
+
+data PointGraph x y =
+  PointGraph {pgColor :: String,
+              pgLabel :: String,
+              pgData :: [(x,y)]}
+  deriving (Eq,Show, Read, Ord)
+
+data BarGraph x y =
+  BarGraph {bgColor :: String,
+            bgLabel :: String,
+            bgData :: [(x,y)]}
+  deriving (Eq,Show, Read, Ord)
+
+           
+data Plot x y =
+  Plot { lines  :: [LineGraph x y],
+         points :: [PointGraph x y], 
+         bars   :: [BarGraph x y],
+         legend :: Bool,
+
+         dimensions :: (Int,Int),
+         xLabel :: String,
+         yLabel :: String 
+       }
+  deriving (Eq,Show, Read, Ord)
+
+exampleLG :: Plot Double Double
+exampleLG = Plot {lines = [LineGraph "#F00"
+                                     "Line1"
+                                     [(x,x)|x <- [0..7]]],
+                  points = [],
+                  bars   = [],
+                  legend = True,
+                  dimensions = (800,400),
+                  xLabel = "Threads",
+                  yLabel = "ms" }
+examplePG :: Plot Double Double
+examplePG = Plot {points = [PointGraph "#F00"
+                                       "Points1"
+                                       [(x,7-x)| x <- [0..7]]],
+                  lines = [],
+                  bars  = [],
+                  legend = True,
+                  dimensions = (800,400),
+                  xLabel = "Threads",
+                  yLabel = "ms" }
+            
+
+exampleBG :: Plot Double Double
+exampleBG = Plot {bars = [BarGraph "#F00"
+                                   "Bars1"
+                                   [(x,x)| x <- [0..7]],
+                          BarGraph "#0F0"
+                                   "Bars2"
+                                   [(x,(7-x))| x <- [0..7]],
+                          BarGraph "#00F"
+                                   "Bars3"
+                                   [(x,5.5)| x <- [0..7]]],
+                  lines = [],
+                  points = [],
+                  legend = True,
+                  dimensions = (800,400),
+                  xLabel = "Threads",
+                  yLabel = "ms"
+                 }
+            
+
+exampleBG2 :: Plot String Double
+exampleBG2 = Plot {bars = [BarGraph "#F00"
+                                    "Bars1"
+                                    [("T" ++ show x,x)| x <- [0..7]]],
+                  lines = [],
+                  points = [],
+                  legend = True,
+                  dimensions = (800,400),
+                  xLabel = "Threads",
+                  yLabel = "ms"
+                  }
+             
+
+
+
+                                  
+hexcolors = ["#"++h r++h g++h b | r <- [0..15] , g <- [0..15], b <- [0..15]]
+  where
+    h x = showHex x ""
+
+
+---------------------------------------------------------------------------
+-- RenderPlot
+
+-- TODO: Look for a library that can generate JS code for me.
+-- And HTML (in a quasiquotation kind of way).
+    
+mySupply :: Supply Int 
+mySupply = unsafePerformIO $ newEnumSupply 
+
+class Plotable a where
+  toPlot :: a -> String
+
+instance Plotable String where
+  toPlot str = show str -- want the extra " "
+
+instance Plotable Double where
+  toPlot d = show d 
+
+renderPlot :: (Plotable x, Plotable y) => Supply Int -> Plot x y -> String
+renderPlot s pl =
+  "$(function () { \n" ++
+   plotOptions ++ "\n" ++ 
+   body ++ plot charts ++ 
+  "});"
+  
+  where
+    Plot lines points bars legend (width,height) xlabel ylabel = pl
+     
+    (s1:s2:s3:_) = split s 
+    (v1,code1) = dataSet s1 (map lgData lines) 
+    (v2,code2) = dataSet s2 (map pgData points)
+    (v3,code3) = dataSet s3 (map bgData bars) 
+    plot c = "var someplot = $.plot(\"#placeholder\", [" ++ 
+             c ++
+             "], options); \n" ++
+             pngButton
+             
+             
+    body = code1 ++ code2 ++ code3 
+
+    charts = (concat $ intersperse ", " $ chartLines v1 lines) ++
+             (concat $ intersperse ", " $ chartBars barWidth v3 (zip order bars))
+
+    order = [1..]
+    nBarGraphs = length bars
+    barWidth = 1 / (fromIntegral (nBarGraphs + 1)) -- +1 for space
+
+    chartLines [] [] = [""]
+    chartLines c [] = error $ "chartLines: not matching!"
+    chartLines [] c = error $ "chartLines: not matching!"
+    chartLines (v:vs) (l:ls)
+      = ("{\n data: "++ v ++ ",\n" ++
+         "lines: { show: true, fill: true },\n" ++
+         "label: " ++ show (lgLabel l) ++ "\n" ++ 
+         "}") :  chartLines vs ls
+
+    chartBars bw [] [] = [""]
+    chartBars bw b  [] = error "chartBoxes: not matching!"
+    chartBars bw [] b  = error "chartBoxes: not matching!"
+    chartBars bw (v:vs) ((o,b):bs)
+      = ("{\n data: " ++ v ++ ",\n" ++
+         "bars: {show: true," ++
+                "order: " ++ show o ++ ",\n" ++
+                "barWidth: " ++ show bw ++ "},\n" ++
+         "label: " ++ show (bgLabel b) ++ ",\n" ++
+         "color: " ++ show (bgColor b) ++ "\n" ++
+         "}") : chartBars bw vs bs 
+    
+    plotOptions
+      = "var options = {canvas: true," ++ 
+                       "legend: {position: \"nw\", type: \"canvas\" }," ++
+                       "axisLabels: {show: true}," ++
+                       "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true }," ++
+                       "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true }};" 
+
+    pngButton
+      = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
+        "var canvas = someplot.getCanvas();\n" ++
+        "var ctx = canvas.getContext(\"2d\");\n" ++
+        "window.open(canvas.toDataURL('png'), \"\");\n" ++
+        "}" 
+    
+dataSet :: (Plotable x, Plotable y)
+           => Supply Int -> [[(x,y)]] -> ([String], String)
+dataSet _ [] = ([],[])
+dataSet s (x:xs) = (vn:vars, def ++ code) 
+  where
+    vn = "v" ++ show (supplyValue s )
+    (s1,s2) = split2 s 
+    def = "var " ++ vn ++ " = [" ++ dataValues x ++ "];\n"
+    (vars,code) = dataSet s2 xs
+    dataValues x = concat $ intersperse "," $ map tupToArr x
+    tupToArr (x,y) = "[ " ++ toPlot x ++ ", " ++ toPlot y ++ "]" 
+
+
+
+
