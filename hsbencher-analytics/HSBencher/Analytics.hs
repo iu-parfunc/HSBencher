@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-} 
 
 module HSBencher.Analytics where
 
@@ -146,21 +147,18 @@ defaultColours = nub$ [ opaque red
 ---------------------------------------------------------------------------
 -- Simple ploting with Flot 
 
--- Class of Plottable values (and axis values (String, Double) ) 
-
-class AxisIndex a where
-  axisKind :: a -> String
-  
-
+-- Kinds of graphs 
 data LineGraph x y =
   LineGraph {lgColor :: String,   -- for now
-             lgLabel :: String, -- What the legend should say. 
+             lgLabel :: String, -- What the legend should say.
+             lgSymbol :: Maybe String,  
              lgData  :: [(x,y)]} -- data to plot as a line.
   deriving (Eq,Show, Read, Ord)
 
 data PointGraph x y =
   PointGraph {pgColor :: String,
               pgLabel :: String,
+              pgSymbol :: String, 
               pgData :: [(x,y)]}
   deriving (Eq,Show, Read, Ord)
 
@@ -183,9 +181,13 @@ data Plot x y =
        }
   deriving (Eq,Show, Read, Ord)
 
+
+---------------------------------------------------------------------------
+-- Exampleplots 
 exampleLG :: Plot Double Double
 exampleLG = Plot {lines = [LineGraph "#F00"
                                      "Line1"
+                                     Nothing
                                      [(x,x)|x <- [0..7]]],
                   points = [],
                   bars   = [],
@@ -196,6 +198,7 @@ exampleLG = Plot {lines = [LineGraph "#F00"
 examplePG :: Plot Double Double
 examplePG = Plot {points = [PointGraph "#F00"
                                        "Points1"
+                                       "circle" 
                                        [(x,7-x)| x <- [0..7]]],
                   lines = [],
                   bars  = [],
@@ -222,24 +225,37 @@ exampleBG = Plot {bars = [BarGraph "#F00"
                   xLabel = "Threads",
                   yLabel = "ms"
                  }
-            
 
-exampleBG2 :: Plot String Double
-exampleBG2 = Plot {bars = [BarGraph "#F00"
-                                    "Bars1"
-                                    [("T" ++ show x,x)| x <- [0..7]]],
-                  lines = [],
+
+exampleMG :: Plot Int Double
+exampleMG = Plot {bars = [BarGraph "#F00"
+                                   "Bars1"
+                                   [(x,fromIntegral x)| x <- [0..7]],
+                          BarGraph "#0F0"
+                                   "Bars2"
+                                   [(x,fromIntegral (7-x))| x <- [0..7]],
+                          BarGraph "#00F"
+                                   "Bars3"
+                                   [(x,5)| x <- [0..7]]],
+                  lines = [LineGraph "#000"
+                                     "Line1"
+                                     Nothing
+                                     [(x,4+sin (fromIntegral x))|x <- [0..7]]],
+
                   points = [],
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
                   yLabel = "ms"
-                  }
+                 }
+
+
+
              
 
+---------------------------------------------------------------------------
+-- Utilities 
 
-
-                                  
 hexcolors = ["#"++h r++h g++h b | r <- [0..15] , g <- [0..15], b <- [0..15]]
   where
     h x = showHex x ""
@@ -256,14 +272,22 @@ mySupply = unsafePerformIO $ newEnumSupply
 
 class Plotable a where
   toPlot :: a -> String
+  plotKind :: a -> String
 
 instance Plotable String where
   toPlot str = show str -- want the extra " "
+  plotKind str = ""  
 
 instance Plotable Double where
-  toPlot d = show d 
+  toPlot d = show d
+  plotKind d = ""
 
-renderPlot :: (Plotable x, Plotable y) => Supply Int -> Plot x y -> String
+instance Plotable Int where
+  toPlot i = show i
+  plotKind i = "tickDecimals: 0" 
+  
+
+renderPlot :: forall x y . (Plotable x, Plotable y) => Supply Int -> Plot x y -> String
 renderPlot s pl =
   "$(function () { \n" ++
    plotOptions ++ "\n" ++ 
@@ -297,8 +321,9 @@ renderPlot s pl =
     chartLines [] c = error $ "chartLines: not matching!"
     chartLines (v:vs) (l:ls)
       = ("{\n data: "++ v ++ ",\n" ++
-         "lines: { show: true, fill: true },\n" ++
-         "label: " ++ show (lgLabel l) ++ "\n" ++ 
+         "lines: { show: true, fill: false },\n" ++
+         "label: " ++ show (lgLabel l) ++ ",\n" ++
+         "color: " ++ show (lgColor l) ++ "\n" ++
          "}") :  chartLines vs ls
 
     chartBars bw [] [] = [""]
@@ -317,9 +342,21 @@ renderPlot s pl =
       = "var options = {canvas: true," ++ 
                        "legend: {position: \"nw\", type: \"canvas\" }," ++
                        "axisLabels: {show: true}," ++
-                       "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true }," ++
-                       "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true }};" 
+                       "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: x) ++ " }," ++
+                       "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: y) ++ " }};" 
+    -- xaxis_kind =
+    --   case plotKind (undefined :: x) of
+    --     PlotCategories -> ""
+    --     PlotDouble     -> ""
+    --     PlotInt        -> "tickDecimals: 0"
 
+    -- yaxis_kind =
+    --   case plotKind (undefined :: x) of
+    --     PlotCategories -> ""
+    --     PlotDouble     -> ""
+    --     PlotInt        -> "tickDecimals: 0"
+    
+                       
     pngButton
       = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
         "var canvas = someplot.getCanvas();\n" ++
@@ -342,3 +379,33 @@ dataSet s (x:xs) = (vn:vars, def ++ code)
 
 
 
+---------------------------------------------------------------------------
+-- HTML   
+html js =
+  "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n" ++
+  "<html>\n" ++
+  "<head>\n" ++
+  "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n" ++
+  "<title>Generated Plot</title>\n" ++
+  "<link href=\"plot.css\" rel=\"stylesheet\" type=\"text/css\">\n" ++
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.js\"></script>\n" ++ 
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.js\"></script>\n" ++ 
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.canvas.js\"></script>\n" ++
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.categories.js\"></script>\n" ++
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.symbol.js\"></script>\n" ++
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.legendoncanvas.js\"></script>\n" ++
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.orderBars.js\"></script>\n" ++
+  "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.axislabels.js\"></script>\n" ++ 
+  "<script type=\"text/javascript\">\n" ++ 
+  js ++
+  "</script>\n" ++
+  "</head>\n" ++
+  "<body>\n" ++
+  "<div id=\"header\"> <h2>TESTING!</h2> </div>\n" ++
+  "<div id=\"content\">\n" ++ 
+  "<div id=\"placeholder\" style=\"width:800px;height:400px\"></div>\n" ++ 
+  "<div id=\"button\"> <input id=\"toPNGButton\" type=\"button\" value=\"getPNG\" /> </div> \n" ++
+  "</div>\n" ++
+  "<div id=\"footer\"> HTML and Plot generated by HSBencher. </div>\n" ++
+  "</body>\n" ++
+  "</html>\n"
