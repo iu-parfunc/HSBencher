@@ -168,11 +168,15 @@ data BarGraph x y =
             bgData :: [(x,y)]}
   deriving (Eq,Show, Read, Ord)
 
-           
+-- experimenting 
+data BarStackGraph x y = BarStackGraph [BarGraph x y]
+  deriving (Eq,Show, Read, Ord)
+
 data Plot x y =
   Plot { lines  :: [LineGraph x y],
          points :: [PointGraph x y], 
          bars   :: [BarGraph x y],
+         barstacks :: [BarStackGraph x y],
          legend :: Bool,
 
          dimensions :: (Int,Int),
@@ -191,6 +195,7 @@ exampleLG = Plot {lines = [LineGraph "#F00"
                                      [(x,x)|x <- [0..7]]],
                   points = [],
                   bars   = [],
+                  barstacks = [], 
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
@@ -202,6 +207,7 @@ examplePG = Plot {points = [PointGraph "#F00"
                                        [(x,7-x)| x <- [0..7]]],
                   lines = [],
                   bars  = [],
+                  barstacks = [], 
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
@@ -220,6 +226,7 @@ exampleBG = Plot {bars = [BarGraph "#F00"
                                    [(x,5.5)| x <- [0..7]]],
                   lines = [],
                   points = [],
+                  barstacks = [], 
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
@@ -243,6 +250,32 @@ exampleMG = Plot {bars = [BarGraph "#F00"
                                      [(x,4+sin (fromIntegral x))|x <- [0..7]]],
 
                   points = [],
+                  barstacks = [], 
+                  legend = True,
+                  dimensions = (800,400),
+                  xLabel = "Threads",
+                  yLabel = "ms"
+                 }
+
+exampleMG2 :: Plot Int Double
+exampleMG2 = Plot {bars = [BarGraph "#0F0"
+                                    "Bars2"
+                                    [(x,fromIntegral (7-x))| x <- [0..7]],
+                           BarGraph "#00F"
+                                    "Bars3"
+                                    [(x,5)| x <- [0..7]]],
+                  lines = [LineGraph "#000"
+                                     "Line1"
+                                     Nothing
+                                     [(x,4+sin (fromIntegral x))|x <- [0..7]]],
+
+                  points = [],
+                  barstacks = [BarStackGraph [BarGraph "#F00"
+                                                       "Bars1"
+                                                       [(x,fromIntegral x)| x <- [0..7]],
+                                              BarGraph "#FF0"
+                                                       "StartUp"
+                                                       [(x,2) | x <- [0..7]]]],
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
@@ -295,12 +328,13 @@ renderPlot s pl =
   "});"
   
   where
-    Plot lines points bars legend (width,height) xlabel ylabel = pl
+    Plot lines points bars barstacks legend (width,height) xlabel ylabel = pl
      
     (s1:s2:s3:_) = split s 
     (v1,code1) = dataSet s1 (map lgData lines) 
     (v2,code2) = dataSet s2 (map pgData points)
-    (v3,code3) = dataSet s3 (map bgData bars) 
+    (v3,code3) = dataSet s3 (map bgData bars)
+    
     plot c = "var someplot = $.plot(\"#placeholder\", [" ++ 
              c ++
              "], options); \n" ++
@@ -327,16 +361,16 @@ renderPlot s pl =
          "}") :  chartLines vs ls
 
     chartBars bw [] [] = [""]
-    chartBars bw b  [] = error "chartBoxes: not matching!"
-    chartBars bw [] b  = error "chartBoxes: not matching!"
-    chartBars bw (v:vs) ((o,b):bs)
-      = ("{\n data: " ++ v ++ ",\n" ++
-         "bars: {show: true," ++
-                "order: " ++ show o ++ ",\n" ++
-                "barWidth: " ++ show bw ++ "},\n" ++
-         "label: " ++ show (bgLabel b) ++ ",\n" ++
-         "color: " ++ show (bgColor b) ++ "\n" ++
-         "}") : chartBars bw vs bs 
+    chartBars bw b  [] = error "chartBars: not matching!"
+    chartBars bw [] b  = error "chartBars: not matching!"
+    chartBars bw (v:vs) ((o,b):bs) = 
+         ("{\n data: " ++ v ++ ",\n" ++
+          "bars: {show: true," ++
+                 "order: " ++ show o ++ ",\n" ++
+                 "barWidth: " ++ show bw ++ "},\n" ++
+          "label: " ++ show (bgLabel b) ++ ",\n" ++
+          "color: " ++ show (bgColor b) ++ "\n" ++
+          "}") : chartBars bw vs bs
     
     plotOptions
       = "var options = {canvas: true," ++ 
@@ -344,18 +378,6 @@ renderPlot s pl =
                        "axisLabels: {show: true}," ++
                        "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: x) ++ " }," ++
                        "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: y) ++ " }};" 
-    -- xaxis_kind =
-    --   case plotKind (undefined :: x) of
-    --     PlotCategories -> ""
-    --     PlotDouble     -> ""
-    --     PlotInt        -> "tickDecimals: 0"
-
-    -- yaxis_kind =
-    --   case plotKind (undefined :: x) of
-    --     PlotCategories -> ""
-    --     PlotDouble     -> ""
-    --     PlotInt        -> "tickDecimals: 0"
-    
                        
     pngButton
       = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
@@ -375,8 +397,6 @@ dataSet s (x:xs) = (vn:vars, def ++ code)
     (vars,code) = dataSet s2 xs
     dataValues x = concat $ intersperse "," $ map tupToArr x
     tupToArr (x,y) = "[ " ++ toPlot x ++ ", " ++ toPlot y ++ "]" 
-
-
 
 
 ---------------------------------------------------------------------------
@@ -401,7 +421,7 @@ html js =
   "</script>\n" ++
   "</head>\n" ++
   "<body>\n" ++
-  "<div id=\"header\"> <h2>TESTING!</h2> </div>\n" ++
+  "<div id=\"header\"> <h2>Generated Plot!</h2> </div>\n" ++
   "<div id=\"content\">\n" ++ 
   "<div id=\"placeholder\" style=\"width:800px;height:400px\"></div>\n" ++ 
   "<div id=\"button\"> <input id=\"toPNGButton\" type=\"button\" value=\"getPNG\" /> </div> \n" ++
