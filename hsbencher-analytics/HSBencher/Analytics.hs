@@ -168,15 +168,11 @@ data BarGraph x y =
             bgData :: [(x,y)]}
   deriving (Eq,Show, Read, Ord)
 
--- experimenting 
-data BarStackGraph x y = BarStackGraph [BarGraph x y]
-  deriving (Eq,Show, Read, Ord)
 
 data Plot x y =
   Plot { lines  :: [LineGraph x y],
          points :: [PointGraph x y], 
          bars   :: [BarGraph x y],
-         barstacks :: [BarStackGraph x y],
          legend :: Bool,
 
          dimensions :: (Int,Int),
@@ -195,7 +191,6 @@ exampleLG = Plot {lines = [LineGraph "#F00"
                                      [(x,x)|x <- [0..7]]],
                   points = [],
                   bars   = [],
-                  barstacks = [], 
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
@@ -207,7 +202,6 @@ examplePG = Plot {points = [PointGraph "#F00"
                                        [(x,7-x)| x <- [0..7]]],
                   lines = [],
                   bars  = [],
-                  barstacks = [], 
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
@@ -226,7 +220,6 @@ exampleBG = Plot {bars = [BarGraph "#F00"
                                    [(x,5.5)| x <- [0..7]]],
                   lines = [],
                   points = [],
-                  barstacks = [], 
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
@@ -250,41 +243,11 @@ exampleMG = Plot {bars = [BarGraph "#F00"
                                      [(x,4+sin (fromIntegral x))|x <- [0..7]]],
 
                   points = [],
-                  barstacks = [], 
                   legend = True,
                   dimensions = (800,400),
                   xLabel = "Threads",
                   yLabel = "ms"
-                 }
-
-exampleMG2 :: Plot Int Double
-exampleMG2 = Plot {bars = [BarGraph "#0F0"
-                                    "Bars2"
-                                    [(x,fromIntegral (7-x))| x <- [0..7]],
-                           BarGraph "#00F"
-                                    "Bars3"
-                                    [(x,5)| x <- [0..7]]],
-                  lines = [LineGraph "#000"
-                                     "Line1"
-                                     Nothing
-                                     [(x,4+sin (fromIntegral x))|x <- [0..7]]],
-
-                  points = [],
-                  barstacks = [BarStackGraph [BarGraph "#F00"
-                                                       "Bars1"
-                                                       [(x,fromIntegral x)| x <- [0..7]],
-                                              BarGraph "#FF0"
-                                                       "StartUp"
-                                                       [(x,2) | x <- [0..7]]]],
-                  legend = True,
-                  dimensions = (800,400),
-                  xLabel = "Threads",
-                  yLabel = "ms"
-                 }
-
-
-
-             
+                 }             
 
 ---------------------------------------------------------------------------
 -- Utilities 
@@ -295,7 +258,7 @@ hexcolors = ["#"++h r++h g++h b | r <- [0..15] , g <- [0..15], b <- [0..15]]
 
 
 ---------------------------------------------------------------------------
--- RenderPlot
+--
 
 -- TODO: Look for a library that can generate JS code for me.
 -- And HTML (in a quasiquotation kind of way).
@@ -319,8 +282,15 @@ instance Plotable Int where
   toPlot i = show i
   plotKind i = "tickDecimals: 0" 
   
+---------------------------------------------------------------------------
+{-
+   Plotting stacked bars is a bit tricky.
+   Mixing plotting of stacked bars and nonstacked seems impossible.
+   May be possible to treat nonstacked bars as a special case of stacked ones. 
 
-renderPlot :: forall x y . (Plotable x, Plotable y) => Supply Int -> Plot x y -> String
+-} 
+renderPlot :: forall x y . (Plotable x, Plotable y)
+              => Supply Int -> Plot x y -> String
 renderPlot s pl =
   "$(function () { \n" ++
    plotOptions ++ "\n" ++ 
@@ -328,9 +298,9 @@ renderPlot s pl =
   "});"
   
   where
-    Plot lines points bars barstacks legend (width,height) xlabel ylabel = pl
+    Plot lines points bars legend (width,height) xlabel ylabel = pl
      
-    (s1:s2:s3:_) = split s 
+    (s1:s2:s3:s4:_) = split s 
     (v1,code1) = dataSet s1 (map lgData lines) 
     (v2,code2) = dataSet s2 (map pgData points)
     (v3,code3) = dataSet s3 (map bgData bars)
@@ -344,11 +314,11 @@ renderPlot s pl =
     body = code1 ++ code2 ++ code3 
 
     charts = (concat $ intersperse ", " $ chartLines v1 lines) ++
-             (concat $ intersperse ", " $ chartBars barWidth v3 (zip order bars))
+             (concat $ intersperse ", " $ chartBars barWidth v3 (zip order bars)) 
 
-    order = [1..]
+    order = [1..] :: [Int]
     nBarGraphs = length bars
-    barWidth = 1 / (fromIntegral (nBarGraphs + 1)) -- +1 for space
+    barWidth = 1 / (fromIntegral (nBarGraphs + 1)) :: Double -- +1 for space
 
     chartLines [] [] = [""]
     chartLines c [] = error $ "chartLines: not matching!"
@@ -397,6 +367,7 @@ dataSet s (x:xs) = (vn:vars, def ++ code)
     (vars,code) = dataSet s2 xs
     dataValues x = concat $ intersperse "," $ map tupToArr x
     tupToArr (x,y) = "[ " ++ toPlot x ++ ", " ++ toPlot y ++ "]" 
+
 
 
 ---------------------------------------------------------------------------
