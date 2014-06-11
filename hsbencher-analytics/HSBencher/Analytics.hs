@@ -168,13 +168,17 @@ data BarGraph x y =
             bgData :: [(x,y)]}
   deriving (Eq,Show, Read, Ord)
 
+-- TODO: Add logarithmic scales 
+data TickStyle = TicksAdaptToData
+               | TicksIntSpaced Int
+               | TicksDecSpaced Double
+               deriving (Eq,Show, Read, Ord)
 
 data Plot x y =
   Plot { lines  :: [LineGraph x y],
          points :: [PointGraph x y], 
          bars   :: [BarGraph x y],
          legend :: Bool,
-
          dimensions :: (Int,Int),
          xLabel :: String,
          yLabel :: String 
@@ -272,7 +276,7 @@ class Plotable a where
 
 instance Plotable String where
   toPlot str = show str -- want the extra " "
-  plotKind str = ""  
+  plotKind str = "mode: \"categories\""  
 
 instance Plotable Double where
   toPlot d = show d
@@ -298,7 +302,14 @@ renderPlot s pl =
   "});"
   
   where
-    Plot lines points bars legend (width,height) xlabel ylabel = pl
+    Plot lines
+         points
+         bars
+         legend
+     --    (xstyle,ystyle)
+         (width,height)
+         xlabel
+         ylabel = pl
      
     (s1:s2:s3:s4:_) = split s 
     (v1,code1) = dataSet s1 (map lgData lines) 
@@ -348,7 +359,14 @@ renderPlot s pl =
                        "axisLabels: {show: true}," ++
                        "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: x) ++ " }," ++
                        "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: y) ++ " }};" 
-                       
+
+    -- xaxis_ticks =
+    --   case xstyle of 
+    --     TicksAdaptToData ->
+    --       let xvals = getXAxisValues pl
+    --       in "ticks: [" ++ concat (intersperse "," (map toPlot xvals)) ++ "],"
+    --     _ -> ""
+        
     pngButton
       = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
         "var canvas = someplot.getCanvas();\n" ++
@@ -368,6 +386,26 @@ dataSet s (x:xs) = (vn:vars, def ++ code)
     dataValues x = concat $ intersperse "," $ map tupToArr x
     tupToArr (x,y) = "[ " ++ toPlot x ++ ", " ++ toPlot y ++ "]" 
 
+
+-- A current assumption is that all charts in a plot
+-- share the exact same xaxis values.
+-- Plots with two different xaxi are impossible.
+
+-- find any populated dataset and extract its x axis.
+-- TODO: add error checking (if no data exists in the plot
+-- the plotting should already have been aborted!)
+
+-- Abandon this attempt for now.
+-- see how well it works with just going to "category" mode
+-- when an axis is string labeled.
+getXAxisValues :: Plot x y -> [x]
+getXAxisValues pl = map fst (head dat) 
+  where
+    ls = map lgData $ lines pl
+    bs = map bgData $ bars pl
+    ps = map pgData $ points pl 
+
+    dat = filter (not . null) $ concat [ls,bs,ps] 
 
 
 ---------------------------------------------------------------------------
