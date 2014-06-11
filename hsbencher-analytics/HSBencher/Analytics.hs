@@ -4,17 +4,7 @@
 
 module HSBencher.Analytics where
 
-
-
---import Graphics.Rendering.Chart
---import Graphics.Rendering.Chart.Backend.Cairo
-
---import Data.Colour
---import Data.Colour.Names
---import Data.Colour.SRGB
---import Data.Default.Class
--- import Control.Lens
-import Numeric 
+import Numeric (showHex) 
 
 import Data.Supply
 
@@ -32,117 +22,6 @@ pullEntireTable cid sec table_name = do
   (table_id,auth) <- init cid sec table_name
   getSomething auth table_id "*"
   
-
----------------------------------------------------------------------------
---
-{- 
-type Line  = [(Double,Double)] 
-type Lines = [(String, Line)] 
-
-
-plotLines ls title fn = renderableToFile def (linePlot title ls) fn
-
-linePlot :: String -> Lines -> Renderable (LayoutPick Double Double Double)
-linePlot plot_title ls = layoutToRenderable $ chartIT ls  
-  where 
-    chartIT :: Lines -> Layout Double Double
-    chartIT ls = layout
-      
-    lineStyle c = line_width .~ 3 
-                  $ line_color .~ c
-                  $ def ^. plot_lines_style
-    layout =
-      layout_title .~ plot_title 
-      $ layout_title_style . font_size .~ 10
-      $ layout_left_axis_visibility . axis_show_ticks .~ True
-      $ layout_plots .~ doPlot (zip ls defaultColours)
-      $ def :: Layout Double Double 
-
-    doPlot [] = []
-    doPlot (((title,x),colour):xs) = (toPlot
-                                      $ plot_lines_style .~ lineStyle colour 
-                                      $ plot_lines_values .~ [x]  
-                                      $ plot_lines_title .~ title
-                                      $ def) : doPlot xs
-
-plotB bar_titles bars title fn = renderableToFile def (barPlot title bar_titles bars) fn 
-type Bars = [Double]
-type BarClusters = ([String],[String],[Bars])
-
-barPlot plot_title bar_titles bars =
-  barClusterPlot plot_title (bar_titles,bar_titles, map (\x -> [x]) bars)
-
---barPlot :: String -> [BarCluster] -> Renderable something 
-barClusterPlot plot_title bars = toRenderable layout
-  where
-    layout =
-      layout_title .~ plot_title
-      $ layout_title_style . font_size .~ 10
-      $ layout_x_axis . laxis_generate .~ autoIndexAxis x_labels
-      $ layout_y_axis . laxis_override .~ axisGridHide
-      $ layout_left_axis_visibility . axis_show_ticks .~ False
-      $ layout_plots .~ [plotBars (doPlot the_bars)]
-      $ def :: Layout PlotIndex Double
-
-    (x_labels,individuals,the_bars) = bars 
-    
-    doPlot bars =
-      plot_bars_titles .~ individuals 
-      $ plot_bars_values .~ addIndexes the_bars
-      $ plot_bars_style .~ BarsClustered
-      $ plot_bars_spacing .~ BarsFixGap 30 5
-      $ plot_bars_item_styles .~ map mkstyle (cycle defaultColorSeq)
-      $ def 
-      
-    mkstyle c = (solidFillStyle c, Nothing) -- bstyle)
-
--- plotExample = renderableToFile def (chart True) "example1.png"
-
--- chart borders = toRenderable layout
---  where
---   layout = 
---         layout_title .~ "Sample Bars" ++ btitle
---       $ layout_title_style . font_size .~ 10
---       $ layout_x_axis . laxis_generate .~ autoIndexAxis alabels
---       $ layout_y_axis . laxis_override .~ axisGridHide
---       $ layout_left_axis_visibility . axis_show_ticks .~ False
---       $ layout_plots .~ [ plotBars bars2 ]
---       $ def :: Layout PlotIndex Double
-
---   bars2 = plot_bars_titles .~ ["Cash","Equity"]
---       $ plot_bars_values .~ addIndexes [[20,45],[45,30],[30,20],[70,25]]
---       $ plot_bars_style .~ BarsClustered
---       $ plot_bars_spacing .~ BarsFixGap 30 5
---       $ plot_bars_item_styles .~ map mkstyle (cycle defaultColorSeq)
---       $ def
-
---   alabels = [ "Jun", "Jul", "Aug", "Sep", "Oct" ]
-
---   btitle = if borders then "" else " (no borders)"
---   bstyle = if borders then Just (solidLine 1.0 $ opaque black) else Nothing
---   mkstyle c = (solidFillStyle c, bstyle)
-
-
-
-
-
-
-defaultColours = nub$ [ opaque red
-                      , opaque green
-                      , opaque blue
-                      , opaque brown
-                      , opaque magenta 
-                      , opaque darkgreen
-                      , opaque orange
-                      ] ++ various 
-  where
-    various = [opaque $ sRGB r g b | r <- [0.1,0.2..1.0]
-                                   , g <- [0.1,0.2..1.0]
-                                   , b <- [0.1,0.2..1.0]]
-                   
-
-
--} 
 
 ---------------------------------------------------------------------------
 -- Simple ploting with Flot 
@@ -168,90 +47,116 @@ data BarGraph x y =
             bgData :: [(x,y)]}
   deriving (Eq,Show, Read, Ord)
 
--- TODO: Add logarithmic scales 
-data TickStyle = TicksAdaptToData
-               | TicksIntSpaced Int
-               | TicksDecSpaced Double
-               deriving (Eq,Show, Read, Ord)
 
+-- A mixed plot 
 data Plot x y =
-  Plot { lines  :: [LineGraph x y],
-         points :: [PointGraph x y], 
-         bars   :: [BarGraph x y],
-         legend :: Bool,
-         dimensions :: (Int,Int),
-         xLabel :: String,
-         yLabel :: String 
+  Plot { pLines  :: [LineGraph x y],
+         pPoints :: [PointGraph x y], 
+         pBars   :: [BarGraph x y],
+         pLegend :: Bool,
+         pDimensions :: (Int,Int),
+         pXLabel :: String,
+         pYLabel :: String 
        }
   deriving (Eq,Show, Read, Ord)
 
+-- a plot supporting only stacked bargraphs
+data BarStackPlot x y =
+  BarStackPlot { bsStacks :: [[BarGraph x y]],
+                 bsLegend :: Bool,
+                 bsDimensions :: (Int,Int),
+                 bsXLabel :: String,
+                 bsYLabel :: String
+               }
+  deriving (Eq,Show, Read, Ord)
 
 ---------------------------------------------------------------------------
 -- Exampleplots 
 exampleLG :: Plot Double Double
-exampleLG = Plot {lines = [LineGraph "#F00"
-                                     "Line1"
-                                     Nothing
-                                     [(x,x)|x <- [0..7]]],
-                  points = [],
-                  bars   = [],
-                  legend = True,
-                  dimensions = (800,400),
-                  xLabel = "Threads",
-                  yLabel = "ms" }
+exampleLG = Plot {pLines = [LineGraph "#F00"
+                                      "Line1"
+                                      Nothing
+                                      [(x,x)|x <- [0..7]]],
+                  pPoints = [],
+                  pBars   = [],
+                  pLegend = True,
+                  pDimensions = (800,400),
+                  pXLabel = "Threads",
+                  pYLabel = "ms" }
 examplePG :: Plot Double Double
-examplePG = Plot {points = [PointGraph "#F00"
-                                       "Points1"
-                                       "circle" 
-                                       [(x,7-x)| x <- [0..7]]],
-                  lines = [],
-                  bars  = [],
-                  legend = True,
-                  dimensions = (800,400),
-                  xLabel = "Threads",
-                  yLabel = "ms" }
+examplePG = Plot {pPoints = [PointGraph "#F00"
+                                        "Points1"
+                                        "circle" 
+                                        [(x,7-x)| x <- [0..7]]],
+                  pLines = [],
+                  pBars  = [],
+                  pLegend = True,
+                  pDimensions = (800,400),
+                  pXLabel = "Threads",
+                  pYLabel = "ms" }
             
 
 exampleBG :: Plot Double Double
-exampleBG = Plot {bars = [BarGraph "#F00"
-                                   "Bars1"
-                                   [(x,x)| x <- [0..7]],
-                          BarGraph "#0F0"
-                                   "Bars2"
-                                   [(x,(7-x))| x <- [0..7]],
-                          BarGraph "#00F"
-                                   "Bars3"
-                                   [(x,5.5)| x <- [0..7]]],
-                  lines = [],
-                  points = [],
-                  legend = True,
-                  dimensions = (800,400),
-                  xLabel = "Threads",
-                  yLabel = "ms"
+exampleBG = Plot {pBars = [BarGraph "#F00"
+                                    "Bars1"
+                                    [(x,x)| x <- [0..7]],
+                           BarGraph "#0F0"
+                                    "Bars2"
+                                    [(x,(7-x))| x <- [0..7]],
+                           BarGraph "#00F"
+                                    "Bars3"
+                                    [(x,5.5)| x <- [0..7]]],
+                  pLines = [],
+                  pPoints = [],
+                  pLegend = True,
+                  pDimensions = (800,400),
+                  pXLabel = "Threads",
+                  pYLabel = "ms"
                  }
 
 
 exampleMG :: Plot Int Double
-exampleMG = Plot {bars = [BarGraph "#F00"
-                                   "Bars1"
-                                   [(x,fromIntegral x)| x <- [0..7]],
-                          BarGraph "#0F0"
-                                   "Bars2"
-                                   [(x,fromIntegral (7-x))| x <- [0..7]],
-                          BarGraph "#00F"
-                                   "Bars3"
-                                   [(x,5)| x <- [0..7]]],
-                  lines = [LineGraph "#000"
-                                     "Line1"
-                                     Nothing
-                                     [(x,4+sin (fromIntegral x))|x <- [0..7]]],
+exampleMG = Plot {pBars = [BarGraph "#F00"
+                                    "Bars1"
+                                    [(x,fromIntegral x)| x <- [0..7]],
+                           BarGraph "#0F0"
+                                    "Bars2"
+                                    [(x,fromIntegral (7-x))| x <- [0..7]],
+                           BarGraph "#00F"
+                                    "Bars3"
+                                    [(x,5)| x <- [0..7]]],
+                  pLines = [LineGraph "#000"
+                                      "Line1"
+                                      Nothing
+                                      [(x,4+sin (fromIntegral x))|x <- [0..7]]],
 
-                  points = [],
-                  legend = True,
-                  dimensions = (800,400),
-                  xLabel = "Threads",
-                  yLabel = "ms"
-                 }             
+                  pPoints = [],
+                  pLegend = True,
+                  pDimensions = (800,400),
+                  pXLabel = "Threads",
+                  pYLabel = "ms"
+                 }
+
+exampleStack :: BarStackPlot String Double
+exampleStack =
+  BarStackPlot { bsStacks = [[BarGraph "#F00"
+                                       "Dynaprof"
+                                       [("gcc",4.5),("tar",3.3)],
+                              BarGraph "#F07"
+                                       "Dynaprof startup"
+                                       [("gcc",1.2),("tar",1.2)]],
+                             [BarGraph "#00F"
+                                       "Leading contender"
+                                       [("gcc",5.5),("tar",4.3)],
+                              BarGraph "#07F"
+                                       "Leading contender startup"
+                                       [("gcc",0.7),("tar",0.7)]]],
+                 bsLegend = True,
+                 bsDimensions = (800,400),
+                 bsXLabel = "Program",
+                 bsYLabel = "Time"
+               } 
+                             
 
 ---------------------------------------------------------------------------
 -- Utilities 
@@ -306,12 +211,11 @@ renderPlot s pl =
          points
          bars
          legend
-     --    (xstyle,ystyle)
          (width,height)
          xlabel
          ylabel = pl
      
-    (s1:s2:s3:s4:_) = split s 
+    (s1:s2:s3:_) = split s 
     (v1,code1) = dataSet s1 (map lgData lines) 
     (v2,code2) = dataSet s2 (map pgData points)
     (v3,code3) = dataSet s3 (map bgData bars)
@@ -359,21 +263,16 @@ renderPlot s pl =
                        "axisLabels: {show: true}," ++
                        "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: x) ++ " }," ++
                        "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: y) ++ " }};" 
-
-    -- xaxis_ticks =
-    --   case xstyle of 
-    --     TicksAdaptToData ->
-    --       let xvals = getXAxisValues pl
-    --       in "ticks: [" ++ concat (intersperse "," (map toPlot xvals)) ++ "],"
-    --     _ -> ""
         
     pngButton
       = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
         "var canvas = someplot.getCanvas();\n" ++
         "var ctx = canvas.getContext(\"2d\");\n" ++
         "window.open(canvas.toDataURL('png'), \"\");\n" ++
-        "}" 
-    
+        "}"
+        
+--------------------------------------------------------------------------- 
+-- Obtain variables and code from a dataset.
 dataSet :: (Plotable x, Plotable y)
            => Supply Int -> [[(x,y)]] -> ([String], String)
 dataSet _ [] = ([],[])
@@ -387,25 +286,93 @@ dataSet s (x:xs) = (vn:vars, def ++ code)
     tupToArr (x,y) = "[ " ++ toPlot x ++ ", " ++ toPlot y ++ "]" 
 
 
--- A current assumption is that all charts in a plot
--- share the exact same xaxis values.
--- Plots with two different xaxi are impossible.
-
--- find any populated dataset and extract its x axis.
--- TODO: add error checking (if no data exists in the plot
--- the plotting should already have been aborted!)
-
--- Abandon this attempt for now.
--- see how well it works with just going to "category" mode
--- when an axis is string labeled.
-getXAxisValues :: Plot x y -> [x]
-getXAxisValues pl = map fst (head dat) 
+---------------------------------------------------------------------------
+-- Render a bargraph with stacked bars.. 
+renderBSPlot :: forall x y . (Plotable x, Plotable y)
+              => Supply Int -> BarStackPlot x y -> String
+renderBSPlot s pl =
+  "$(function () { \n" ++
+   plotOptions ++ "\n" ++ 
+   body ++ plot chart ++ 
+  "});"
+  
   where
-    ls = map lgData $ lines pl
-    bs = map bgData $ bars pl
-    ps = map pgData $ points pl 
+    BarStackPlot bars
+         legend
+         (width,height)
+         xlabel
+         ylabel = pl
+     
+    -- (s1:s2:_) = split s 
+    (v,code) = barStackDataSet s bars --- (map bgData bars)
+    
+    plot c = "var someplot = $.plot(\"#placeholder\", [" ++ 
+             c ++
+             "], options); \n" ++
+             pngButton
+             
+    body = code
 
-    dat = filter (not . null) $ concat [ls,bs,ps] 
+    chart' = map (concat .intersperse ", ") $ chartBars v (zip order bars)
+    chart =  (concat (intersperse "} , {" chart')) 
+    
+    order = [1..] :: [Int]
+    nBarGraphs = length bars
+    barWidth = 1 / (fromIntegral (nBarGraphs + 1)) :: Double -- +1 for space
+
+    chartBars :: [[String]] -> [(Int,[BarGraph x y])] -> [[String]] 
+    chartBars [] [] = []
+    chartBars b  [] = error "chartBars: not matching!"
+    chartBars [] b  = error "chartBars: not matching!"
+    chartBars (v:vs) ((o,b):bs) =
+      generateStack v b : chartBars vs bs
+       where
+         generateStack [] [] = []
+         generateStack (v:vs) (b:bs) = 
+      
+           ("{\n data: " ++ v ++ ",\n" ++
+            "bars: {show: true," ++
+            "order: " ++ show o ++ ",\n" ++
+            "barWidth: " ++ show barWidth ++ "},\n" ++
+            "label: " ++ show (bgLabel b) ++ ",\n" ++
+            "color: " ++ show (bgColor b) ++ "\n" ++
+            "}")  : generateStack vs bs
+    
+    plotOptions
+      = "var options = {canvas: true," ++ 
+                       "legend: {position: \"nw\", type: \"canvas\" }," ++
+                       "axisLabels: {show: true}," ++
+                       "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: x) ++ " }," ++
+                       "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: y) ++ " }};" 
+        
+    pngButton
+      = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
+        "var canvas = someplot.getCanvas();\n" ++
+        "var ctx = canvas.getContext(\"2d\");\n" ++
+        "window.open(canvas.toDataURL('png'), \"\");\n" ++
+        "}" 
+
+barStackDataSet :: (Plotable x, Plotable y)
+                   => Supply Int -> [[BarGraph x y]] -> ([[String]],String)
+barStackDataSet s [] = ([],[])
+barStackDataSet s (x:xs) = (v:vs, code ++ c)
+  where
+    (s1,s2) = split2 s 
+    (v,code) = dataSet s1 (map bgData x)
+    (vs,c)   = barStackDataSet s2 xs 
+
+-- dataSet :: (Plotable x, Plotable y)
+--            => Supply Int -> [[(x,y)]] -> ([String], String)
+-- dataSet _ [] = ([],[])
+-- dataSet s (x:xs) = (vn:vars, def ++ code) 
+--   where
+--     vn = "v" ++ show (supplyValue s )
+--     (s1,s2) = split2 s 
+--     def = "var " ++ vn ++ " = [" ++ dataValues x ++ "];\n"
+--     (vars,code) = dataSet s2 xs
+--     dataValues x = concat $ intersperse "," $ map tupToArr x
+--     tupToArr (x,y) = "[ " ++ toPlot x ++ ", " ++ toPlot y ++ "]" 
+
 
 
 ---------------------------------------------------------------------------
