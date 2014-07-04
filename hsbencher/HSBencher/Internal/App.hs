@@ -178,7 +178,9 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
-runOne :: (Int,Int) -> BuildID -> BuildResult -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
+runOne :: (Int,Int) -> BuildID -> BuildResult 
+       -> Benchmark DefaultParamMeaning 
+       -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
 runOne (iterNum, totalIters) _bldid bldres
        Benchmark{target=testPath, cmdargs=args_, progname, benchTimeOut}
        runconfig = do       
@@ -195,7 +197,7 @@ runOne (iterNum, totalIters) _bldid bldres
       
   let runFlags = toRunFlags runconfig
       envVars  = toEnvVars  runconfig
-  conf@Config{ runTimeOut, trials, shortrun, argsBeforeFlags, harvesters } <- ask 
+  conf@Config{ runTimeOut, trials, shortrun, argsBeforeFlags, harvesters, keepgoing } <- ask 
   -- maxthreads, runID, skipTo, ciBuildID, hostname, startTime, pathRegistry, 
   -- doClean, keepgoing, benchlist, benchsetName, benchversion, resultsFile, logFile, gitInfo,
   -- buildMethods, logOut, resultsOut, stdOut, envs, plugInConfs 
@@ -276,6 +278,9 @@ runOne (iterNum, totalIters) _bldid bldres
         printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
                                   (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
       return ("","","","","","")
+    else if any isError nruns && not keepgoing then do 
+      log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
+      liftIO exitFailure
     else do
       let goodruns = filter (not . isError) nruns
       -- Extract the min, median, and max:
