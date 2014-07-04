@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.8.0.7
+version:             1.8.0.8
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -33,6 +33,8 @@ version:             1.8.0.7
 -- 1.6.3.1 : BenchmarkResult show instance
 -- 1.8     : Introduce backend plugins
 -- 1.8.0.3 : Most modules in .Internal, but Methods reexposed and moved.
+-- 1.8.0.7 : Joel added custom schema fields.
+-- 1.8.0.8 : Added "-l" command line arg.
 
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.

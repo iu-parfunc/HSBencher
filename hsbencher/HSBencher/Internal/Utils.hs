@@ -2,36 +2,35 @@
 
 -- | Misc Small Helpers
 
-module HSBencher.Internal.Utils where
+module HSBencher.Internal.Utils 
+  ( defaultTimeout, backupResults, 
+    runLogged, runSL, runLines,
+    trim, fetchBaseName, echoStream,
+    my_name, main_threadid, 
+  )
+  where
 
 import Control.Concurrent
-import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled))
-import qualified Data.Set as Set
-import Data.Char (isSpace)
-import Data.List (isPrefixOf)
-import Data.IORef
-import qualified Data.ByteString.Char8 as B
+import Control.Exception (handle, SomeException, fromException, AsyncException(ThreadKilled))
 import Control.Monad.Reader -- (lift, runReaderT, ask)
+import qualified Data.ByteString.Char8 as B
+import Data.Char (isSpace)
+import Data.IORef
+import Prelude hiding (log)
+import System.Directory
+import System.Exit
+import System.FilePath (dropTrailingPathSeparator, takeBaseName)
+import System.IO (hPutStrLn, stderr, hGetContents)
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
-
-import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
-                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
-import System.Environment (getArgs, getEnv, getEnvironment)
-import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
-                  IOMode(..), BufferMode(..), hSetBuffering)
-import System.Exit
 import System.IO.Unsafe (unsafePerformIO)
-import System.FilePath (dropTrailingPathSeparator, takeBaseName)
-import System.Directory
+import System.Process (waitForProcess, getProcessExitCode, createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 import Text.Printf
-import Prelude hiding (log)
 
 import HSBencher.Types 
 import HSBencher.Internal.Logging
 import HSBencher.Internal.MeasureProcess
 
-import Debug.Trace
 
 ----------------------------------------------------------------------------------------------------
 -- Global constants, variables:
@@ -49,10 +48,6 @@ main_threadid :: IORef ThreadId
 main_threadid = unsafePerformIO$ newIORef (error "main_threadid uninitialized")
 
 --------------------------------------------------------------------------------
-
--- These int list arguments are provided in a space-separated form:
-parseIntList :: String -> [Int]
-parseIntList = map read . words 
 
 -- Remove whitespace from both ends of a string:
 trim :: String -> String
@@ -74,32 +69,8 @@ trim = f . f
 -- parseBench (h:m:tl) = Benchmark {name=h, compatScheds=expandMode m, args=tl }
 -- parseBench ls = error$ "entry in benchlist does not have enough fields (name mode args): "++ unwords ls
 
-strBool :: String -> Bool
-strBool ""  = False
-strBool "0" = False
-strBool "1" = True
-strBool  x  = error$ "Invalid boolean setting for environment variable: "++x
-
-fst3 (a,b,c) = a
-snd3 (a,b,c) = b
-thd3 (a,b,c) = c
-
-isNumber :: String -> Bool
-isNumber s =
-  case reads s :: [(Double, String)] of 
-    [(n,"")] -> True
-    _        -> False
-
--- Indent for prettier output
-indent :: [String] -> [String]
-indent = map ("    "++)
 
 --------------------------------------------------------------------------------
-
-runIgnoreErr :: String -> IO String
-runIgnoreErr cm = 
-  do lns <- runLines cm
-     return (unlines lns)
 
 -- | Create a thread that echos the contents of stdout/stderr InputStreams (lines) to
 -- the appropriate places (as designated by the logging facility).
@@ -146,10 +117,10 @@ runLogged tag cmd = do
           Nothing -> return (reverse acc)
           Just ln -> do log (B.unpack ln)
                         loop (ln:acc)
-  lines <- loop []
-  res   <- lift$ wait
-  log$ " * Command completed with "++show(length lines)++" lines of output." -- ++show res
-  return (res,lines)
+  lnes <- loop []
+  res  <- lift$ wait
+  log$ " * Command completed with "++show(length lnes)++" lines of output." -- ++show res
+  return (res,lnes)
 
 -- | Runs a command through the OS shell and returns stdout split into
 -- lines.  (Ignore exit code and stderr.)
@@ -168,7 +139,7 @@ runLines cmd = do
        create_group = False,
        delegate_ctlc = False
      }
-  waitForProcess ph  
+  _ <- waitForProcess ph  
   Just _code <- getProcessExitCode ph  
   str <- hGetContents outH
   let lns = lines str
@@ -184,24 +155,6 @@ runSL cmd = do
     h:_ -> return h
     []  -> error$ "runSL: expected at least one line of output for command "++cmd
 
-
-
--- Check the return code from a call to a test executable:
-check :: Bool -> ExitCode -> String -> BenchM Bool
-check _ ExitSuccess _           = return True
-check keepgoing (ExitFailure code) msg  = do
-  let report = log$ printf " #      Return code %d " (143::Int)
-  case code of 
-   143 -> 
-     do report
-        log         " #      Process TIMED OUT!!" 
-   _ -> 
-     do log$ " # "++msg 
-	report 
-        log "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-        unless keepgoing $ 
-          lift$ exitWith (ExitFailure code)
-  return False
 
 
 -- | Fork a thread but ALSO set up an error handler.

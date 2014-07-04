@@ -461,8 +461,9 @@ doShowHelp allplugs = do
       putStrLn $ ((uncurry usageInfo) (plugCmdOpts p))
     putStrLn$ generalUsageStr
 
-doShowBenches = do
-  undefined
+-- TODO/FIXME: Break up the giant function below.  Also move to using
+-- a StateT to store the Config, and reduce the verbosity of the
+-- output when "Harvesting environment data".
 
 -- | An even more flexible version allows the user to install a hook which modifies
 -- the configuration just before bencharking begins.  All trawling of the execution
