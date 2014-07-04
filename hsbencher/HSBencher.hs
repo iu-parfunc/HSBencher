@@ -15,13 +15,16 @@ module HSBencher
          Flag(..),
          all_cli_options, fullUsageInfo,
 
-         -- * All the types necessary for configuration
+         -- * All the types necessary for configuration and customization
 
          -- | Don't import the module below directly, but do click on this link to
          -- read its documentation.
-         module HSBencher.Types
+         module HSBencher.Types,
+
+         module HSBencher.Harvesters
        )
        where
 
 import HSBencher.Types
 import HSBencher.Internal.App
+import HSBencher.Harvesters
