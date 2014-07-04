@@ -1,7 +1,3 @@
-[submodule "hgdata_mirror"]
-	path = hgdata_mirror
-#	url = git@github.com:rrnewton/hgdata_mirror.git
-        url = git://github.com/rrnewton/hgdata_mirror.git
 [submodule "hgdata"]
 	path = hgdata
 	url = git@github.com:rrnewton/hgdata.git
