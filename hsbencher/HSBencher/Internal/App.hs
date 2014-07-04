@@ -19,24 +19,15 @@ module HSBencher.Internal.App
 ----------------------------
 -- Standard library imports
 import Prelude hiding (log)
-import Control.Applicative    
 import Control.Concurrent
 import Control.Monad.Reader
-import Control.Exception (evaluate, handle, SomeException, throwTo, fromException, AsyncException(ThreadKilled),try)
-import Debug.Trace
-import Data.Time.Clock (getCurrentTime, diffUTCTime)
-import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
-import Data.Monoid
-import Data.Dynamic
+import Control.Exception (SomeException, try)
+import Data.Maybe (isJust, fromJust, fromMaybe)
 import qualified Data.Map as M
-import qualified Data.Set as S
 import Data.Word (Word64)
 import Data.IORef
-import Data.List (intercalate, sortBy, intersperse, isPrefixOf, tails, isInfixOf, delete)
-import qualified Data.Set as Set
-import Data.Version (versionBranch, versionTags)
-import GHC.Conc (getNumProcessors)
+import Data.List (intercalate, sortBy, intersperse, isInfixOf)
+import Data.Version (versionBranch)
 import Numeric (showFFloat)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getEnv, getEnvironment, getProgName)
@@ -182,7 +173,7 @@ runOne :: (Int,Int) -> BuildID -> BuildResult
        -> Benchmark DefaultParamMeaning 
        -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
 runOne (iterNum, totalIters) _bldid bldres
-       Benchmark{target=testPath, cmdargs=args_, progname, benchTimeOut}
+       Benchmark{target=testPath, cmdargs, progname, benchTimeOut}
        runconfig = do       
   let numthreads = foldl (\ acc (x,_) ->
                            case x of
@@ -205,13 +196,13 @@ runOne (iterNum, totalIters) _bldid bldres
   ----------------------------------------
   -- (1) Gather contextual information
   ----------------------------------------  
-  let args = if shortrun then shortArgs args_ else args_
+  let args = if shortrun then shortArgs cmdargs else cmdargs
       fullargs = if argsBeforeFlags 
                  then args ++ runFlags
                  else runFlags ++ args
       testRoot = fetchBaseName testPath
   log$ "\n--------------------------------------------------------------------------------"
-  log$ "  Running Config "++show iterNum++" of "++show totalIters ++": "++testPath
+  log$ "  Running Config "++show iterNum++" of "++show totalIters ++": "++testPath++" "++unwords cmdargs
 --       "  threads "++show numthreads++" (Env="++show envVars++")"
   log$ nest 3 $ show$ doc$ map snd runconfig
   log$ "--------------------------------------------------------------------------------\n"
@@ -243,7 +234,7 @@ runOne (iterNum, totalIters) _bldid bldres
           mv   <- echoStream (not shortrun) both
           x    <- lift wait
           lift$ takeMVar mv
-          logT$ " Subprocess finished and echo thread done."
+          logT$ " Subprocess finished and echo thread done.\n"
           return x
     case bldres of
       StandAloneBinary binpath -> do
@@ -333,7 +324,7 @@ runOne (iterNum, totalIters) _bldid bldres
             , _MEDIANTIME_ALLOCRATE    = getallocrate medianR
             , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
-            , _RUNTIME_FLAGS = unwords runFlags
+            , _RUNTIME_FLAGS =  unwords runFlags
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
             , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials
@@ -350,8 +341,8 @@ runOne (iterNum, totalIters) _bldid bldres
       forM_ plugIns $ \ (SomePlugin p) -> do 
 
         --JS: May 21 2014, added try and case on result. 
-        result <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ()) 
-        case result of
+        result3 <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ()) 
+        case result3 of
           Left _ -> logT$"plugUploadRow:Failed"
           Right () -> return ()
         return ()
