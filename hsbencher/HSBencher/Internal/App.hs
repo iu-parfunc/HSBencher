@@ -240,9 +240,10 @@ runOne (iterNum, totalIters) _bldid bldres
             lift$ measureProcess harvesters cmddescr
           err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
           both <- lift$ Strm.concurrentMerge [process_out, err2]
-          mv <- echoStream (not shortrun) both
+          mv   <- echoStream (not shortrun) both
+          x    <- lift wait
           lift$ takeMVar mv
-          x <- lift wait
+          logT$ " Subprocess finished and echo thread done."
           return x
     case bldres of
       StandAloneBinary binpath -> do
