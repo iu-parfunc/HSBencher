@@ -18,40 +18,31 @@ module HSBencher.Internal.App
 
 ----------------------------
 -- Standard library imports
-import Prelude hiding (log)
 import Control.Concurrent
-import Control.Monad.Reader
+import qualified Control.Concurrent.Async as A
 import Control.Exception (SomeException, try)
-import Data.Maybe (isJust, fromJust, fromMaybe)
-import qualified Data.Map as M
-import Data.Word (Word64)
+import Control.Monad.Reader
+import qualified Data.ByteString.Char8 as B
 import Data.IORef
 import Data.List (intercalate, sortBy, intersperse, isInfixOf)
+import qualified Data.Map as M
+import Data.Maybe (isJust, fromJust, fromMaybe)
 import Data.Version (versionBranch)
+import Data.Word (Word64)
 import Numeric (showFFloat)
-import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
-import System.Environment (getArgs, getEnv, getEnvironment, getProgName)
+import Prelude hiding (log)
+import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr, usageInfo)
 import System.Directory
-import System.Posix.Env (setEnv)
-import System.Random (randomIO)
+import System.Environment (getArgs, getEnv, getProgName)
 import System.Exit
-import System.FilePath (splitFileName, (</>), takeDirectory)
-import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, 
-                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess)
-import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
-                  IOMode(..), BufferMode(..), hSetBuffering)
-import System.IO.Unsafe (unsafePerformIO)
-import qualified Data.ByteString.Char8 as B
+import System.FilePath (splitFileName, (</>))
+import System.Process (CmdSpec(..))
 import Text.Printf
-import Text.PrettyPrint.GenericPretty (Out(doc))
--- import Text.PrettyPrint.HughesPJ (nest)
+
 ----------------------------
 -- Additional libraries:
-
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
-import qualified System.IO.Streams.Process as Strm
-import qualified System.IO.Streams.Combinators as Strm
 
 #ifdef USE_HYDRAPRINT
 import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydraConf, hydraPrintStatic)
@@ -65,7 +56,6 @@ import HSBencher.Types
 import HSBencher.Internal.Utils
 import HSBencher.Internal.Logging
 import HSBencher.Internal.Config
-import HSBencher.Methods.Builtin
 import HSBencher.Internal.MeasureProcess 
 import Paths_hsbencher (version) -- Thanks, cabal!
 
@@ -104,6 +94,7 @@ gc_stats_flag = " -s "
 
 exedir :: String
 exedir = "./bin"
+
 
 --------------------------------------------------------------------------------
 
@@ -233,9 +224,28 @@ runOne (iterNum, totalIters) _bldid bldres
           both <- lift$ Strm.concurrentMerge [process_out, err2]
           mv   <- echoStream (not shortrun) both
           x    <- lift wait
-          lift$ takeMVar mv
+          lift$ A.wait mv
           logT$ " Subprocess finished and echo thread done.\n"
           return x
+
+    -- I'm having problems currently [2014.07.04], where after about
+    -- 50 benchmarks (* 3 trials), all runs fail but there is NO
+    -- echo'd output. So here we try something simpler as a test.
+    let doMeasure2 cmddescr = do
+          SubProcess {wait,process_out,process_err} <-
+            lift$ measureProcess harvesters cmddescr
+          err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
+          out2 <- lift$ Strm.map (B.append " [stdout] ") process_out
+          both <- lift$ Strm.appendInputStream out2 err2
+          error "UNFINISHED: doMeasure2"
+          -- let dests = if (not shortrun) then [LogFile, StdOut] else [LogFile]
+          -- both2 <- logOn dests (B.unpack ln)
+          -- x    <- lift wait
+          -- lift$ takeMVar mv
+          -- logT$ " Subprocess finished and echo thread done.\n"
+          -- return x
+
+
     case bldres of
       StandAloneBinary binpath -> do
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:

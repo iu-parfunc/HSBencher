@@ -144,6 +144,29 @@ measureProcess (LineHarvester harvest)
   fut <- A.async (loop emptyRunResult)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
 
+-- | A simpler and SINGLE-THREADED alternative to `measureProcess`.
+measureProcess2 :: LineHarvester -- ^ Stack of harvesters
+               -> CommandDescr
+               -> IO SubProcess
+measureProcess2 (LineHarvester harvest)
+               CommandDescr{command, envVars, timeout, workingDir} = do
+  origDir <- getCurrentDirectory
+  case workingDir of
+    Just d  -> setCurrentDirectory d
+    Nothing -> return ()
+
+  -- LAUNCH subprocess:
+  -- (_inp,out,err,pid) <-
+  --   case command of
+  --     RawCommand exeFile cmdArgs -> Strm.runInteractiveProcess exeFile cmdArgs Nothing (Just$ envVars++curEnv)
+  --     ShellCommand str           -> runInteractiveCommandWithEnv str (envVars++curEnv)
+
+  setCurrentDirectory origDir  -- Threadsafety!?!
+
+  -- Process output lines
+
+  error "FINISHME"
+
 -- Dump the rest of an IOStream until we reach the end
 dumpRest :: Strm.InputStream a -> IO ()
 dumpRest strm = do 

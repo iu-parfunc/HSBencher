@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns, ScopedTypeVariables, OverloadedStrings #-}
 
 -- | Misc Small Helpers
 
@@ -11,6 +11,7 @@ module HSBencher.Internal.Utils
   where
 
 import Control.Concurrent
+import qualified Control.Concurrent.Async as A
 import Control.Exception (handle, SomeException, fromException, AsyncException(ThreadKilled))
 import Control.Monad.Reader -- (lift, runReaderT, ask)
 import qualified Data.ByteString.Char8 as B
@@ -18,7 +19,6 @@ import Data.Char (isSpace)
 import Data.IORef
 import Prelude hiding (log)
 import System.Directory
-import System.Exit
 import System.FilePath (dropTrailingPathSeparator, takeBaseName)
 import System.IO (hPutStrLn, stderr, hGetContents)
 import qualified System.IO.Streams as Strm
@@ -28,7 +28,7 @@ import System.Process (waitForProcess, getProcessExitCode, createProcess, Create
 import Text.Printf
 
 import HSBencher.Types 
-import HSBencher.Internal.Logging
+import HSBencher.Internal.Logging (log,logOn, LogDest(StdOut, LogFile))
 import HSBencher.Internal.MeasureProcess
 
 
@@ -75,27 +75,19 @@ trim = f . f
 -- | Create a thread that echos the contents of stdout/stderr InputStreams (lines) to
 -- the appropriate places (as designated by the logging facility).
 -- Returns an MVar used to synchronize on the completion of the echo thread.
-echoStream :: Bool -> Strm.InputStream B.ByteString -> BenchM (MVar ())
+echoStream :: Bool -> Strm.InputStream B.ByteString -> BenchM (A.Async ())
 echoStream echoStdout outS = do
   conf <- ask
-  mv   <- lift$ newEmptyMVar  
-  lift$ void$ forkIO $
-      -- Make sure we get around to putting the MVar if something goes wrong:  
-      handle (\ (exn::SomeException) -> do
-                 hPutStrLn stderr $ " [hsbencher] Ignoring exception on echo thread: "++show exn
-                 putMVar mv ())
-             (runReaderT (echoloop mv) conf)
-  return mv
+  lift$ A.async (runReaderT echoloop conf)
  where
-   echoloop mv = 
-     do
-        x <- lift$ Strm.read outS
+   echoloop = 
+     do x <- lift$ Strm.read outS
         case x of
-          Nothing -> lift$ putMVar mv ()
+          Nothing -> return () -- Thread dies.
           Just ln -> do
             logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) (B.unpack ln)
---            lift$ B.putStrLn ln
-            echoloop mv
+            lift$ B.hPutStrLn stderr (B.append "TMPDBG: " ln) -- TEMP: make sure it gets output 
+            echoloop 
 
 -- | Run a command and wait for all output.  Log output to the appropriate places.
 --   The first argument is a "tag" to append to each output line to make things
@@ -157,21 +149,7 @@ runSL cmd = do
 
 
 
--- | Fork a thread but ALSO set up an error handler.
-forkIOH :: String -> IO () -> IO ThreadId
-forkIOH who action = 
-  forkIO $ handle (\ (e::SomeException) -> 
-                   case fromException e of
-                     Just ThreadKilled -> return ()
-                     Nothing -> do
-                        printf $ "ERROR: "++who++": Got exception inside forked thread: "++show e++"\n"                       
-			tid <- readIORef main_threadid
-			throwTo tid e
-		  )
-           action
-
-
-
+-- Unused: an attempt to snapshot CPU load:
 getCPULoad :: IO (Maybe Double)
 getCPULoad = do
    cmd <- fmap trim $ runSL "which mpstat"
