@@ -180,7 +180,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
 -- used to skip straight to the execution.
 runOne :: (Int,Int) -> BuildID -> BuildResult 
        -> Benchmark DefaultParamMeaning 
-       -> [(DefaultParamMeaning,ParamSetting)] -> BenchM ()
+       -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
 runOne (iterNum, totalIters) _bldid bldres
        Benchmark{target=testPath, cmdargs=args_, progname, benchTimeOut}
        runconfig = do       
@@ -356,8 +356,10 @@ runOne (iterNum, totalIters) _bldid bldres
         return ()
 
       return (t1,t2,t3,p1,p2,p3)
-      
-  return ()     
+
+  -- If -keepgoing is set, we consider only errors on all runs to
+  -- invalidate the whole benchmark job:
+  return (not (all isError nruns))
 
 
 --------------------------------------------------------------------------------
@@ -671,9 +673,9 @@ defaultMainModifyConfig modConfig = do
                       -> M.Map BuildID (Int, Maybe BuildResult)
                       -> M.Map FilePath BuildID -- (S.Set ParamSetting)
                       -> [(Benchmark DefaultParamMeaning, [(DefaultParamMeaning,ParamSetting)])]
-                      -> BenchM ()
-              runloop _ _ _ [] = return ()
-              runloop !iter !board !lastConfigured (nextrun:rest) = do
+                      -> Bool -> BenchM Bool
+              runloop _ _ _ [] b = return b
+              runloop !iter !board !lastConfigured (nextrun:rest) allpassed = do
                 -- lastConfigured keeps track of what configuration was last built in
                 -- a directory that is used for `RunInPlace` builds.
                 let (bench,params) = nextrun
@@ -687,12 +689,12 @@ defaultMainModifyConfig modConfig = do
                         lastC' = M.insert (target bench) bid lastConfigured
 
                     -- runloop iter board' (nextrun:rest)
-                    runOne (iter,totalruns) bid res bench params
-                    runloop (iter+1) board' lastC' rest
+                    b <- runOne (iter,totalruns) bid res bench params
+                    runloop (iter+1) board' lastC' rest (allpassed && b)
 
                   Just (ccnum, Just bldres) -> 
-                    let proceed = do runOne (iter,totalruns) bid bldres bench params
-                                     runloop (iter+1) board lastConfigured rest 
+                    let proceed = do b <- runOne (iter,totalruns) bid bldres bench params
+                                     runloop (iter+1) board lastConfigured rest (allpassed && b)
                     in
                     case bldres of 
                       StandAloneBinary _ -> proceed
@@ -706,7 +708,8 @@ defaultMainModifyConfig modConfig = do
                            if bid == bid2 
                            then do logT$ "Skipping rebuild of in-place benchmark: "++bid
                                    proceed 
-                           else runloop iter (M.insert bid (ccnum,Nothing) board) lastConfigured (nextrun:rest)
+                           else runloop iter (M.insert bid (ccnum,Nothing) board) 
+                                        lastConfigured (nextrun:rest) allpassed
 
               -- Keeps track of what's compiled.
               initBoard _ [] acc = acc 
@@ -728,18 +731,23 @@ defaultMainModifyConfig modConfig = do
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
           let startBoard = initBoard 1 zippedruns M.empty
           Config{skipTo} <- ask
-          case skipTo of 
-            Nothing -> runloop 1 startBoard M.empty zippedruns
-            Just ix -> do logT$" !!! WARNING: SKIPPING AHEAD in configuration space; jumping to: "++show ix
-                          runloop ix startBoard M.empty (drop (ix-1) zippedruns)
-
+          win <- case skipTo of 
+                  Nothing -> runloop 1 startBoard M.empty zippedruns True
+                  Just ix -> do logT$" !!! WARNING: SKIPPING AHEAD in configuration space; jumping to: "++show ix
+                                runloop ix startBoard M.empty (drop (ix-1) zippedruns) True
+  	  unless win $ do 
+             log$ "\n--------------------------------------------------------------------------------"
+             log "  Finished benchmarks, but some errored out, marking this job as a failure."
+             log$ "--------------------------------------------------------------------------------"
+             liftIO$ exitFailure
+          return ()
 {-
         do Config{logOut, resultsOut, stdOut} <- ask
            liftIO$ Strm.write Nothing logOut 
            liftIO$ Strm.write Nothing resultsOut 
 -}
         log$ "\n--------------------------------------------------------------------------------"
-        log "  Finished with all test configurations."
+        log "  Finished with all benchmark configurations.  Success."
         log$ "--------------------------------------------------------------------------------"
 	liftIO$ exitSuccess
     )
