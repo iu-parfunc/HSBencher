@@ -8,9 +8,6 @@
 
 --------------------------------------------------------------------------------
 
--- Disabling some stuff until we can bring it back up after the big transition [2013.05.28]:
-#define DISABLED
-
 {- | The Main module defining the HSBencher driver.
 -}
 
@@ -449,6 +446,24 @@ removePlugin p cfg =
   where
     byNom (SomePlugin p1) =  plugName p1 /= plugName p
 
+
+
+--------------------------------------------------------------------------------
+
+doShowHelp :: [SomePlugin] -> IO ()
+doShowHelp allplugs = do
+    putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTS]"
+    putStrLn$ "\nNote: \"CMDLN OPTS\" includes patterns that select which benchmarks"
+    putStrLn$ "     to run, based on name."
+    mapM putStr (map (uncurry usageInfo) all_cli_options)
+    putStrLn ""
+    forM_ allplugs $ \ (SomePlugin p) -> do  
+      putStrLn $ ((uncurry usageInfo) (plugCmdOpts p))
+    putStrLn$ generalUsageStr
+
+doShowBenches = do
+  undefined
+
 -- | An even more flexible version allows the user to install a hook which modifies
 -- the configuration just before bencharking begins.  All trawling of the execution
 -- environment (command line args, environment variables) happens BEFORE the user
@@ -458,7 +473,7 @@ removePlugin p cfg =
 -- corresponds to the 'benchlist' field of the output 'Config'.
 defaultMainModifyConfig :: (Config -> Config) -> IO ()
 defaultMainModifyConfig modConfig = do    
-  id <- myThreadId
+  id       <- myThreadId
   writeIORef main_threadid id
   my_name  <- getProgName
   cli_args <- getArgs
@@ -466,9 +481,10 @@ defaultMainModifyConfig modConfig = do
   let (options,plainargs,_unrec,errs) = getOpt' Permute (concat$ map snd all_cli_options) cli_args
 
   -- This ugly method avoids needing an Eq instance:
-  let recomp       = null [ () | NoRecomp <- options]
-      showHelp      = not$ null [ () | ShowHelp <- options]
+  let recomp       =      null [ () | NoRecomp <- options]
+      showHelp     = not$ null [ () | ShowHelp <- options]
       gotVersion   = not$ null [ () | ShowVersion <- options]
+      showBenchs   = not$ null [ () | ShowBenchmarks <- options]
       cabalAllowed = not$ null [ () | NoCabal <- options]
       parBench     = not$ null [ () | ParBench <- options]
 
@@ -481,6 +497,7 @@ defaultMainModifyConfig modConfig = do
       printHelp opts = 
         error "FINISHME"
 
+  ------------------------------------------------------------
   putStrLn$ "\n"++hsbencher_tag++"Harvesting environment data to build Config."
   conf0 <- getConfig options []
   -- The list of benchmarks can optionally be narrowed to match any of the given patterns.
@@ -490,22 +507,22 @@ defaultMainModifyConfig modConfig = do
   -- be computed and added to the global config.
   let allplugs = plugIns conf1
 
-
-  when (not (null errs) || showHelp) $ do
-    unless showHelp $ putStrLn$ "Errors parsing command line options:"
+  ------------------------------------------------------------
+  let fullBenchList = 
+       case conf1 of 
+        Config{benchlist=ls} -> 
+          (unlines  [ (target ++ (unwords cmdargs))
+                    | Benchmark{cmdargs,target} <- ls])
+  when showBenchs $ do putStrLn ("All benchmarks handled by this script:\n"++fullBenchList)
+                       exitSuccess
+  unless (null errs) $ do
+    putStrLn$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
-    putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTS]"
-    putStrLn$ "\nNote: \"CMDLN OPTS\" includes patterns that select which benchmarks"
-    putStrLn$ "     to run, based on name."
+    doShowHelp allplugs
+    exitFailure
+  when showHelp   $ do doShowHelp    allplugs; exitSuccess
 
-    mapM putStr (map (uncurry usageInfo) all_cli_options)
-    putStrLn ""
-    forM_ allplugs $ \ (SomePlugin p) -> do  
-      putStrLn $ ((uncurry usageInfo) (plugCmdOpts p))
-    putStrLn$ generalUsageStr
-    if showHelp then exitSuccess else exitFailure
-
-
+  ------------------------------------------------------------
   -- Hmm, not really a strong reason to *combine* the options lists, rather we do
   -- them one at a time:
   let pconfs = [ (plugName p, SomePluginConf p pconf)
@@ -522,7 +539,7 @@ defaultMainModifyConfig modConfig = do
 
   -- TODO/FIXME: CATCH ERRORS... should remove the plugin from the list if it errors on init.
   -- JS attempted fix
-  conf_final <- foldM (\ cfg (SomePlugin p) ->
+  conf3 <- foldM (\ cfg (SomePlugin p) ->
                         do result <- try (plugInitialize p cfg) :: IO (Either SomeException Config) 
                            case result of
                              Left err -> do
@@ -530,14 +547,13 @@ defaultMainModifyConfig modConfig = do
                                return $ removePlugin p cfg
                                -- cannot log here, only "chatter". 
                              Right c -> return c 
-                        ) conf2 allplugs
-
+                 ) conf2 allplugs
   putStrLn$ hsbencher_tag++" plugin init complete."
 
   -------------------------------------------------------------------
   -- Next prune the list of benchmarks to those selected by the user:
   let cutlist = case plainargs of
-                 [] -> benchlist conf_final
+                 [] -> benchlist conf3
                  patterns -> filter (\ Benchmark{target,cmdargs,progname} ->
                                       any (\pat ->
                                             isInfixOf pat target ||
@@ -545,12 +561,10 @@ defaultMainModifyConfig modConfig = do
                                             any (isInfixOf pat) cmdargs
                                           )
                                           patterns)
-                                    (benchlist conf_final)
-  let conf2@Config{envs,benchlist,stdOut} = conf_final{benchlist=cutlist}
+                                    (benchlist conf3)
+  let conf4@Config{benchlist} = conf3{benchlist=cutlist}
 
-  hasMakefile <- doesFileExist "Makefile"
-  cabalFile   <- runLines "ls *.cabal"
-  let hasCabalFile = (cabalFile /= []) && cabalAllowed
+  ------------------------------------------------------------
   rootDir <- getCurrentDirectory  
   runReaderT 
     (do
@@ -559,11 +573,7 @@ defaultMainModifyConfig modConfig = do
           logT$"There were "++show len++" benchmarks matching patterns: "++show plainargs
           when (len == 0) $ do 
             error$ "Expected at least one pattern to match!.  All benchmarks: \n"++
-                   (case conf_final of 
-                     Config{benchlist=ls} -> 
-                       (unlines  [ (target ++ (unwords cmdargs))
-                               | Benchmark{cmdargs,target} <- ls
-                               ]))
+                   fullBenchList
         
         logT$"Beginning benchmarking, root directory: "++rootDir
         let globalBinDir = rootDir </> "bin"
@@ -727,7 +737,7 @@ defaultMainModifyConfig modConfig = do
         log$ "--------------------------------------------------------------------------------"
 	liftIO$ exitSuccess
     )
-    conf2
+    conf4
 
 
 -- Several different options for how to display output in parallel:

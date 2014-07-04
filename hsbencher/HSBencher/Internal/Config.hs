@@ -38,7 +38,7 @@ import HSBencher.Internal.MeasureProcess
 
 ----------------------------------------------------------------------------------------------------
 
--- | Command line flags.
+-- | Command line flags to the benchmarking executable.
 data Flag = ParBench 
           | BenchsetName (String)
           | BinDir FilePath
@@ -46,7 +46,7 @@ data Flag = ParBench
           | ShortRun | KeepGoing | NumTrials String
           | SkipTo String | RunID String | CIBuildID String
           | CabalPath String | GHCPath String                               
-          | ShowHelp | ShowVersion
+          | ShowHelp | ShowVersion | ShowBenchmarks
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
 
@@ -89,6 +89,9 @@ core_cli_options =
 
       , Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
+
+      , Option ['l'] ["list-benchmarks"] (NoArg ShowBenchmarks)
+        "Show names of benchmarks, match them by substring in cmdln arg"
 
       , Option ['V'] ["version"] (NoArg ShowVersion)
         "Show the version and exit"
@@ -237,6 +240,7 @@ getConfig cmd_line_options benches = do
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r
+      doFlag ShowBenchmarks r = r
       doFlag NoRecomp r = r
       doFlag NoCabal  r = r
       doFlag NoClean  r = r { doClean = False }
