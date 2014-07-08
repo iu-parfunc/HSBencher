@@ -218,7 +218,7 @@ uploadBenchResult  br@BenchmarkResult{..} = do
         (cols,vals) = unzip tuple
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
-
+    log$ " [fusiontable] Full row contents: "++show ourData
     -- It's easy to blow the URL size; we need the bulk import version.
     -- stdRetry "insertRows" authclient toks $ insertRows
     res <- stdRetry "bulkImportRows" authclient toks $ bulkImportRows
