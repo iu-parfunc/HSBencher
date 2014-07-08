@@ -195,6 +195,9 @@ uploadBenchResult  br@BenchmarkResult{..} = do
 
     let ourSchema = map fst $ benchmarkResultToSchema br
         ourSet    = S.fromList ourSchema 
+    if null _CUSTOM 
+     then log$ " [fusiontable] Computed schema, no custom fields."
+     else log$ " [fusiontable] Computed schema, including these custom fields: " ++ show _CUSTOM
     targetSchema <- fmap (map col_name) $ liftIO$ listColumns atok tid      
     let targetSet = S.fromList targetSchema
         missing   = S.difference  ourSet targetSet
