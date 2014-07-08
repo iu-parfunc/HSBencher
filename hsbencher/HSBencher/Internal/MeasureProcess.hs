@@ -115,7 +115,7 @@ measureProcess (LineHarvester harvest)
                        let d = diffUTCTime endtime startTime in
                        return$ resultAcc { realtime = fromRational$ toRational d }
                    ExitFailure c   -> return (ExitError c)
-            -- [2014.03.01] TEMP: Change of policy.. if there was a SELFTIMED result, return it even if the process
+            -- [2014.03.01] TEMP/HACK: Change of policy.. if there was a SELFTIMED result, return it even if the process
             -- later errored.  (Accelerate/Cilk is segfaulting on exit right now.)
             else return resultAcc
           Just TimerFire -> do
@@ -184,12 +184,17 @@ measureProcessDBG (LineHarvester harvest)
       tagged = map (B.append " [stderr] ") errl ++
                map (B.append " [stdout] ") outl
       result = foldr (fst . harvest) emptyRunResult (errl++outl)
-  case code of
-   ExitSuccess -> 
-       -- If there's no self-reported time, we measure it ourselves:
-       let d = diffUTCTime endtime startTime in
-       return (tagged, result { realtime = fromRational$ toRational d })
-   ExitFailure c -> return (tagged, ExitError c)
+
+  if realtime result /= realtime emptyRunResult  -- Is it set to anything?
+  -- [2014.03.01] TEMP/HACK: Change of policy.. if there was a SELFTIMED result, return it even if the process
+  -- later errored.  (Accelerate/Cilk is segfaulting on exit right now.)
+  then return (tagged,result)
+  else case code of
+         ExitSuccess -> 
+             -- If there's no self-reported time, we measure it ourselves:
+             let d = diffUTCTime endtime startTime in
+             return (tagged, result { realtime = fromRational$ toRational d })
+         ExitFailure c   -> return (tagged, ExitError c)
 
 -- Dump the rest of an IOStream until we reach the end
 dumpRest :: Strm.InputStream a -> IO ()
