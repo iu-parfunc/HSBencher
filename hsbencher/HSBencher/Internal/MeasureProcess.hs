@@ -5,7 +5,7 @@
 -- overhead for GHC-compiled programs.
 
 module HSBencher.Internal.MeasureProcess
-       (measureProcess,
+       (measureProcess, measureProcessDBG,
         selftimedHarvester, jittimeHarvester,
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
         taggedLineHarvester
@@ -21,9 +21,9 @@ import Data.IORef
 import Data.Monoid
 import System.Exit
 import System.Directory
-import System.IO (hClose, stderr)
-import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, terminateProcess, 
-                       createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
+import System.IO (hClose, stderr, hGetContents)
+import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, terminateProcess)
+import System.Process (createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
 import System.Posix.Process (getProcessStatus)
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
@@ -145,27 +145,40 @@ measureProcess (LineHarvester harvest)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
 
 -- | A simpler and SINGLE-THREADED alternative to `measureProcess`.
-measureProcess2 :: LineHarvester -- ^ Stack of harvesters
-               -> CommandDescr
-               -> IO SubProcess
-measureProcess2 (LineHarvester harvest)
+measureProcessDBG :: LineHarvester -- ^ Stack of harvesters
+                  -> CommandDescr
+                  -> IO ([B.ByteString], RunResult)
+measureProcessDBG (LineHarvester harvest)
                CommandDescr{command, envVars, timeout, workingDir} = do
-  origDir <- getCurrentDirectory
-  case workingDir of
-    Just d  -> setCurrentDirectory d
-    Nothing -> return ()
-
-  -- LAUNCH subprocess:
-  -- (_inp,out,err,pid) <-
-  --   case command of
-  --     RawCommand exeFile cmdArgs -> Strm.runInteractiveProcess exeFile cmdArgs Nothing (Just$ envVars++curEnv)
-  --     ShellCommand str           -> runInteractiveCommandWithEnv str (envVars++curEnv)
-
-  setCurrentDirectory origDir  -- Threadsafety!?!
-
-  -- Process output lines
-
-  error "FINISHME"
+  curEnv <- getEnvironment
+  -- Create the subprocess:
+  (Just hin, Just hout, Just herr, ph) <- createProcess 
+     CreateProcess {
+       cmdspec = command,
+       env = Just (envVars++curEnv),
+       std_in  = CreatePipe,
+       std_out = CreatePipe,
+       std_err = CreatePipe,
+       cwd = workingDir,
+       close_fds = False,
+       create_group = False,
+       delegate_ctlc = False
+     }
+    -- TODO: implement timeout!
+    -- TODO: Could sleep and flush the buffer inbetween sleeping so as
+    -- to avoid forking extra threads here.
+  
+  -- Read stdout till it closes:
+  out <- B.hGetContents hout
+  err <- B.hGetContents herr
+  waitForProcess ph
+  let outl, errl :: [B.ByteString]
+      outl = B.lines out
+      errl = B.lines err
+      tagged = map (B.append " [stdout] ") outl ++
+               map (B.append " [stderr] ") errl
+      result = foldr (fst . harvest) emptyRunResult (outl++errl)
+  return (tagged,result)
 
 -- Dump the rest of an IOStream until we reach the end
 dumpRest :: Strm.InputStream a -> IO ()

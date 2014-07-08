@@ -217,7 +217,7 @@ runOne (iterNum, totalIters) _bldid bldres
   nruns <- forM [1..trials] $ \ i -> do 
     log$ printf "  Running trial %d of %d" i trials
     log "  ------------------------"
-    let doMeasure cmddescr = do
+    let doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
             lift$ measureProcess harvesters cmddescr
           err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
@@ -232,19 +232,11 @@ runOne (iterNum, totalIters) _bldid bldres
     -- 50 benchmarks (* 3 trials), all runs fail but there is NO
     -- echo'd output. So here we try something simpler as a test.
     let doMeasure2 cmddescr = do
-          SubProcess {wait,process_out,process_err} <-
-            lift$ measureProcess harvesters cmddescr
-          err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
-          out2 <- lift$ Strm.map (B.append " [stdout] ") process_out
-          both <- lift$ Strm.appendInputStream out2 err2
-          error "UNFINISHED: doMeasure2"
-          -- let dests = if (not shortrun) then [LogFile, StdOut] else [LogFile]
-          -- both2 <- logOn dests (B.unpack ln)
-          -- x    <- lift wait
-          -- lift$ takeMVar mv
-          -- logT$ " Subprocess finished and echo thread done.\n"
-          -- return x
+          (lines,result) <- lift$ measureProcessDBG harvesters cmddescr 
+          mapM_ (logT . B.unpack) lines 
+          return result
 
+        doMeasure = doMeasure2  -- TEMP / Toggle me back later.
 
     case bldres of
       StandAloneBinary binpath -> do
