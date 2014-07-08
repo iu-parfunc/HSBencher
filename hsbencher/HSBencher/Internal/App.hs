@@ -234,6 +234,7 @@ runOne (iterNum, totalIters) _bldid bldres
     let doMeasure2 cmddescr = do
           (lines,result) <- lift$ measureProcessDBG harvesters cmddescr 
           mapM_ (logT . B.unpack) lines 
+          logT $ "Subprocess completed with "++show(length lines)++" of output."
           return result
 
         doMeasure = doMeasure2  -- TEMP / Toggle me back later.
