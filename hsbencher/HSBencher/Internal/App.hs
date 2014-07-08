@@ -265,17 +265,19 @@ runOne (iterNum, totalIters) _bldid bldres
   let thename = case progname of
                   Just s  -> s
                   Nothing -> testRoot
+      exitCheck = when (any isError nruns && not keepgoing) $ do 
+                    log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
+                    liftIO exitFailure
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
       logOn [ResultsFile]$ 
         printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
                                   (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
+      exitCheck
       return ("","","","","","")
-    else if any isError nruns && not keepgoing then do 
-      log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
-      liftIO exitFailure
     else do
+      exitCheck
       let goodruns = filter (not . isError) nruns
       -- Extract the min, median, and max:
           sorted = sortBy (\ a b -> compare (gettime a) (gettime b)) goodruns
