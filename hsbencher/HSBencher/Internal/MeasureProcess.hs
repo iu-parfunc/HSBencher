@@ -143,7 +143,7 @@ measureProcess (LineHarvester harvest)
             let err = "benchmark.hs: Internal error!  This should not happen."
             B.hPutStrLn stderr err
             writeChan relay_err (Just err)
-            error err
+            error (B.unpack err)
   
   fut <- A.async (loop emptyRunResult)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
