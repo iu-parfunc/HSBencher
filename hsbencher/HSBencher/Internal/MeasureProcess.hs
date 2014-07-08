@@ -115,7 +115,7 @@ measureProcess (LineHarvester harvest)
                        let d = diffUTCTime endtime startTime in
                        return$ resultAcc { realtime = fromRational$ toRational d }
                    ExitFailure c   -> return (ExitError c)
-            -- [2014.03.01] Change of policy.. if there was a SELFTIMED result, return it even if the process
+            -- [2014.03.01] TEMP: Change of policy.. if there was a SELFTIMED result, return it even if the process
             -- later errored.  (Accelerate/Cilk is segfaulting on exit right now.)
             else return resultAcc
           Just TimerFire -> do
@@ -139,7 +139,11 @@ measureProcess (LineHarvester harvest)
             -- The SELFTIMED readout will be reported on stdout:
             loop $ fst (harvest outLine) resultAcc
 
-          Nothing -> error "benchmark.hs: Internal error!  This should not happen."
+          Nothing -> do 
+            let err = "benchmark.hs: Internal error!  This should not happen."
+            B.hPutStrLn stderr err
+            writeChan relay_err (Just err)
+            error err
   
   fut <- A.async (loop emptyRunResult)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
@@ -152,6 +156,7 @@ measureProcessDBG (LineHarvester harvest)
                CommandDescr{command, envVars, timeout, workingDir} = do
   curEnv <- getEnvironment
   -- Create the subprocess:
+  startTime <- getCurrentTime
   (Just hin, Just hout, Just herr, ph) <- createProcess 
      CreateProcess {
        cmdspec = command,
@@ -171,14 +176,20 @@ measureProcessDBG (LineHarvester harvest)
   -- Read stdout till it closes:
   out <- B.hGetContents hout
   err <- B.hGetContents herr
-  waitForProcess ph
+  code <- waitForProcess ph
+  endtime <- getCurrentTime
   let outl, errl :: [B.ByteString]
       outl = B.lines out
       errl = B.lines err
       tagged = map (B.append " [stdout] ") outl ++
                map (B.append " [stderr] ") errl
       result = foldr (fst . harvest) emptyRunResult (outl++errl)
-  return (tagged,result)
+  case code of
+   ExitSuccess -> 
+       -- If there's no self-reported time, we measure it ourselves:
+       let d = diffUTCTime endtime startTime in
+       return (tagged, result { realtime = fromRational$ toRational d })
+   ExitFailure c -> return (tagged, ExitError c)
 
 -- Dump the rest of an IOStream until we reach the end
 dumpRest :: Strm.InputStream a -> IO ()
