@@ -181,9 +181,9 @@ measureProcessDBG (LineHarvester harvest)
   let outl, errl :: [B.ByteString]
       outl = B.lines out
       errl = B.lines err
-      tagged = map (B.append " [stdout] ") outl ++
-               map (B.append " [stderr] ") errl
-      result = foldr (fst . harvest) emptyRunResult (outl++errl)
+      tagged = map (B.append " [stderr] ") errl ++
+               map (B.append " [stdout] ") outl
+      result = foldr (fst . harvest) emptyRunResult (errl++outl)
   case code of
    ExitSuccess -> 
        -- If there's no self-reported time, we measure it ourselves:
