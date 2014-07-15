@@ -95,10 +95,10 @@ init cid sec table_name = do
 
 
 --getSomething :: OAuth2Client -> TableId -> String -> Request m
-getSomething auth table_id col_name = do
+getSomething auth table_id col_name cond = do
   tokens <- getCachedTokens auth
   let atok = B.pack $ accessToken tokens
-  tableSelect atok table_id col_name 
+  tableSelect atok table_id col_name cond
 
 -- \\\\
 

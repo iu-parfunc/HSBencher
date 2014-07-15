@@ -20,9 +20,12 @@ import Prelude hiding (init, lines)
 
 pullEntireTable cid sec table_name = do
   (table_id,auth) <- init cid sec table_name
-  getSomething auth table_id "*"
+  getSomething auth table_id "*" Nothing 
   
-
+pullSelectively cid sec table_name column value = do
+  (table_id,auth) <- init cid sec table_name
+  getSomething auth table_id "*" (Just (column ++"="++"'"++value++"'") )
+  
 ---------------------------------------------------------------------------
 -- Simple ploting with Flot 
 

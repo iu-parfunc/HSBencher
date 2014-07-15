@@ -23,8 +23,9 @@ csec = "-C7224t9hdv_scoKJ5p4fN8l"
 
 main :: IO ()
 main = do
-  tab <- pullEntireTable cid csec "ExampleTable" 
-
+  -- tab <- pullEntireTable cid csec "ExampleTable" 
+  tab <- pullSelectively cid csec "ExampleTable" "GIT_DEPTH" "408"
+  
   putStrLn $ show tab
 
   let (ColData cols values) = tab
