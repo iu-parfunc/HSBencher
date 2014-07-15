@@ -19,7 +19,7 @@ import Network.Google.FusionTables
 cid = "762414730219-86ib5a8puqj2n0cmo6mcvvbimdrpo6o0.apps.googleusercontent.com"
 csec = "-C7224t9hdv_scoKJ5p4fN8l" 
 
-
+-- 4/NpKXnmRt0VfkudsNl2YaA1v7qtQG.IiO0oB-bMbcVeFc0ZRONyF5ddwlvjgI
 
 main :: IO ()
 main = do
