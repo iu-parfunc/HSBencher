@@ -60,7 +60,7 @@ makeMethod = BuildMethod
        let runit args envVars =
              CommandDescr
              { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
-             , timeout = Just defaultTimeout
+             , timeout = Nothing
              , workingDir = Just absolute
              , envVars
              }
