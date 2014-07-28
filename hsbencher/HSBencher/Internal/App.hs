@@ -237,7 +237,8 @@ runOne (iterNum, totalIters) _bldid bldres
           logT $ "Subprocess completed with "++show(length lines)++" of output."
           return result
 
-        doMeasure = doMeasure2  -- TEMP / Toggle me back later.
+        -- doMeasure = doMeasure2  -- TEMP / Toggle me back later.
+        doMeasure = doMeasure1  -- TEMP / Toggle me back later.
 
     case bldres of
       StandAloneBinary binpath -> do
