@@ -98,7 +98,8 @@ runLogged tag cmd = do
   Config{ harvesters } <- ask
   SubProcess {wait,process_out,process_err} <-
     lift$ measureProcess harvesters
-            CommandDescr{ command=ShellCommand cmd, envVars=[], timeout=Just 150, workingDir=Nothing }
+            --- BJS: There is a hardcoded timeout for IO streams here. (USED TO BE 150) 
+            CommandDescr{ command=ShellCommand cmd, envVars=[], timeout=Just 600, workingDir=Nothing }
   err2 <- lift$ Strm.map (B.append (B.pack "[stderr] ")) process_err
   both <- lift$ Strm.concurrentMerge [process_out, err2]
   both' <- lift$ Strm.map (B.append$ B.pack tag) both
