@@ -64,7 +64,8 @@ case_harvest = do
   let result = foldl' (\ r (f,_) -> f r) emptyRunResult hits
   let expected = RunCompleted {realtime = 3.3, productivity = Just 73.8,
                                allocRate = Just 1855954977, memFootprint = Just 5372024,
-                               jittime = Nothing }
+                               jittime = Nothing,
+                               custom = []}
 
   assertEqual "Test harvesters" expected result
 
