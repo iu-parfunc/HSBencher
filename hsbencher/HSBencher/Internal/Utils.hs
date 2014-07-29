@@ -86,7 +86,7 @@ echoStream echoStdout outS = do
           Nothing -> return () -- Thread dies.
           Just ln -> do
             logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) (B.unpack ln)
-            lift$ B.hPutStrLn stderr (B.append "TMPDBG: " ln) -- TEMP: make sure it gets output 
+--            lift$ B.hPutStrLn stderr (B.append "TMPDBG: " ln) -- TEMP: make sure it gets output 
             echoloop 
 
 -- | Run a command and wait for all output.  Log output to the appropriate places.
