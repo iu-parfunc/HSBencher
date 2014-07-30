@@ -44,7 +44,7 @@ data Flag = ParBench
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
           | ShortRun | KeepGoing | NumTrials String
-          | SkipTo String | RunID String | CIBuildID String
+          | SkipTo String | RunID String | CIBuildID String | ForceHostName String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion | ShowBenchmarks
   deriving (Show)
@@ -83,6 +83,9 @@ core_cli_options =
         "Force run ID to be a specific string; useful for completing failed runs"
       , Option [] ["buildid"] (ReqArg CIBuildID "STR")
         "Set the build ID used by the continuous integration system."
+
+      , Option [] ["hostname"] (ReqArg ForceHostName "STR")
+        "Force the hostname to be set to STR rather than read from the system."
 
       , Option [] ["skipto"] (ReqArg (SkipTo ) "NUM")
         "Skip ahead to a specific point in the configuration space."
@@ -235,6 +238,7 @@ getConfig cmd_line_options benches = do
                                               | otherwise -> error$ "--skipto must be positive: "++s
                                       [] -> error$ "--skipto given bad argument: "++s }
       doFlag (RunID s) r = r { runID= Just s }
+      doFlag (ForceHostName s) r = r { hostname= s }
       doFlag (CIBuildID s) r = r { ciBuildID= Just s }
 
       -- Ignored options:
@@ -246,9 +250,7 @@ getConfig cmd_line_options benches = do
       doFlag NoClean  r = r { doClean = False }
       doFlag ParBench r = r
       --------------------
-      conf = foldr ($) base_conf (map doFlag cmd_line_options)
-
-  let finalconf = conf
+      finalconf = foldr ($) base_conf (map doFlag cmd_line_options)
 
 --  runReaderT (log$ "Read list of benchmarks/parameters from: "++benchF) finalconf
   return finalconf
