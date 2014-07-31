@@ -192,6 +192,7 @@ data Config = Config
  , trials         :: Int  -- ^ number of runs of each configuration
  , skipTo         :: Maybe Int -- ^ Where to start in the config space.
  , runOnly        :: Maybe Int -- ^ How many configurations to run before stopping.
+ , retryFailed    :: Maybe Int -- ^ How many times to retry failed benchmark configs.
  , runID          :: Maybe String -- ^ An over-ride for the run ID.
  , ciBuildID      :: Maybe String -- ^ The build ID from the continuous integration system.
  , shortrun       :: Bool  -- ^ An alternate mode to run very small sizes of benchmarks for testing.

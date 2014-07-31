@@ -166,35 +166,39 @@ runOne :: (Int,Int) -> BuildID -> BuildResult
 runOne (iterNum, totalIters) _bldid bldres
        Benchmark{target=testPath, cmdargs, progname, benchTimeOut}
        runconfig = do       
-  let numthreads = foldl (\ acc (x,_) ->
-                           case x of
-                             Threads n -> n
-                             _         -> acc)
-                   0 runconfig
-      sched      = foldl (\ acc (x,_) ->
-                           case x of
-                             Variant s -> s
-                             _         -> acc)
-                   "none" runconfig
       
   let runFlags = toRunFlags runconfig
-      envVars  = toEnvVars  runconfig
-  conf@Config{ runTimeOut, trials, shortrun, argsBeforeFlags, harvesters, keepgoing } <- ask 
-  -- maxthreads, runID, skipTo, ciBuildID, hostname, startTime, pathRegistry, 
-  -- doClean, keepgoing, benchlist, benchsetName, benchversion, resultsFile, logFile, gitInfo,
-  -- buildMethods, logOut, resultsOut, stdOut, envs, plugInConfs 
 
-  ----------------------------------------
-  -- (1) Gather contextual information
-  ----------------------------------------  
-  let args = if shortrun then shortArgs cmdargs else cmdargs
-      fullargs = if argsBeforeFlags 
-                 then args ++ runFlags
-                 else runFlags ++ args
-      testRoot = fetchBaseName testPath
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters ++": "++testPath++" "++unwords cmdargs
 --       "  threads "++show numthreads++" (Env="++show envVars++")"
+
+  -- (1) Gather contextual information
+  ----------------------------------------  
+  -- Fullargs includes the runtime parameters as well as the original args:
+  (args, fullargs, testRoot) <- runA_gatherContext testPath cmdargs runconfig
+
+  -- (2) Now execute N trials:
+  ----------------------------------------
+  -- TODO (One option woud be dynamic feedback where if the first one
+  -- takes a long time we don't bother doing more trials.)
+  nruns <- runB_runTrials fullargs benchTimeOut bldres runconfig
+
+  -- (3) Produce output to the right places:
+  ------------------------------------------
+  runC_produceOutput (args,fullargs) nruns testRoot progname runconfig
+
+
+------------------------------------------------------------
+runA_gatherContext :: FilePath -> [String] -> [(a, ParamSetting)] -> ReaderT Config IO ([String], [String], FilePath)
+runA_gatherContext testPath cmdargs runconfig = do 
+  Config{shortrun, argsBeforeFlags} <- ask
+  let runFlags = toRunFlags runconfig
+  let args = if shortrun then shortArgs cmdargs else cmdargs 
+  let fullargs = if argsBeforeFlags 
+                 then args ++ runFlags
+                 else runFlags ++ args
+      testRoot = fetchBaseName testPath
   log$ nest 3 $ show$ doc$ map snd runconfig
   log$ "--------------------------------------------------------------------------------\n"
   pwd <- lift$ getCurrentDirectory
@@ -206,75 +210,89 @@ runOne (iterNum, totalIters) _bldid bldres
   let whos' = map ((\ (h:_)->h) . words) whos
   user <- lift$ getEnv "USER"
   logT$ "Who_Output: "++ unwords (filter (/= user) whos')
+  return (args,fullargs,testRoot)
 
-  -- If numthreads == 0, that indicates a serial run:
 
-  ----------------------------------------
-  -- (2) Now execute N trials:
-  ----------------------------------------
-  -- (One option woud be dynamic feedback where if the first one
-  -- takes a long time we don't bother doing more trials.)
-  nruns <- forM [1..trials] $ \ i -> do 
-    log$ printf "  Running trial %d of %d" i trials
-    log "  ------------------------"
-    let doMeasure1 cmddescr = do
-          SubProcess {wait,process_out,process_err} <-
-            lift$ measureProcess harvesters cmddescr
-          err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
-          both <- lift$ Strm.concurrentMerge [process_out, err2]
-          mv   <- echoStream (not shortrun) both
-          x    <- lift wait
-          lift$ A.wait mv
-          logT$ " Subprocess finished and echo thread done.\n"
-          return x
+------------------------------------------------------------
+runB_runTrials :: [String] -> Maybe Double -> BuildResult -> [(a, ParamSetting)] -> ReaderT Config IO [RunResult]
+runB_runTrials fullargs benchTimeOut bldres runconfig = do 
+    Config{ runTimeOut, trials, shortrun, harvesters } <- ask 
+    forM [1..trials] $ \ i -> do 
+        log$ printf "  Running trial %d of %d" i trials
+        log "  ------------------------"
+        let envVars = toEnvVars  runconfig
+        let doMeasure1 cmddescr = do
+              SubProcess {wait,process_out,process_err} <-
+                lift$ measureProcess harvesters cmddescr
+              err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
+              both <- lift$ Strm.concurrentMerge [process_out, err2]
+              mv   <- echoStream (not shortrun) both
+              x    <- lift wait
+              lift$ A.wait mv
+              logT$ " Subprocess finished and echo thread done.\n"
+              return x
 
-    -- I'm having problems currently [2014.07.04], where after about
-    -- 50 benchmarks (* 3 trials), all runs fail but there is NO
-    -- echo'd output. So here we try something simpler as a test.
-    let doMeasure2 cmddescr = do
-          (lines,result) <- lift$ measureProcessDBG harvesters cmddescr 
-          mapM_ (logT . B.unpack) lines 
-          logT $ "Subprocess completed with "++show(length lines)++" of output."
-          return result
+        -- I'm having problems currently [2014.07.04], where after about
+        -- 50 benchmarks (* 3 trials), all runs fail but there is NO
+        -- echo'd output. So here we try something simpler as a test.
+        let doMeasure2 cmddescr = do
+              (lines,result) <- lift$ measureProcessDBG harvesters cmddescr 
+              mapM_ (logT . B.unpack) lines 
+              logT $ "Subprocess completed with "++show(length lines)++" of output."
+              return result
 
-        -- doMeasure = doMeasure2  -- TEMP / Toggle me back later.
-        doMeasure = doMeasure1  -- TEMP / Toggle me back later.
+            -- doMeasure = doMeasure2  -- TEMP / Toggle me back later.
+            doMeasure = doMeasure1  -- TEMP / Toggle me back later.
 
-    case bldres of
-      StandAloneBinary binpath -> do
-        -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
-        let command = binpath++" "++unwords fullargs 
-        logT$ " Executing command: " ++ command
-        let timeout = if benchTimeOut == Nothing
-                      then runTimeOut
-                      else benchTimeOut
-        case timeout of
-          Just t  -> logT$ " Setting timeout: " ++ show t
-          Nothing -> return ()
-        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing, tolerateError=False }
-      RunInPlace fn -> do
---        logT$ " Executing in-place benchmark run."
-        let cmd = fn fullargs envVars
-        logT$ " Generated in-place run command: "++show cmd
-        doMeasure cmd
+        case bldres of
+          StandAloneBinary binpath -> do
+            -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
+            let command = binpath++" "++unwords fullargs 
+            logT$ " Executing command: " ++ command
+            let timeout = if benchTimeOut == Nothing
+                          then runTimeOut
+                          else benchTimeOut
+            case timeout of
+              Just t  -> logT$ " Setting timeout: " ++ show t
+              Nothing -> return ()
+            doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing, tolerateError=False }
+          RunInPlace fn -> do
+    --        logT$ " Executing in-place benchmark run."
+            let cmd = fn fullargs envVars
+            logT$ " Generated in-place run command: "++show cmd
+            doMeasure cmd
 
-  ------------------------------------------
-  -- (3) Produce output to the right places:
-  ------------------------------------------
+------------------------------------------------------------
+runC_produceOutput :: ([String], [String]) -> [RunResult] -> String -> Maybe String 
+                   -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
+runC_produceOutput (args,fullargs) nruns testRoot progname runconfig = do
+  let runFlags = toRunFlags runconfig
+  let numthreads = foldl (\ acc (x,_) ->
+                           case x of
+                             Threads n -> n
+                             _         -> acc)
+                   0 runconfig
+      sched      = foldl (\ acc (x,_) ->
+                           case x of
+                             Variant s -> s
+                             _         -> acc)
+                   "none" runconfig
+
   let pads n s = take (max 1 (n - length s)) $ repeat ' '
       padl n x = pads n x ++ x 
       padr n x = x ++ pads n x
   let thename = case progname of
                   Just s  -> s
                   Nothing -> testRoot
-      exitCheck = when (any isError nruns && not keepgoing) $ do 
+  Config{ keepgoing } <- ask 
+  let exitCheck = when (any isError nruns && not keepgoing) $ do 
                     log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
                     liftIO exitFailure
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
       logOn [ResultsFile]$ 
-        printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
+        printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
                                   (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
       exitCheck
       return ("","","","","","")
@@ -301,7 +319,7 @@ runOne (iterNum, totalIters) _bldid bldres
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
 
       logOn [ResultsFile]$ 
-        printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" args)
+        printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
                                 (padr 8$ sched) (padr 3$ show numthreads) formatted
 
       -- These should be either all Nothing or all Just:
@@ -314,6 +332,8 @@ runOne (iterNum, totalIters) _bldid bldres
                        else do log $ "WARNING: got JITTIME for some runs: "++show jittimes0
                                log "  Zeroing those that did not report."
                                return $ unwords (map (show . fromMaybe 0) jittimes0)
+
+      Config{ trials } <- ask 
       let result =
             emptyBenchmarkResult
             { _PROGNAME = case progname of
@@ -340,6 +360,7 @@ runOne (iterNum, totalIters) _bldid bldres
                                 -- I think so. 
             , _CUSTOM        = custom (head goodruns) -- experimenting 
             }
+      conf <- ask
       result' <- liftIO$ augmentResultWithConfig conf result
 
       -- Upload results to plugin backends:
@@ -358,6 +379,9 @@ runOne (iterNum, totalIters) _bldid bldres
   -- If -keepgoing is set, we consider only errors on all runs to
   -- invalidate the whole benchmark job:
   return (not (all isError nruns))
+
+
+
 
 
 --------------------------------------------------------------------------------
