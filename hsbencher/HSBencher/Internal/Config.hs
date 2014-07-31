@@ -23,7 +23,7 @@ import Data.Monoid
 import Data.Dynamic
 import GHC.Conc (getNumProcessors)
 import System.Environment (getArgs, getEnv, getEnvironment)
-import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
+import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..))
 import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
                   IOMode(..), BufferMode(..), hSetBuffering)
 import qualified System.IO.Streams as Strm
