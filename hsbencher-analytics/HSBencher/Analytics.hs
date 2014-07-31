@@ -8,7 +8,7 @@ import Numeric (showHex)
 
 import Data.Supply
 
-import HSBencher.Internal.Fusion
+import HSBencher.Internal.Fusion (init,getSomething,ColData)
 
 import System.IO.Unsafe
 
@@ -18,10 +18,12 @@ import Prelude hiding (init, lines)
 ---------------------------------------------------------------------------
 --
 
+pullEntireTable :: String -> String -> String -> IO ColData
 pullEntireTable cid sec table_name = do
   (table_id,auth) <- init cid sec table_name
   getSomething auth table_id "*" Nothing 
   
+pullSelectively :: String -> String -> String -> String -> String -> IO ColData
 pullSelectively cid sec table_name column value = do
   (table_id,auth) <- init cid sec table_name
   getSomething auth table_id "*" (Just (column ++"="++"'"++value++"'") )
@@ -164,8 +166,11 @@ exampleStack =
 ---------------------------------------------------------------------------
 -- Utilities 
 
-hexcolors = ["#"++h r++h g++h b | r <- [0..15] , g <- [0..15], b <- [0..15]]
+hexcolors :: [String]
+hexcolors = ["#"++h r++h g++h b | r <- rng , g <- rng, b <- rng]
   where
+    rng :: [Int]
+    rng = [0..15]
     h x = showHex x ""
 
 
@@ -184,15 +189,15 @@ class Plotable a where
 
 instance Plotable String where
   toPlot str = show str -- want the extra " "
-  plotKind str = "mode: \"categories\""  
+  plotKind _str = "mode: \"categories\""  
 
 instance Plotable Double where
   toPlot d = show d
-  plotKind d = ""
+  plotKind _d = ""
 
 instance Plotable Int where
   toPlot i = show i
-  plotKind i = "tickDecimals: 0" 
+  plotKind _i = "tickDecimals: 0" 
   
 ---------------------------------------------------------------------------
 {-
@@ -213,15 +218,15 @@ renderPlot s pl =
     Plot lines
          points
          bars
-         legend
-         (width,height)
+         _legend
+         (_width,_height)
          xlabel
          ylabel = pl
      
     (s1:s2:s3:_) = split s 
-    (v1,code1) = dataSet s1 (map lgData lines) 
-    (v2,code2) = dataSet s2 (map pgData points)
-    (v3,code3) = dataSet s3 (map bgData bars)
+    (v1,code1)  = dataSet s1 (map lgData lines) 
+    (_v2,code2) = dataSet s2 (map pgData points)
+    (v3,code3)  = dataSet s3 (map bgData bars)
     
     plot c = "var someplot = $.plot(\"#placeholder\", [" ++ 
              c ++
@@ -239,8 +244,8 @@ renderPlot s pl =
     barWidth = 1 / (fromIntegral (nBarGraphs + 1)) :: Double -- +1 for space
 
     chartLines [] [] = [""]
-    chartLines c [] = error $ "chartLines: not matching!"
-    chartLines [] c = error $ "chartLines: not matching!"
+    chartLines _c [] = error $ "chartLines: not matching!"
+    chartLines [] _c = error $ "chartLines: not matching!"
     chartLines (v:vs) (l:ls)
       = ("{\n data: "++ v ++ ",\n" ++
          "lines: { show: true, fill: false },\n" ++
@@ -248,9 +253,9 @@ renderPlot s pl =
          "color: " ++ show (lgColor l) ++ "\n" ++
          "}") :  chartLines vs ls
 
-    chartBars bw [] [] = [""]
-    chartBars bw b  [] = error "chartBars: not matching!"
-    chartBars bw [] b  = error "chartBars: not matching!"
+    chartBars _bw [] [] = [""]
+    chartBars _bw _b [] = error "chartBars: not matching!"
+    chartBars _bw [] _b = error "chartBars: not matching!"
     chartBars bw (v:vs) ((o,b):bs) = 
          ("{\n data: " ++ v ++ ",\n" ++
           "bars: {show: true," ++
@@ -282,7 +287,7 @@ dataSet _ [] = ([],[])
 dataSet s (x:xs) = (vn:vars, def ++ code) 
   where
     vn = "v" ++ show (supplyValue s )
-    (s1,s2) = split2 s 
+    (_s1,s2) = split2 s 
     def = "var " ++ vn ++ " = [" ++ dataValues x ++ "];\n"
     (vars,code) = dataSet s2 xs
     dataValues x = concat $ intersperse "," $ map tupToArr x
@@ -397,7 +402,7 @@ html js =
   "<script language=\"javascript\" type=\"text/javascript\" src=\"./flot/jquery.flot.axislabels.js\"></script>\n" ++ 
   "<script type=\"text/javascript\">\n" ++ 
   js ++
-  "</script>\n" ++
+    "</script>\n" ++
   "</head>\n" ++
   "<body>\n" ++
   "<div id=\"header\"> <h2>Generated Plot!</h2> </div>\n" ++
