@@ -44,7 +44,8 @@ data Flag = ParBench
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
           | ShortRun | KeepGoing | NumTrials String
-          | SkipTo String | RunID String | CIBuildID String | ForceHostName String
+          | SkipTo String | RunOnly Int
+          | RunID String | CIBuildID String | ForceHostName String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion | ShowBenchmarks
   deriving (Show)
@@ -89,6 +90,8 @@ core_cli_options =
 
       , Option [] ["skipto"] (ReqArg (SkipTo ) "NUM")
         "Skip ahead to a specific point in the configuration space."
+      , Option [] ["runonly"] (ReqArg mkRunOnly "NUM")
+        "Run only NUM configurations, from wherever we start."
 
       , Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
@@ -100,6 +103,15 @@ core_cli_options =
         "Show the version and exit"
       , Option [] ["name"] (ReqArg BenchsetName "NAME") "Name for created/discovered table in the backend."
      ])
+
+-- | Check that the flag setting is valid.
+mkRunOnly :: String -> Flag
+mkRunOnly str = 
+  case reads str of
+    (n,_):_ | n >= 1    -> RunOnly n
+            | otherwise -> error$ "--runonly must be positive: "++str
+    [] -> error$ "--runonly given bad argument: "++str
+
 
 all_cli_options :: [(String, [OptDescr Flag])]
 all_cli_options = [core_cli_options]
@@ -193,6 +205,7 @@ getConfig cmd_line_options benches = do
 --	   , trials         = read$ get "TRIALS"    "1"
 	   , trials         = 1
 	   , skipTo         = Nothing
+	   , runOnly        = Nothing
 	   , runID          = Nothing
 	   , ciBuildID      = Nothing                              
            , pathRegistry   = M.empty
@@ -237,6 +250,7 @@ getConfig cmd_line_options benches = do
                                       (n,_):_ | n >= 1    -> Just n
                                               | otherwise -> error$ "--skipto must be positive: "++s
                                       [] -> error$ "--skipto given bad argument: "++s }
+      doFlag (RunOnly n) r = r { runOnly= Just n }
       doFlag (RunID s) r = r { runID= Just s }
       doFlag (ForceHostName s) r = r { hostname= s }
       doFlag (CIBuildID s) r = r { ciBuildID= Just s }

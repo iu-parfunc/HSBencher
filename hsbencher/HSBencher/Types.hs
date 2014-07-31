@@ -191,12 +191,13 @@ data Config = Config
                           -- Defaults to `getNumProcessors`.
  , trials         :: Int  -- ^ number of runs of each configuration
  , skipTo         :: Maybe Int -- ^ Where to start in the config space.
+ , runOnly        :: Maybe Int -- ^ How many configurations to run before stopping.
  , runID          :: Maybe String -- ^ An over-ride for the run ID.
  , ciBuildID      :: Maybe String -- ^ The build ID from the continuous integration system.
  , shortrun       :: Bool  -- ^ An alternate mode to run very small sizes of benchmarks for testing.
                            --   HSBencher relies on a convention where benchmarks WITHOUT command-line
                            --   arguments must do a short run.
- , doClean        :: Bool  -- ^ Invoke the build methods clean operation before compilation.
+ , doClean        :: Bool  -- ^ Invoke the build method's clean operation before compilation.
  , keepgoing      :: Bool  -- ^ Keep going after error.
  , pathRegistry   :: PathRegistry -- ^ Paths to executables
  , hostname       :: String  -- ^ Manually override the machine hostname.  

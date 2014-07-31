@@ -728,11 +728,16 @@ defaultMainModifyConfig modConfig = do
 
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
           let startBoard = initBoard 1 zippedruns M.empty
-          Config{skipTo} <- ask
-          win <- case skipTo of 
-                  Nothing -> runloop 1 startBoard M.empty zippedruns True
-                  Just ix -> do logT$" !!! WARNING: SKIPPING AHEAD in configuration space; jumping to: "++show ix
-                                runloop ix startBoard M.empty (drop (ix-1) zippedruns) True
+          Config{skipTo, runOnly} <- ask
+          (ix,runs') <- case skipTo of 
+                          Nothing -> return (1,zippedruns)
+                          Just ix -> do logT$" !!! WARNING: SKIPPING AHEAD in configuration space; jumping to: "++show ix
+                                        return (ix, drop (ix-1) zippedruns)
+          runs'' <- case runOnly of 
+                      Nothing  -> return runs'
+                      Just num -> do logT$" !!! WARNING: TRUNCATING config space to only run "++show num++" configs."
+                                     return (take num runs')
+          win <- runloop ix startBoard M.empty runs'' True                                
   	  unless win $ do 
              log$ "\n--------------------------------------------------------------------------------"
              log "  Finished benchmarks, but some errored out, marking this job as a failure."
