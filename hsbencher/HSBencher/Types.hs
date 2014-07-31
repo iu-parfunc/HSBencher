@@ -399,6 +399,8 @@ data CommandDescr =
   , timeout :: Maybe Double       -- ^ Optional timeout in seconds.
   , workingDir :: Maybe FilePath  -- ^ Optional working directory to switch to before
                                   --   running command.
+  , tolerateError :: Bool         -- ^ Does a crash of the process mean we throw away any 
+                                  --   data the program already printed?  Usually False.
   }
  deriving (Show,Eq,Ord,Read,Generic)
 

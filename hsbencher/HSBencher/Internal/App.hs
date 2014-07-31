@@ -251,7 +251,7 @@ runOne (iterNum, totalIters) _bldid bldres
         case timeout of
           Just t  -> logT$ " Setting timeout: " ++ show t
           Nothing -> return ()
-        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing }
+        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing, tolerateError=False }
       RunInPlace fn -> do
 --        logT$ " Executing in-place benchmark run."
         let cmd = fn fullargs envVars

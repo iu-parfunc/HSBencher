@@ -62,6 +62,7 @@ makeMethod = BuildMethod
              { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
              , timeout = Nothing
              , workingDir = Just absolute
+             , tolerateError = False
              , envVars
              }
        return (RunInPlace runit)

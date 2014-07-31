@@ -57,7 +57,7 @@ measureProcess :: LineHarvester -- ^ Stack of harvesters
                -> CommandDescr
                -> IO SubProcess
 measureProcess (LineHarvester harvest)
-               CommandDescr{command, envVars, timeout, workingDir} = do
+               CommandDescr{command, envVars, timeout, workingDir, tolerateError} = do
   origDir <- getCurrentDirectory
   case workingDir of
     Just d  -> setCurrentDirectory d
@@ -107,17 +107,18 @@ measureProcess (LineHarvester harvest)
             writeChan relay_out Nothing
             code <- waitForProcess pid
             endtime <- getCurrentTime
-            -- TODO: we should probably make this a Maybe type:
-            if realtime resultAcc == realtime emptyRunResult
-            then case code of
-                   ExitSuccess -> 
-                       -- If there's no self-reported time, we measure it ourselves:
-                       let d = diffUTCTime endtime startTime in
-                       return$ resultAcc { realtime = fromRational$ toRational d }
-                   ExitFailure c   -> return (ExitError c)
-            -- [2014.03.01] TEMP/HACK: Change of policy.. if there was a SELFTIMED result, return it even if the process
-            -- later errored.  (Accelerate/Cilk is segfaulting on exit right now.)
-            else return resultAcc
+            let retTime = 
+                   -- TODO: we should probably make this a Maybe type:
+                   if realtime resultAcc == realtime emptyRunResult
+                   then -- If there's no self-reported time, we measure it ourselves: 
+                        let d = diffUTCTime endtime startTime in
+                        return$ resultAcc { realtime = fromRational$ toRational d }
+                   else return resultAcc
+            case code of
+             ExitSuccess                   -> retTime
+             ExitFailure c | tolerateError -> retTime 
+                           | otherwise     -> return (ExitError c)
+
           Just TimerFire -> do
             B.hPutStrLn stderr $ " [hsbencher] Benchmark run timed out.  Killing process."
             terminateProcess pid
@@ -149,11 +150,12 @@ measureProcess (LineHarvester harvest)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
 
 -- | A simpler and SINGLE-THREADED alternative to `measureProcess`.
+--   This is part of the process of trying to debug the HSBencher zombie state (Issue #32).
 measureProcessDBG :: LineHarvester -- ^ Stack of harvesters
                   -> CommandDescr
                   -> IO ([B.ByteString], RunResult)
 measureProcessDBG (LineHarvester harvest)
-               CommandDescr{command, envVars, timeout, workingDir} = do
+               CommandDescr{command, envVars, timeout, workingDir, tolerateError} = do
   curEnv <- getEnvironment
   -- Create the subprocess:
   startTime <- getCurrentTime
@@ -185,16 +187,16 @@ measureProcessDBG (LineHarvester harvest)
                map (B.append " [stdout] ") outl
       result = foldr (fst . harvest) emptyRunResult (errl++outl)
 
-  if realtime result /= realtime emptyRunResult  -- Is it set to anything?
-  -- [2014.03.01] TEMP/HACK: Change of policy.. if there was a SELFTIMED result, return it even if the process
-  -- later errored.  (Accelerate/Cilk is segfaulting on exit right now.)
-  then return (tagged,result)
-  else case code of
-         ExitSuccess -> 
-             -- If there's no self-reported time, we measure it ourselves:
-             let d = diffUTCTime endtime startTime in
-             return (tagged, result { realtime = fromRational$ toRational d })
-         ExitFailure c   -> return (tagged, ExitError c)
+  let retTime = 
+       if realtime result /= realtime emptyRunResult  -- Is it set to anything?
+       then return (tagged,result)
+       else -- If there's no self-reported time, we measure it ourselves:
+            let d = diffUTCTime endtime startTime in
+            return (tagged, result { realtime = fromRational$ toRational d })
+  case code of
+   ExitSuccess                   -> retTime
+   ExitFailure c | tolerateError -> retTime 
+                 | otherwise     -> return (tagged, ExitError c)
 
 -- Dump the rest of an IOStream until we reach the end
 dumpRest :: Strm.InputStream a -> IO ()
