@@ -97,6 +97,8 @@ data Flag = ShowHelp | ShowVersion
           | GoogleSecret String | GoogleID String
           | FTName String
           | FTQuery String
+-- CSV Convertion related Flags 
+          | Wizard  -- Do your best 
   deriving (Eq,Ord,Show,Read)
 
 -- | Current run mode of the tool 
@@ -123,7 +125,8 @@ core_cli_options =
      , Option []     ["secret"] (ReqArg GoogleSecret "String") "Google Secret"
      , Option []     ["id"]     (ReqArg GoogleID "String")     "Google ID"
      , Option []     ["table"]  (ReqArg FTName "String")       "Name of FusionTable"
-     , Option ['q']  ["query"]  (ReqArg FTQuery "String")      "A SQL style query" 
+     , Option ['q']  ["query"]  (ReqArg FTQuery "String")      "A SQL style query"
+     , Option ['w']  ["Wizard"] (NoArg Wizard)                 "Generate a decent CSV file with no user guidance"
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -308,3 +311,18 @@ metaID table_id qe@(SQL.Select _ _ _ _ _ _ _ _ _ ) =
 
 toCSV :: [[FTValue]] -> String
 toCSV = undefined 
+
+
+
+
+---------------------------------------------------------------------------
+-- GUIDELINES FOR THE WIZARD
+{-
+    Identifying columns in the fusiontable will generally have StringValue fields. 
+    Measurement points will generally be DoubleValue.
+
+    
+
+
+
+-} 

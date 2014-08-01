@@ -58,7 +58,7 @@ library
   
   -- Other library packages from which modules are imported.
   build-depends: base >=4.5 && <4.8
-               , hsbencher-fusion >=0.1.0.2
+               , hsbencher-fusion >=0.1.0.3
                , value-supply >= 0.6 && <0.7
                -- , colour >= 2.3.3 && <2.4
                -- , data-default >= 0.5.3 && <0.6
