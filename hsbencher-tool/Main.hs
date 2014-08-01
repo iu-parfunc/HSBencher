@@ -32,6 +32,12 @@ import HSBencher.Internal.Fusion (init,getSomething,ColData,FTValue(..))
 import Control.Exception
 import Data.Typeable
 
+-- SQL Parsing
+import qualified Language.SQL.SimpleSQL.Parser as SQL
+import qualified Language.SQL.SimpleSQL.Pretty as SQL
+import qualified Language.SQL.SimpleSQL.Syntax as SQL
+
+
 import qualified Prelude as P
 import Prelude hiding (init) 
 ---------------------------------------------------------------------------
@@ -78,7 +84,7 @@ data Error
 instance Exception Error 
 
 
-
+-- | List of valid operation modes of the hsbencher tool
 valid_modes :: [String]
 valid_modes = [ "upload", "download" ]
 
@@ -102,7 +108,9 @@ fullUsageInfo = usageInfo docs core_cli_options
          "\n\nhsbencher-tool general options: \n"
 --   ++ generalUsageStr
 
-
+-- | Is a valid mode requested, if so turn it into a Mode.
+--   a uniquely identifying infix of the mode is all that needs
+--   to be recognized. So "up" and "do" are valid. 
 resolveMode :: String -> Mode
 resolveMode md = 
  case filter (isInfixOf md) valid_modes of
@@ -197,11 +205,13 @@ download flags = do
 
 
 ---------------------------------------------------------------------------
--- As to not depend on the highly hacky Analytics.hs 
+-- As to not depend on the highly hacky Analytics.hs
+
+-- HACK 
 pullEntireTable :: String -> String -> String -> IO ColData
 pullEntireTable cid sec table_name = do
   (table_id,auth) <- init cid sec table_name
-  getSomething auth table_id "*" Just ("GIT_DEPTH=445") --Nothing 
+  getSomething auth table_id "*" $ Just ("GIT_DEPTH=445") --Nothing 
 
 
 
