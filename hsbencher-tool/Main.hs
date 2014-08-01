@@ -232,12 +232,13 @@ download flags = do
 
   putStrLn $ show tab
   where
-
+    -- are flags valid for download ? 
     flagsValid =
       (not . null) [() | GoogleSecret _ <- flags] &&
       (not . null) [() | GoogleID _  <- flags] &&
       (not . null) [() | FTName _ <- flags] 
 
+    -- did the user specify a query ? 
     hasQuery = (not . null) [ () | FTQuery _ <- flags]  
   
     -- assume flags valid
