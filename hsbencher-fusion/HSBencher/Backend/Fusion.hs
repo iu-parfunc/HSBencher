@@ -120,6 +120,9 @@ retryIORequest req retryHook times = loop 0 times
         threadDelay (round$ delay * 1000 * 1000) -- Microseconds
         loop (num+1) tl
 
+fromJustErr msg Nothing  = error msg
+fromJustErr _   (Just x) = x
+
 
 -- | Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
@@ -133,7 +136,8 @@ getTableId auth tablename = do
   toks      <- liftIO$ getCachedTokens auth
   log$ " [fusiontable] Retrieved: "++show toks
   let atok  = B.pack $ accessToken toks
-  Just allTables <- stdRetry "listTables" auth toks $ listTables atok
+  allTables <- fmap (fromJustErr "[fusiontable] getTableId, API call to listTables failed.") $
+               stdRetry "listTables" auth toks $ listTables atok
   log$ " [fusiontable] Retrieved metadata on "++show (length allTables)++" tables"
 
 
@@ -202,7 +206,7 @@ uploadBenchResult  br@BenchmarkResult{..} = do
     let targetSet = S.fromList targetSchema
         missing   = S.difference  ourSet targetSet
         misslist  = L.filter (`S.member` missing) ourSchema
-    log$ " [fusiontable] There were " ++ show (length misslist) ++ "columns missing"
+    log$ " [fusiontable] There were " ++ show (length misslist) ++ " columns missing"
     unless (S.null missing) $ do
       forM_ misslist $ \ colname -> do
         liftIO$ createColumn atok tid (colname, STRING)
