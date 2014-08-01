@@ -26,13 +26,37 @@ import System.Exit (exitFailure, exitSuccess)
 -- import HSBencher.Methods.Builtin
 -- import HSBencher.Internal.MeasureProcess
 
-import HSBencher.Internal.Fusion (init,getSomething,ColData)
+import HSBencher.Internal.Fusion (init,getSomething,ColData,FTValue(..))
 
 -- Exceptions
 import Control.Exception
 import Data.Typeable
-  
-  
+
+import qualified Prelude as P
+import Prelude hiding (init) 
+---------------------------------------------------------------------------
+--
+
+
+
+{- DEVLOG
+
+
+
+
+-} 
+
+
+{- ISSUES 
+   BJS: Currently I get ResponseTimeout on all attempts to get
+        the Dynaprof table. 
+
+
+-} 
+
+
+
+
 ---------------------------------------------------------------------------
 
 -- | Command line flags to the benchmarking executable.
@@ -148,9 +172,10 @@ download flags = do
   putStrLn "-----------------------------------" 
   putStrLn "Download is not implemented" 
 
-  
+  -- Experimental
+  tab <- pullEntireTable id secret table 
     
-
+  putStrLn $ show tab 
   where
 
     flagsValidP =
@@ -169,3 +194,19 @@ download flags = do
 -- Parse query
 
 -- parseSQL :: String -> Something 
+
+
+---------------------------------------------------------------------------
+-- As to not depend on the highly hacky Analytics.hs 
+pullEntireTable :: String -> String -> String -> IO ColData
+pullEntireTable cid sec table_name = do
+  (table_id,auth) <- init cid sec table_name
+  getSomething auth table_id "*" Just ("GIT_DEPTH=445") --Nothing 
+
+
+
+---------------------------------------------------------------------------
+-- Pulled down table of FTValues to CSV
+
+toCSV :: [[FTValue]] -> String
+toCSV = undefined 
