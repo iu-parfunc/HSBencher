@@ -177,6 +177,13 @@ download flags = do
   putStrLn $ "Using ID: " ++ id
   putStrLn $ "Using Secret: " ++ secret
 
+  -- is a query specified ? 
+  when hasQuery $
+    do
+      let q = parseSQLQuery query 
+      putStrLn $ show q 
+
+
   putStrLn "-----------------------------------" 
   putStrLn "Download is not implemented" 
 
@@ -191,17 +198,23 @@ download flags = do
       (not . null) [() | GoogleID _  <- flags] &&
       (not . null) [() | FTName _ <- flags] 
 
+    hasQueryP (not . null) [ () | FTQuery _ -< flags]  
+  
     -- assume flags valid
     secret = head [ c | GoogleSecret c <- flags]
     id     = head [ i | GoogleID i <- flags]
     table  = head [t | FTName t  <- flags]
 
 
+    -- assume we have a query 
+    query = head [ q | FTQuery q <- flags] 
+
 
 ---------------------------------------------------------------------------
 -- Parse query
 
--- parseSQL :: String -> Something 
+parseSQLQuery :: String -> Either ParseError QueryExpr
+parseSQLQuery str = SQL.parseQueryExpr "CommandLine" Nothing str 
 
 
 ---------------------------------------------------------------------------
