@@ -214,53 +214,70 @@ runA_gatherContext testPath cmdargs runconfig = do
 
 
 ------------------------------------------------------------
-runB_runTrials :: [String] -> Maybe Double -> BuildResult -> [(a, ParamSetting)] -> ReaderT Config IO [RunResult]
+runB_runTrials :: [String] -> Maybe Double -> BuildResult 
+               -> [(a, ParamSetting)] -> ReaderT Config IO [RunResult]
 runB_runTrials fullargs benchTimeOut bldres runconfig = do 
-    Config{ runTimeOut, trials, shortrun, harvesters } <- ask 
-    forM [1..trials] $ \ i -> do 
-        log$ printf "  Running trial %d of %d" i trials
-        log "  ------------------------"
-        let envVars = toEnvVars  runconfig
-        let doMeasure1 cmddescr = do
-              SubProcess {wait,process_out,process_err} <-
-                lift$ measureProcess harvesters cmddescr
-              err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
-              both <- lift$ Strm.concurrentMerge [process_out, err2]
-              mv   <- echoStream (not shortrun) both
-              x    <- lift wait
-              lift$ A.wait mv
-              logT$ " Subprocess finished and echo thread done.\n"
-              return x
+    Config{ retryFailed, trials } <- ask 
+    trialLoop 1 trials (fromMaybe 0 retryFailed) []
+ where 
+  trialLoop ind trials retries acc 
+   | ind > trials = return $ reverse acc
+   | otherwise = do 
+    Config{ runTimeOut, shortrun, harvesters, retryFailed } <- ask 
+    log$ printf "  Running trial %d of %d" ind trials
+    log "  ------------------------"
+    let envVars = toEnvVars  runconfig
+    let doMeasure1 cmddescr = do
+          SubProcess {wait,process_out,process_err} <-
+            lift$ measureProcess harvesters cmddescr
+          err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
+          both <- lift$ Strm.concurrentMerge [process_out, err2]
+          mv   <- echoStream (not shortrun) both
+          x    <- lift wait
+          lift$ A.wait mv
+          logT$ " Subprocess finished and echo thread done.\n"
+          return x
 
-        -- I'm having problems currently [2014.07.04], where after about
-        -- 50 benchmarks (* 3 trials), all runs fail but there is NO
-        -- echo'd output. So here we try something simpler as a test.
-        let doMeasure2 cmddescr = do
-              (lines,result) <- lift$ measureProcessDBG harvesters cmddescr 
-              mapM_ (logT . B.unpack) lines 
-              logT $ "Subprocess completed with "++show(length lines)++" of output."
-              return result
+    -- I'm having problems currently [2014.07.04], where after about
+    -- 50 benchmarks (* 3 trials), all runs fail but there is NO
+    -- echo'd output. So here we try something simpler as a test.
+    let doMeasure2 cmddescr = do
+          (lines,result) <- lift$ measureProcessDBG harvesters cmddescr 
+          mapM_ (logT . B.unpack) lines 
+          logT $ "Subprocess completed with "++show(length lines)++" of output."
+          return result
 
-            -- doMeasure = doMeasure2  -- TEMP / Toggle me back later.
-            doMeasure = doMeasure1  -- TEMP / Toggle me back later.
+        -- doMeasure = doMeasure2  -- TEMP / Toggle me back later.
+        doMeasure = doMeasure1  -- TEMP / Toggle me back later.
 
-        case bldres of
-          StandAloneBinary binpath -> do
-            -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
-            let command = binpath++" "++unwords fullargs 
-            logT$ " Executing command: " ++ command
-            let timeout = if benchTimeOut == Nothing
-                          then runTimeOut
-                          else benchTimeOut
-            case timeout of
-              Just t  -> logT$ " Setting timeout: " ++ show t
-              Nothing -> return ()
-            doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing, tolerateError=False }
-          RunInPlace fn -> do
-    --        logT$ " Executing in-place benchmark run."
-            let cmd = fn fullargs envVars
-            logT$ " Generated in-place run command: "++show cmd
-            doMeasure cmd
+    this <- case bldres of
+      StandAloneBinary binpath -> do
+        -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
+        let command = binpath++" "++unwords fullargs 
+        logT$ " Executing command: " ++ command
+        let timeout = if benchTimeOut == Nothing
+                      then runTimeOut
+                      else benchTimeOut
+        case timeout of
+          Just t  -> logT$ " Setting timeout: " ++ show t
+          Nothing -> return ()
+        doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing, tolerateError=False }
+      RunInPlace fn -> do
+--        logT$ " Executing in-place benchmark run."
+        let cmd = fn fullargs envVars
+        logT$ " Generated in-place run command: "++show cmd
+        doMeasure cmd
+
+    if isError this 
+     then if retries > 0 
+          then do logT$ " Failed Trial!  Retrying config, repeating trial "++
+                        show ind++", "++show (retries - 1)++" retries left."
+                  trialLoop ind trials (retries - 1) acc
+          else do logT$ " Failed Trial "++show ind++"!  Out of retries, aborting remaining trials."
+                  return (this:acc)
+     else do -- When we advance, we reset the retry counter:
+             Config{ retryFailed } <- ask 
+             trialLoop (ind+1) trials (fromMaybe 0 retryFailed) (this:acc)
 
 ------------------------------------------------------------
 runC_produceOutput :: ([String], [String]) -> [RunResult] -> String -> Maybe String 
