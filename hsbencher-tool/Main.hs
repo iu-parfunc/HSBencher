@@ -37,6 +37,9 @@ data Flag = ShowHelp | ShowVersion
           | FTName String 
   deriving (Eq,Ord,Show,Read)
 
+-- | Current run mode of the tool 
+data Mode = Upload | Download
+          deriving (Eq,Ord,Show,Read)
 
 valid_modes :: [String]
 valid_modes = [ "upload", "download" ]
@@ -61,12 +64,13 @@ fullUsageInfo = usageInfo docs core_cli_options
 --   ++ generalUsageStr
 
 
-resolveMode :: String -> String
+resolveMode :: String -> Mode
 resolveMode md = 
  case filter (isInfixOf md) valid_modes of
-   [x] -> x
-   []  -> error "Unknown mode for hsbencher tool: "++md
-   ls  -> error "Ambiguous mode for hsbencher tool: "++md++", matches: "++unwords ls
+   ["download"] -> Download
+   ["upload"]   -> Upload 
+   []  -> error $ "Unknown mode for hsbencher tool: "++md
+   ls  -> error $ "Ambiguous mode for hsbencher tool: "++md++", matches: "++unwords ls
 
 main :: IO ()
 main = do
@@ -91,3 +95,26 @@ main = do
 
   putStrLn ("hello world: "++show (mode,rest,options))
 
+  ---------------------------------------------------------------------------
+  -- Perform the task specified by the command line args 
+  case mode of
+    Download -> download options 
+    Upload   -> upload options 
+
+
+
+
+---------------------------------------------------------------------------
+-- upload
+
+upload :: [Flag] -> IO () 
+upload = error "Upload functionality is not yet implemented"
+
+
+
+
+---------------------------------------------------------------------------
+-- download
+
+download :: [Flag] -> IO ()
+download = error "Download functionality is not yet implemented"
