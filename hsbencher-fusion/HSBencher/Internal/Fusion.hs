@@ -13,6 +13,8 @@ module HSBencher.Internal.Fusion
       , FusionConfig(..)
         -- Experiments
       , getSomething
+        -- replaces getSomething
+      , getWithSQLQuery
       , init
       , ColData(..) -- export from hgdata
       , FTValue(..) -- export from hgdata 
@@ -83,7 +85,7 @@ initialize cid sec table_name = do
   putStrLn $ fusionTag (table_id ++ " " ++ show cols)
   return (table_id,cols)
 
--- ////  experimenting 
+-- ////  experimenting  Needs to be updated! 
  
 init cid sec table_name = do
   putStrLn $ fusionTag "Initializing"
@@ -99,6 +101,14 @@ getSomething auth table_id col_name cond = do
   tokens <- getCachedTokens auth
   let atok = B.pack $ accessToken tokens
   tableSelect atok table_id col_name cond
+
+
+getWithSQLQuery auth table_id query = do
+  tokens <- getCachedTokens auth
+  let atok = B.pack $ accessToken tokens
+  tableSQLQuery atok table_id query
+
+
 
 -- \\\\
 

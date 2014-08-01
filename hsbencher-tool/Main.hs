@@ -26,7 +26,7 @@ import System.Exit (exitFailure, exitSuccess)
 -- import HSBencher.Methods.Builtin
 -- import HSBencher.Internal.MeasureProcess
 
-import HSBencher.Internal.Fusion (init,getSomething,ColData,FTValue(..))
+import HSBencher.Internal.Fusion (init,getSomething,getWithSQLQuery,ColData,FTValue(..))
 
 -- Exceptions
 import Control.Exception
@@ -47,18 +47,35 @@ import Prelude hiding (init)
 
 {- DEVLOG
 
+   * ISSUES 
+
+     Currently I get ResponseTimeout on all attempts to get
+     the Dynaprof table. 
+        - This happens when there is just too much data, use the query to limit what to pull
+
+   * PLANS and Thoughts 
+
+  
+     - SQL Queries:
+     Need to read up on what limitations the FT api put on these Queries.
+
+     One thing I noticed is that the query takes the shape:
+     SELECT xxxx FROM table_id WHERE yyy
+     here table_id is some 'strange' unique identifier string that maybe the user does
+     not really want to care about. 
+
+     - Environment variables:
+     Allow user to have secret and id as env variables.
 
 
+   *Example usage
+     /hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleuserconteom --table=Dynaprof_Benchmarks --query="SELECT * FROM FT WHERE GIT_DEPTH = 445"
+
+   The FROM field allows the text "FT" which is translated into the fusiontable id
+   given we know the human readable name as passed into wiht --table=name
 
 -} 
 
-
-{- ISSUES 
-   BJS: Currently I get ResponseTimeout on all attempts to get
-        the Dynaprof table. 
-
-
--} 
 
 
 
@@ -177,20 +194,42 @@ download flags = do
   putStrLn $ "Using ID: " ++ id
   putStrLn $ "Using Secret: " ++ secret
 
+  ---------------------------------------------------------------------------
+  -- Initialize !
+  (table_id,auth) <- init id secret table
+
+
+  ---------------------------------------------------------------------------
   -- is a query specified ? 
   when hasQuery $
     do
-      let q = parseSQLQuery query 
-      putStrLn $ show q 
-
-  when (not hasQuery) $ putStrLn "NO QUERY" 
+      let q = parseSQLQuery query
+      case q of
+        Left (SQL.ParseError msg _ _ fmsg) -> error $ msg ++ "\n" ++ fmsg
+        Right validQuery -> do
+          -- putStrLn "------------------------------------------------------------"
+          -- putStrLn $ show validQuery
+          -- putStrLn "------------------------------------------------------------"
+          ---------------------------------------------------------------------------
+          -- Replace "TABLE" with table_id in SQL Query
+          let theQuery = metaID table_id validQuery
+          -- putStrLn "------------------------------------------------------------"
+          -- putStrLn $ show theQuery
+          -- putStrLn "------------------------------------------------------------"
   
+          tab <- pullWithQuery table_id auth (SQL.prettyQueryExpr theQuery)
+          putStrLn $ show tab
+          return () 
 
-  putStrLn "-----------------------------------" 
-  putStrLn "Download is not implemented" 
+  -- temporarily 
+  when (not hasQuery) $ error "NO QUERY: Exiting" 
+    
+
+  -- putStrLn "-----------------------------------" 
+  -- putStrLn "Download is not implemented" 
 
   -- Experimental
-  tab <- pullEntireTable id secret table 
+  -- tab <- pullEntireTable id secret table 
     
   -- putStrLn $ show tab
   return () 
@@ -215,6 +254,9 @@ download flags = do
 
 ---------------------------------------------------------------------------
 -- Parse query
+-- The purpose of this will (for now) simply be to check if the query is
+-- wellformed. The hgdata FusionTable code currently takes the
+-- query as a String (or is a ByteString).. 
 
 parseSQLQuery :: String -> Either SQL.ParseError SQL.QueryExpr
 parseSQLQuery str = SQL.parseQueryExpr "CommandLine" Nothing str 
@@ -223,11 +265,42 @@ parseSQLQuery str = SQL.parseQueryExpr "CommandLine" Nothing str
 ---------------------------------------------------------------------------
 -- As to not depend on the highly hacky Analytics.hs
 
--- HACK 
-pullEntireTable :: String -> String -> String -> IO ColData
-pullEntireTable cid sec table_name = do
-  (table_id,auth) <- init cid sec table_name
-  getSomething auth table_id "*" $ Just ("GIT_DEPTH=445") --Nothing 
+
+--pullWithQuery :: String -> String -> String -> String -> IO ColData
+
+--pullWithQuery cid sec table_name query = do
+pullWithQuery table_id auth query = -- do
+  -- putStrLn table_id
+  getWithSQLQuery auth table_id query
+
+
+---------------------------------------------------------------------------
+-- metaID
+-- Help the user, so he does not need to know the table_id
+
+metaID :: String -> SQL.QueryExpr -> SQL.QueryExpr
+metaID table_id qe@(SQL.Select _ _ _ _ _ _ _ _ _ ) =
+  qe { SQL.qeFrom = map mangle (SQL.qeFrom qe) }
+  where
+    mangle (SQL.TRSimple names) = SQL.TRSimple $ map mangleNames names
+    mangle sql = sql 
+    
+    mangleNames (SQL.Name str)   | str == "FT" = SQL.Name table_id
+    mangleNames (SQL.QName str)  | str == "\"FT\"" = SQL.QName $ show table_id  
+    mangleNames (SQL.UQName str) | str == "FT"  = SQL.UQName $show table_id  
+    mangleNames n = n 
+
+{-
+  SQL queries look quite complicated to me.
+  So here dealing with a subset of functionality.
+
+  Need more SQL understanding, it might be possible to
+  set an Alias. TRAlias. Thus change the Expr tree slightly at some
+  higher location and have it permeate.
+-} 
+
+
+
 
 
 
