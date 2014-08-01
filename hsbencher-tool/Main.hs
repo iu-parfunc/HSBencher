@@ -74,6 +74,8 @@ import Prelude hiding (init)
 
    *Example usage
 
+
+      -- Should add --raw to each of these for output 
       -- QUERY 1
      /hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleuserconteom --table=Dynaprof_Benchmarks --query="SELECT * FROM FT WHERE GIT_DEPTH = 445"
 
@@ -83,6 +85,12 @@ import Prelude hiding (init)
      -- QUERY 3
      hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT 'PROGNAME', 'VARIANT', 'MEDIANTIME', 'HOSTNAME' FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3'"
   
+
+     -- Heres a good query
+     hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT VARIANT, AVERAGE('MEDIANTIME') FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3' AND HOSTNAME = 'xmen' GROUP BY VARIANT" --raw
+
+
+
 
      The FROM field allows the text "FT" which is translated into the fusiontable id
      given we know the human readable name as passed into wiht --table=name
@@ -369,7 +377,7 @@ ftValueToString (StringValue s) = s
 
 --        idBench     idVars      Colnames    the Rows 
 toCSV :: [String] -> [String] -> [String] -> [[FTValue]] -> String
-toCSV = undefined 
+toCSV = error "The \"guided\" CSV generation is not implemented" 
 
 ---------------------------------------------------------------------------
 -- Wizard Mode
