@@ -170,7 +170,7 @@ upload = error "Upload functionality is not yet implemented"
 
 download :: [Flag] -> IO ()
 download flags = do 
-  when (not flagsValidP) $ throwIO $ FlagsNotValidE "The flags are invalid for a download"   
+  when (not flagsValid) $ throwIO $ FlagsNotValidE "The flags are invalid for a download"   
 
 
   putStrLn $ "processing table: "++ table
@@ -183,6 +183,8 @@ download flags = do
       let q = parseSQLQuery query 
       putStrLn $ show q 
 
+  when (not hasQuery) $ putStrLn "NO QUERY" 
+  
 
   putStrLn "-----------------------------------" 
   putStrLn "Download is not implemented" 
@@ -190,15 +192,16 @@ download flags = do
   -- Experimental
   tab <- pullEntireTable id secret table 
     
-  putStrLn $ show tab 
+  -- putStrLn $ show tab
+  return () 
   where
 
-    flagsValidP =
+    flagsValid =
       (not . null) [() | GoogleSecret _ <- flags] &&
       (not . null) [() | GoogleID _  <- flags] &&
       (not . null) [() | FTName _ <- flags] 
 
-    hasQueryP (not . null) [ () | FTQuery _ -< flags]  
+    hasQuery = (not . null) [ () | FTQuery _ <- flags]  
   
     -- assume flags valid
     secret = head [ c | GoogleSecret c <- flags]
@@ -213,7 +216,7 @@ download flags = do
 ---------------------------------------------------------------------------
 -- Parse query
 
-parseSQLQuery :: String -> Either ParseError QueryExpr
+parseSQLQuery :: String -> Either SQL.ParseError SQL.QueryExpr
 parseSQLQuery str = SQL.parseQueryExpr "CommandLine" Nothing str 
 
 
