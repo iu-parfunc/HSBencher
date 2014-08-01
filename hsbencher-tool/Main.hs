@@ -1,4 +1,4 @@
-
+{-# LANGUAGE DeriveDataTypeable #-} 
 
 module Main where
 
@@ -28,18 +28,32 @@ import System.Exit (exitFailure, exitSuccess)
 
 import HSBencher.Internal.Fusion (init,getSomething,ColData)
 
-
-----------------------------------------------------------------------------------------------------
+-- Exceptions
+import Control.Exception
+import Data.Typeable
+  
+  
+---------------------------------------------------------------------------
 
 -- | Command line flags to the benchmarking executable.
 data Flag = ShowHelp | ShowVersion
           | GoogleSecret String | GoogleID String
-          | FTName String 
+          | FTName String
+          | FTQuery String
   deriving (Eq,Ord,Show,Read)
 
 -- | Current run mode of the tool 
 data Mode = Upload | Download
           deriving (Eq,Ord,Show,Read)
+
+-- | Exceptions that may occur
+data Error
+  = FlagsNotValidE String
+    deriving (Show, Typeable) 
+
+instance Exception Error 
+
+
 
 valid_modes :: [String]
 valid_modes = [ "upload", "download" ]
@@ -49,9 +63,10 @@ core_cli_options :: [OptDescr Flag]
 core_cli_options = 
      [ Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
-     , Option []  ["secret"] (ReqArg GoogleSecret "String") "Google Secret"
-     , Option []  ["id"]     (ReqArg GoogleID "String")     "Google ID"
-     , Option []  ["table"]  (ReqArg FTName "String")       "Name of FusionTable"
+     , Option []     ["secret"] (ReqArg GoogleSecret "String") "Google Secret"
+     , Option []     ["id"]     (ReqArg GoogleID "String")     "Google ID"
+     , Option []     ["table"]  (ReqArg FTName "String")       "Name of FusionTable"
+     , Option ['q']  ["query"]  (ReqArg FTQuery "String")      "A SQL style query" 
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -96,11 +111,16 @@ main = do
   putStrLn ("hello world: "++show (mode,rest,options))
 
   ---------------------------------------------------------------------------
-  -- Perform the task specified by the command line args 
-  case mode of
-    Download -> download options 
-    Upload   -> upload options 
+  -- Perform the task specified by the command line args
 
+  catch (
+    case mode of
+      Download -> download options 
+      Upload   -> upload options 
+    ) (\e ->
+        case e of
+          FlagsNotValidE str -> putStrLn $ "Caught error: "++ str
+      ) 
 
 
 
@@ -117,4 +137,35 @@ upload = error "Upload functionality is not yet implemented"
 -- download
 
 download :: [Flag] -> IO ()
-download = error "Download functionality is not yet implemented"
+download flags = do 
+  when (not flagsValidP) $ throwIO $ FlagsNotValidE "The flags are invalid for a download"   
+
+
+  putStrLn $ "processing table: "++ table
+  putStrLn $ "Using ID: " ++ id
+  putStrLn $ "Using Secret: " ++ secret
+
+  putStrLn "-----------------------------------" 
+  putStrLn "Download is not implemented" 
+
+  
+    
+
+  where
+
+    flagsValidP =
+      (not . null) [() | GoogleSecret _ <- flags] &&
+      (not . null) [() | GoogleID _  <- flags] &&
+      (not . null) [() | FTName _ <- flags] 
+
+    -- assume flags valid
+    secret = head [ c | GoogleSecret c <- flags]
+    id     = head [ i | GoogleID i <- flags]
+    table  = head [t | FTName t  <- flags]
+
+
+
+---------------------------------------------------------------------------
+-- Parse query
+
+-- parseSQL :: String -> Something 
