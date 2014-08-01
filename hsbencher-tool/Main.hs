@@ -98,7 +98,7 @@ data Flag = ShowHelp | ShowVersion
           | FTName String
           | FTQuery String
 -- CSV Convertion related Flags 
-          | Wizard  -- Do your best 
+          | Wizard  -- Do your best
   deriving (Eq,Ord,Show,Read)
 
 -- | Current run mode of the tool 
