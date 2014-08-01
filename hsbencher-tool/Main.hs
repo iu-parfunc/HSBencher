@@ -26,10 +26,15 @@ import System.Exit (exitFailure, exitSuccess)
 -- import HSBencher.Methods.Builtin
 -- import HSBencher.Internal.MeasureProcess
 
+import HSBencher.Internal.Fusion (init,getSomething,ColData)
+
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Command line flags to the benchmarking executable.
-data Flag = ShowHelp | ShowVersion 
+data Flag = ShowHelp | ShowVersion
+          | GoogleSecret String | GoogleID String
+          | FTName String 
   deriving (Eq,Ord,Show,Read)
 
 
@@ -41,8 +46,10 @@ core_cli_options :: [OptDescr Flag]
 core_cli_options = 
      [ Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
-      ]
-
+     , Option []  ["secret"] (ReqArg GoogleSecret "String") "Google Secret"
+     , Option []  ["id"]     (ReqArg GoogleID "String")     "Google ID"
+     , Option []  ["table"]  (ReqArg FTName "String")       "Name of FusionTable"
+     ]
 
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
@@ -66,7 +73,7 @@ main = do
   args <- getArgs
 
   let (options,plainargs,_unrec,errs) = getOpt' Permute core_cli_options args
-
+  
   unless (null errs) $ do
     putStrLn$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
