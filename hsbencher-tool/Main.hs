@@ -69,17 +69,27 @@ import Prelude hiding (init)
 
 
    *Example usage
+
+      -- QUERY 1
      /hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleuserconteom --table=Dynaprof_Benchmarks --query="SELECT * FROM FT WHERE GIT_DEPTH = 445"
 
-   The FROM field allows the text "FT" which is translated into the fusiontable id
-   given we know the human readable name as passed into wiht --table=name
+     -- QUERY 2 
+     hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT 'MEDIANTIME' FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3'"
+
+     -- QUERY 3
+     hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT 'PROGNAME', 'VARIANT', 'MEDIANTIME', 'HOSTNAME' FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3'"
+  
+
+     The FROM field allows the text "FT" which is translated into the fusiontable id
+     given we know the human readable name as passed into wiht --table=name
 
 -} 
 
 
 
 
-
+---------------------------------------------------------------------------
+-- //                                                                 \\ --
 ---------------------------------------------------------------------------
 
 -- | Command line flags to the benchmarking executable.
@@ -136,6 +146,9 @@ resolveMode md =
    []  -> error $ "Unknown mode for hsbencher tool: "++md
    ls  -> error $ "Ambiguous mode for hsbencher tool: "++md++", matches: "++unwords ls
 
+---------------------------------------------------------------------------
+-- MAIN                                                                  --
+---------------------------------------------------------------------------
 main :: IO ()
 main = do
   args <- getArgs
@@ -200,39 +213,24 @@ download flags = do
 
 
   ---------------------------------------------------------------------------
-  -- is a query specified ? 
-  when hasQuery $
-    do
-      let q = parseSQLQuery query
-      case q of
-        Left (SQL.ParseError msg _ _ fmsg) -> error $ msg ++ "\n" ++ fmsg
-        Right validQuery -> do
-          -- putStrLn "------------------------------------------------------------"
-          -- putStrLn $ show validQuery
-          -- putStrLn "------------------------------------------------------------"
-          ---------------------------------------------------------------------------
-          -- Replace "TABLE" with table_id in SQL Query
-          let theQuery = metaID table_id validQuery
-          -- putStrLn "------------------------------------------------------------"
-          -- putStrLn $ show theQuery
-          -- putStrLn "------------------------------------------------------------"
-  
-          tab <- pullWithQuery table_id auth (SQL.prettyQueryExpr theQuery)
-          putStrLn $ show tab
-          return () 
+  -- is a query specified ?
+  tab <- case hasQuery of 
+    True -> 
+      do
+        let q = parseSQLQuery query
+        case q of
+          Left (SQL.ParseError msg _ _ fmsg) -> error $ msg ++ "\n" ++ fmsg
+          Right validQuery -> do
+            -- Replace "TABLE" with table_id in SQL Query
+            let theQuery = metaID table_id validQuery
+            -- Download whatever the query specifies
+            pullWithQuery table_id auth (SQL.prettyQueryExpr theQuery)
+    False -> 
+      error "NO QUERY: Exiting"
+       -- Here the tool should go into "simple mode" for users not
+       -- in love with SQL. 
 
-  -- temporarily 
-  when (not hasQuery) $ error "NO QUERY: Exiting" 
-    
-
-  -- putStrLn "-----------------------------------" 
-  -- putStrLn "Download is not implemented" 
-
-  -- Experimental
-  -- tab <- pullEntireTable id secret table 
-    
-  -- putStrLn $ show tab
-  return () 
+  putStrLn $ show tab
   where
 
     flagsValid =
