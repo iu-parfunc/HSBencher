@@ -196,7 +196,7 @@ main = do
                  unlines (map ("  "++) valid_modes) 
          (md:rst) -> (resolveMode md, rst)
 
-  putStrLn ("hello world: "++show (mode,rest,options))
+  -- putStrLn ("hello world: "++show (mode,rest,options))
 
   ---------------------------------------------------------------------------
   -- Perform the task specified by the command line args
