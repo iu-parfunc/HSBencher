@@ -17,7 +17,11 @@ import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgD
 -- import qualified System.IO.Streams.Concurrent as Strm
 -- import qualified System.IO.Streams.Process as Strm
 -- import qualified System.IO.Streams.Combinators as Strm
-import Data.List (isInfixOf)
+
+import Data.List (isInfixOf, intersperse)
+import Data.List.Split (splitOn)
+import Data.String.Utils (strip)
+
 import Control.Monad (unless,when)
 import System.Exit (exitFailure, exitSuccess)
 
@@ -26,7 +30,7 @@ import System.Exit (exitFailure, exitSuccess)
 -- import HSBencher.Methods.Builtin
 -- import HSBencher.Internal.MeasureProcess
 
-import HSBencher.Internal.Fusion (init,getSomething,getWithSQLQuery,ColData,FTValue(..))
+import HSBencher.Internal.Fusion (init,getSomething,getWithSQLQuery,ColData(..),FTValue(..))
 
 -- Exceptions
 import Control.Exception
@@ -99,6 +103,13 @@ data Flag = ShowHelp | ShowVersion
           | FTQuery String
 -- CSV Convertion related Flags 
           | Wizard  -- Do your best
+          | RawCSV  -- Make no effort
+            
+          -- finer grained control 
+          | BenchName String      -- commaseparated list that specifies the "Name" 
+          | BenchVariation String -- for example "Threads"
+          | BenchData String      -- What goes in the fields
+            
   deriving (Eq,Ord,Show,Read)
 
 -- | Current run mode of the tool 
@@ -127,6 +138,10 @@ core_cli_options =
      , Option []     ["table"]  (ReqArg FTName "String")       "Name of FusionTable"
      , Option ['q']  ["query"]  (ReqArg FTQuery "String")      "A SQL style query"
      , Option ['w']  ["Wizard"] (NoArg Wizard)                 "Generate a decent CSV file with no user guidance"
+     , Option ['n']  ["name"]   (ReqArg BenchName "String")    "For example VARIANT"
+     , Option ['v']  ["variation"] (ReqArg BenchVariation "String") "For example NUM_THREADS"
+     , Option ['d']  ["data"]   (ReqArg BenchData "String")    "For example MEDIANTIME"
+     , Option []     ["raw"]    (NoArg RawCSV)                 "Effortless CSV" 
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -233,7 +248,7 @@ download flags = do
        -- Here the tool should go into "simple mode" for users not
        -- in love with SQL. 
 
-  putStrLn $ show tab
+  putStrLn $ convertToCSV flags tab
   where
     -- are flags valid for download ? 
     flagsValid =
@@ -309,11 +324,60 @@ metaID table_id qe@(SQL.Select _ _ _ _ _ _ _ _ _ ) =
 ---------------------------------------------------------------------------
 -- Pulled down table of FTValues to CSV
 
-toCSV :: [[FTValue]] -> String
+convertToCSV :: [Flag] -> ColData -> String
+convertToCSV flags cd@(ColData cols values) =
+  case (wizardMode,rawMode, flagsValid) of
+    (True, False, False) -> inJuxHurYlem cols values
+    (False, True, False) -> rawCSV cols values
+    (False, False, True) -> toCSV names vars cols values
+    _ -> error "Command line arguments are incorrect for CSV creation" 
+    
+  where 
+    flagsValid =
+      (not . null) [() | BenchName _ <- flags] &&
+      (not . null) [() | BenchVariation _  <- flags] &&
+      (not . null) [() | BenchData _ <- flags] 
+    wizardMode =
+      (not . null) [() | Wizard <- flags]
+
+    rawMode =
+      (not . null) [() | RawCSV <- flags] 
+
+    -- assume flagsvalid
+    name = head [n | BenchName n <- flags]
+    var  = head [v | BenchVariation v <- flags]
+    dat  = head [d | BenchData d <- flags]
+
+    names = map strip $ splitOn "," name
+    vars  = map strip $ splitOn "," var
+
+-- Without any thinking, turn the table into CSV 
+rawCSV :: [String] -> [[FTValue]] -> String
+rawCSV cols table = header ++ "\n" ++ 
+                    rest table 
+  where
+    header = concat $ intersperse "," cols
+    rest [] = []
+    rest (x:xs) = (concat $ intersperse "," $ map ftValueToString x) ++ "\n"  ++ 
+                  rest xs
+
+
+ftValueToString :: FTValue -> String
+ftValueToString (DoubleValue d) = show d
+ftValueToString (StringValue s) = s 
+
+
+--        idBench     idVars      Colnames    the Rows 
+toCSV :: [String] -> [String] -> [String] -> [[FTValue]] -> String
 toCSV = undefined 
 
+---------------------------------------------------------------------------
+-- Wizard Mode
+inJuxHurYlem :: [String] -> [[FTValue]] -> String 
+inJuxHurYlem = error "The wizard is not available" 
 
-
+-- Maybe there should be a configurable "Wizard config file" where
+-- the user can specify column names and their meaning. 
 
 ---------------------------------------------------------------------------
 -- GUIDELINES FOR THE WIZARD
