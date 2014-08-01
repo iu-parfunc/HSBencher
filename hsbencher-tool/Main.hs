@@ -53,10 +53,10 @@ import Prelude hiding (init)
 
    * ISSUES 
 
-     Currently I get ResponseTimeout on all attempts to get
-     the Dynaprof table. 
-        - This happens when there is just too much data, use the query to limit what to pull
-
+     - Wizard is not implemented!
+     - Guided CSV generation is not implemented
+     
+ 
    * PLANS and Thoughts 
 
   
