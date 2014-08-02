@@ -323,6 +323,8 @@ metaID table_id qe@(SQL.Select _ _ _ _ _ _ _ _ _ ) =
   Need more SQL understanding, it might be possible to
   set an Alias. TRAlias. Thus change the Expr tree slightly at some
   higher location and have it permeate.
+  -- NAH, the TRAlias tags probably have something to do with the
+     SQL "AS" functionality. 
 -} 
 
 
