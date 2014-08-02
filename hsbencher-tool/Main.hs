@@ -24,6 +24,7 @@ import Data.String.Utils (strip)
 
 import Control.Monad (unless,when)
 import System.Exit (exitFailure, exitSuccess)
+import System.IO (hPutStrLn)
 
 -- import HSBencher.Types
 -- import HSBencher.Internal.Utils
@@ -109,7 +110,7 @@ data Flag = ShowHelp | ShowVersion
           | GoogleSecret String | GoogleID String
           | FTName String
           | FTQuery String
--- CSV Convertion related Flags 
+-- CSV Conversion related Flags 
           | Wizard  -- Do your best
           | RawCSV  -- Make no effort
             
@@ -229,9 +230,9 @@ download flags = do
   when (not flagsValid) $ throwIO $ FlagsNotValidE "The flags are invalid for a download"   
 
 
-  putStrLn $ "processing table: "++ table
-  putStrLn $ "Using ID: " ++ id
-  putStrLn $ "Using Secret: " ++ secret
+  --putStrLn $ "processing table: "++ table
+  --putStrLn $ "Using ID: " ++ id
+  --putStrLn $ "Using Secret: " ++ secret
 
   ---------------------------------------------------------------------------
   -- Initialize !
@@ -247,7 +248,7 @@ download flags = do
         case q of
           Left (SQL.ParseError msg _ _ fmsg) -> error $ msg ++ "\n" ++ fmsg
           Right validQuery -> do
-            -- Replace "TABLE" with table_id in SQL Query
+            -- Replace "FT" with table_id in SQL Query
             let theQuery = metaID table_id validQuery
             -- Download whatever the query specifies
             pullWithQuery table_id auth (SQL.prettyQueryExpr theQuery)

@@ -51,6 +51,9 @@ import qualified Data.ByteString.Char8 as B
 import Data.Maybe  (isJust, fromJust, catMaybes, fromMaybe) 
 import Data.Dynamic 
 
+-- Print to stderr
+import System.IO (hPutStrLn, stderr)
+
 -- Prelude
 import Prelude hiding (init) 
 
@@ -78,21 +81,21 @@ fusionTag str = "[HSBencher.Internal.Fusion] " ++ str
 -- Initialization and Authorization
 
 initialize cid sec table_name = do
-  putStrLn $ fusionTag "Initializing"
+  hPutStrLn stderr $ fusionTag "Initializing"
   let auth = OAuth2Client { clientId=cid, clientSecret=sec }
   table_id <- getTableId auth table_name
   cols     <- getTableColumns auth table_id 
-  putStrLn $ fusionTag (table_id ++ " " ++ show cols)
+  hPutStrLn stderr $ fusionTag (table_id ++ " " ++ show cols)
   return (table_id,cols)
 
 -- ////  experimenting  Needs to be updated! 
  
 init cid sec table_name = do
-  putStrLn $ fusionTag "Initializing"
+  hPutStrLn stderr $ fusionTag "Initializing"
   let auth = OAuth2Client { clientId=cid, clientSecret=sec }
   table_id <- getTableId auth table_name
   cols     <- getTableColumns auth table_id 
-  putStrLn $ fusionTag (table_id ++ " " ++ show cols)
+  hPutStrLn stderr $ fusionTag (table_id ++ " " ++ show cols)
   return (table_id, auth)
 
 
@@ -115,18 +118,18 @@ getWithSQLQuery auth table_id query = do
 -- | Obtain the id of a FusionTable
 getTableId :: OAuth2Client -> String -> IO TableId -- [String])
 getTableId auth table_name = do
-  putStrLn $ fusionTag "Fetching information from Google"
+  hPutStrLn stderr $ fusionTag "Fetching information from Google"
 
   tokens <- getCachedTokens auth
 
-  putStrLn $ fusionTag $ "retrieved tokens: " ++ show tokens
+  -- hPutStrLn stderr $ fusionTag $ "retrieved tokens: " ++ show tokens
 
   let atok = B.pack $ accessToken tokens
 
   -- error check here
   Just allTables <- stdRetry "listTables" auth tokens $ listTables atok 
 
-  putStrLn $ fusionTag $ "Found " ++ show (length allTables) ++ " tables."
+  -- hPutStrLn stderr $ fusionTag $ "Found " ++ show (length allTables) ++ " tables."
 
   case filter (\t -> tab_name t == table_name) allTables of
     [] -> E.throwIO TableNotFoundException
