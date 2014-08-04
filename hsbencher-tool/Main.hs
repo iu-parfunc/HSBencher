@@ -18,7 +18,7 @@ import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgD
 -- import qualified System.IO.Streams.Process as Strm
 -- import qualified System.IO.Streams.Combinators as Strm
 
-import Data.List (isInfixOf, intersperse)
+import Data.List (isInfixOf, isPrefixOf, isSuffixOf, transpose, intersperse)
 import Data.List.Split (splitOn)
 import Data.String.Utils (strip)
 
@@ -92,6 +92,11 @@ import Prelude hiding (init)
 
 
 
+     -- here with filtering and splitting! 
+     hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT VARIANT, AVERAGE('MEDIANTIME') FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3' AND HOSTNAME = 'xmen' GROUP BY VARIANT" --raw --floc="Column 0" --fby="Prefix" --fstr="resampling" --sloc="Column 0" --sby="_"
+
+
+
 
      The FROM field allows the text "FT" which is translated into the fusiontable id
      given we know the human readable name as passed into wiht --table=name
@@ -118,6 +123,19 @@ data Flag = ShowHelp | ShowVersion
           | BenchName String      -- commaseparated list that specifies the "Name" 
           | BenchVariation String -- for example "Threads"
           | BenchData String      -- What goes in the fields
+
+-- All this needs to be cleaned up when there is time to really understand this Flag stuff 
+-- Simple filters that are applied after the pulldown (refinement over the limited SQL FT capabilites)
+          | FilterLoc String      -- Readable as LocationSpec
+          | FilterBy  String      -- Readable as FilterSpec 
+          | FilterStr String      -- Just a string 
+-- Split up
+          | SplitLoc String       -- Readable as LocationSpec
+          | SplitBy  String       -- a character to split by
+-- GroupBy
+-- GroupBy  String       -- Readable as LocationSpec
+
+            
             
   deriving (Eq,Ord,Show,Read)
 
@@ -131,6 +149,13 @@ data Error
     deriving (Show, Typeable) 
 
 instance Exception Error 
+
+
+data LocationSpec = Row Int | Column Int 
+                  deriving (Eq, Ord, Show, Read )
+
+data FilterSpec = Prefix | Infix | Suffix
+                deriving (Eq, Ord, Show, Read )
 
 
 -- | List of valid operation modes of the hsbencher tool
@@ -151,7 +176,21 @@ core_cli_options =
      , Option ['v']  ["variation"] (ReqArg BenchVariation "String") "For example NUM_THREADS"
      , Option ['d']  ["data"]   (ReqArg BenchData "String")    "For example MEDIANTIME"
      , Option []     ["raw"]    (NoArg RawCSV)                 "Effortless CSV" 
+
+-- refined filtering, splitting and grouping that is applied to the resulting CSV
+     , Option []     ["floc"] (ReqArg FilterLoc "String")      "Row <N> or Column <N>"
+     , Option []     ["fby"]  (ReqArg FilterBy  "String")      "Prefix or Infix or Suffix"
+     , Option []     ["fstr"] (ReqArg FilterStr "String")      "String to match against"
+
+     , Option []     ["sloc"] (ReqArg SplitLoc "String")       "Row <N> or Column <N>"
+     , Option []     ["sby"]  (ReqArg SplitBy  "String")       "for example _ or -"
+
+--      , Option []     ["gby"]  (ReqArg GroupBy  "String")       "Restructure CSV by creating groups **Warning increases dimensionality!**" 
      ]
+
+
+
+
 
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
@@ -257,7 +296,17 @@ download flags = do
        -- Here the tool should go into "simple mode" for users not
        -- in love with SQL. 
 
-  putStrLn $ convertToCSV flags tab
+  ---------------------------------------------------------------------------
+  -- Do the work! 
+  let csv_initial = convertToCSV flags tab
+  
+  ---------------------------------------------------------------------------
+  -- Apply refining filters
+  let csv_filtered = applyFilters flags csv_initial 
+
+  let csv_split = applySplit flags csv_filtered 
+  
+  putStrLn $ printCSV $ csv_split
   where
     -- are flags valid for download ? 
     flagsValid =
@@ -335,11 +384,11 @@ metaID table_id qe@(SQL.Select _ _ _ _ _ _ _ _ _ ) =
 ---------------------------------------------------------------------------
 -- Pulled down table of FTValues to CSV
 
-convertToCSV :: [Flag] -> ColData -> String
+convertToCSV :: [Flag] -> ColData -> [[String]]
 convertToCSV flags cd@(ColData cols values) =
   case (wizardMode,rawMode, flagsValid) of
     (True, False, False) -> inJuxHurYlem cols values
-    (False, True, False) -> rawCSV cols values
+    (False, True, False) -> rawCSV2 cols values
     (False, False, True) -> toCSV names vars cols values
     _ -> error "Command line arguments are incorrect for CSV creation" 
     
@@ -363,15 +412,22 @@ convertToCSV flags cd@(ColData cols values) =
     vars  = map strip $ splitOn "," var
 
 -- Without any thinking, turn the table into CSV 
-rawCSV :: [String] -> [[FTValue]] -> String
-rawCSV cols table = header ++ "\n" ++ 
-                    rest table 
-  where
-    header = concat $ intersperse "," cols
-    rest [] = []
-    rest (x:xs) = (concat $ intersperse "," $ map ftValueToString x) ++ "\n"  ++ 
-                  rest xs
+-- rawCSV :: [String] -> [[FTValue]] -> String
+-- rawCSV cols table = header ++ "\n" ++ 
+--                     rest table 
+--   where
+--     header = concat $ intersperse "," cols
+--     rest [] = []
+--     rest (x:xs) = (concat $ intersperse "," $ map ftValueToString x) ++ "\n"  ++ 
+--                   rest xs
 
+rawCSV cols table = printCSV $ rawCSV2 cols table 
+
+rawCSV2 :: [String] -> [[FTValue]] -> [[String]]
+rawCSV2 cols table = cols: map ( map ftValueToString) table 
+
+printCSV :: [[String]] -> String
+printCSV strs = unlines $ map (concat . intersperse ",")  strs
 
 ftValueToString :: FTValue -> String
 ftValueToString (DoubleValue d) = show d
@@ -379,12 +435,12 @@ ftValueToString (StringValue s) = s
 
 
 --        idBench     idVars      Colnames    the Rows 
-toCSV :: [String] -> [String] -> [String] -> [[FTValue]] -> String
+toCSV :: [String] -> [String] -> [String] -> [[FTValue]] -> [[String]]
 toCSV = error "The \"guided\" CSV generation is not implemented" 
 
 ---------------------------------------------------------------------------
 -- Wizard Mode
-inJuxHurYlem :: [String] -> [[FTValue]] -> String 
+inJuxHurYlem :: [String] -> [[FTValue]] -> [[String]]
 inJuxHurYlem = error "The wizard is not available" 
 
 -- Maybe there should be a configurable "Wizard config file" where
@@ -401,3 +457,63 @@ inJuxHurYlem = error "The wizard is not available"
 
 
 -} 
+
+
+
+
+---------------------------------------------------------------------------
+-- FILTERING FILTERING
+
+applyFilters :: [Flag] -> [[String]] -> [[String]]
+applyFilters flags csv =
+  if filtersActive
+  then 
+    case filterLoc of
+      Row x -> applyFilterByRow x csv
+      Column x -> applyFilterByColumn x csv                  
+  else csv 
+    
+  where
+    filtersActive = (not . null) [() | FilterLoc _ <- flags] &&
+                    (not . null) [() | FilterBy _ <- flags]  &&
+                    (not . null) [() | FilterStr _ <- flags]
+    filterLoc = head [ read x :: LocationSpec | FilterLoc x <- flags]
+    filterBy  = head [ read x :: FilterSpec   | FilterBy x <- flags]
+    filterStr = head [ str | FilterStr str <- flags] 
+
+    applyFilterByRow x csv = transpose $ applyFilterByColumn  x $ transpose csv
+    applyFilterByColumn x csv = 
+      case filterBy of
+        Prefix   -> filter (\l -> filterStr `isPrefixOf` (l !! x))  csv
+        Infix    -> filter (\l -> filterStr `isInfixOf` (l !! x))  csv
+        Suffix  -> filter (\l -> filterStr `isSuffixOf` (l !! x))  csv
+
+
+
+---------------------------------------------------------------------------
+-- Splitting. one column into many
+
+applySplit :: [Flag] -> [[String]] -> [[String]]
+applySplit flags csv =
+  if splitActive
+  then
+    case splitLoc of
+      Row r -> error "Splitting a row is not implemented"
+      Column c -> map (applySplitByColumn c) csv
+  else csv
+ where
+    splitActive = (not . null) [() | SplitLoc _ <- flags] &&
+                  (not . null) [() | SplitBy _ <- flags] 
+    
+    splitLoc = head [ read x :: LocationSpec | SplitLoc x <- flags]
+    splitBy  = head [ x  | SplitBy x <- flags]
+
+--     applyFilterByRow x csv = transpose $ applyFilterByColumn  x $ transpose csv
+    applySplitByColumn c csv =
+      let before = take c csv
+          after  = drop (c+1) csv
+          atx    = csv !! c
+      in before ++ (splitOn splitBy atx) ++ after 
+
+       
+        
