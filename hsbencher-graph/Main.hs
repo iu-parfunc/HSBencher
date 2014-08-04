@@ -14,7 +14,7 @@ import GHC.IO.Exception (IOException(..))
 -- import qualified System.IO.Streams.Process as Strm
 -- import qualified System.IO.Streams.Combinators as Strm
 
-import Data.List (isInfixOf, intersperse, delete, transpose)
+import Data.List (isInfixOf, intersperse, delete, transpose, sort,nub)
 import Data.List.Split (splitOn)
 import Data.String.Utils (strip)
 
@@ -65,7 +65,12 @@ data Flag = ShowHelp | ShowVersion
           | XLabel String
           | YLabel String
   -- BarCluster rendering related
-          | GroupBy LocationSpec 
+          | GroupBy String -- Readable as LocationSpec
+
+  -- Create a key from some number of columns
+  -- This becomes the "name"
+          | Key String --Readable as [Int]
+            
             
   deriving (Eq,Ord,Show,Read)
 
@@ -102,7 +107,9 @@ core_cli_options =
      , Option []    ["lines"] (NoArg (RenderMode Lines))     "Plot data as lines"
      , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
      , Option []    ["xlabel"] (ReqArg XLabel "String")      "x-axis label"
-     , Option []    ["ylabel"] (ReqArg YLabel "String")      "y-axis label" 
+     , Option []    ["ylabel"] (ReqArg YLabel "String")      "y-axis label"
+     , Option []    ["key"]    (ReqArg Key "String")         "columns that make out the key [0,1,2]"
+     , Option []    ["group"]  (ReqArg GroupBy "String")     "column to use as group identifier" 
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -146,7 +153,13 @@ main = do
   ---------------------------------------------------------------------------
   -- Perform the task specified by the command line args
 
-  renderPlot options csv 
+  -- apply key
+  let csv_rekeyed = applyKey options csv
+      csv_grouped = applyGroup options csv_rekeyed 
+      
+  putStrLn $ show csv_grouped 
+  
+  renderPlot options csv_grouped
     
 
 ---------------------------------------------------------------------------
@@ -189,8 +202,8 @@ data Serie = Serie {serieName :: String,
 mkSeries :: [Flag] -> [[String]] -> [Serie]
 mkSeries flags csv =
   case dataIn of
-    Rows -> map rowsToSeries csv
-    Columns -> map rowsToSeries $ transpose csv 
+    Rows -> map rowsToSeries (tail csv)
+    Columns -> map rowsToSeries $ transpose (tail csv)
   
   where
     dataIn =
@@ -206,7 +219,7 @@ barClusterCategories :: [[String]] -> [String]
 barClusterCategories input =
   case  (all isInt cates || all isDouble cates) of
     -- Hey, these dont look like category names! it looks like data
-    True -> ["category" ++ show n | n <- [0..length cates]]
+    True -> cates -- ["category" ++ show n | n <- [0..length cates]]
     False -> cates
   where cates = tail $ head input 
 
@@ -332,3 +345,81 @@ isDouble str = ((all isNumber $ delete '.' str)
                 || (all isNumber $ delete '.' $ delete 'e' $ delete '-' str))
                && '.' `elem` str
 isString str = not (isInt str) && not (isDouble str)
+
+
+
+
+
+
+---------------------------------------------------------------------------
+-- apply the key. that is move some columns to the "front" and concatenate
+-- their contents
+
+applyKey :: [Flag] -> [[String]] -> [[String]]
+applyKey flags csv =
+  if keyActive
+  then map doIt csv
+       
+       
+  else csv 
+  where
+    keyActive = (not . null) [() | Key _ <- flags]
+    key = head [read x :: [Int] |  Key x <- flags]
+
+    key_sorted_reverse = reverse $ sort key 
+
+    fix_row_head r = concatMap (\i -> r !! i) key
+    fix_row_tail r = dropCols key_sorted_reverse r
+
+    doIt r = fix_row_head r : fix_row_tail r 
+
+    dropCol x r = take x r ++ drop (x+1) r
+    dropCols [] r = r 
+    dropCols (x:xs) r = dropCols xs (dropCol x r)
+    
+       
+        
+-- Probably not very flexible. More thinking needed 
+applyGroup :: [Flag] -> [[String]] -> [[String]]
+applyGroup flags csv = 
+  if groupActive
+  then
+    --error $ "\n\n" ++ show csv ++ "\n\n" ++ show theGroups ++
+    --        "\n\n" ++ show theNames ++ "\n\n" ++ show allGroups ++
+    --        "\n\n" ++ show doIt 
+            
+    case groupingIsValid of
+      True -> doIt -- groupBy csv
+      False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
+  else csv
+
+  where
+    groupActive = (not . null) [() | GroupBy _ <- flags]
+    groupBy = head [read x :: Int |  GroupBy x <- flags]
+
+    getKey r = head r
+
+    groupingIsValid = all (\r -> length r == 3) csv
+
+    theGroups = nub $ sort $ map (\r -> r !! groupBy) csv
+
+    --- Ooh dangerous!!! 
+    valueIx = head $ delete groupBy [1,2]
+    
+    -- makes unreasonable assumptions! (ordering) 
+    -- some sorting needs to be built in for the general case. 
+    theNames = nub $ map head csv 
+
+    --extractValues g rows = [r !! valueIx | r <- rows
+     --                                    , g == (r !! groupBy)]
+
+    allGroups = map (\n -> extractValues n csv) theNames --theGroups
+
+
+    -- for each NAME. Pull out all members of the Group
+    extractValues name rows = [r !! valueIx | r <- rows ,getKey r == name] 
+    
+    
+    doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
+    
+              
