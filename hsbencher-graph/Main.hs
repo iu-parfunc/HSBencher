@@ -14,7 +14,7 @@ import GHC.IO.Exception (IOException(..))
 -- import qualified System.IO.Streams.Process as Strm
 -- import qualified System.IO.Streams.Combinators as Strm
 
-import Data.List (isInfixOf, intersperse, delete, transpose, sort,nub)
+import Data.List (isInfixOf, intersperse, delete, transpose, sort,nub, deleteBy)
 import Data.List.Split (splitOn)
 import Data.String.Utils (strip)
 
@@ -265,34 +265,6 @@ doBarClusters series categories title xlabel ylabel =
 doLines :: [Serie] -> String -> String -> String -> IO ()
 doLines = undefined
 
-
-
-
--- chart borders = toRenderable layout
---  where
---   layout = 
---         layout_title .~ "Sample Bars" ++ btitle
---       $ layout_title_style . font_size .~ 10
---       $ layout_x_axis . laxis_generate .~ autoIndexAxis alabels
---       $ layout_y_axis . laxis_override .~ axisGridHide
---       $ layout_left_axis_visibility . axis_show_ticks .~ False
---       $ layout_plots .~ [ plotBars bars2 ]
---       $ def :: Layout PlotIndex Double
-
---   bars2 = plot_bars_titles .~ ["Cash","Equity"]
---       $ plot_bars_values .~ addIndexes [[20,45],[45,30],[30,20],[70,25]]
---       $ plot_bars_style .~ BarsClustered
---       $ plot_bars_spacing .~ BarsFixGap 30 5
---       $ plot_bars_item_styles .~ map mkstyle (cycle defaultColorSeq)
---       $ def
-
---   alabels = [ "Jun", "Jul", "Aug", "Sep", "Oct" ]
-
---   btitle = if borders then "" else " (no borders)"
---   bstyle = if borders then Just (solidLine 1.0 $ opaque black) else Nothing
---   mkstyle c = (solidFillStyle c, bstyle)
-
-
 ---------------------------------------------------------------------------
 -- Get the CSV from stdin
 
@@ -346,6 +318,25 @@ isDouble str = ((all isNumber $ delete '.' str)
                && '.' `elem` str
 isString str = not (isInt str) && not (isDouble str)
 
+
+---------------------------------------------------------------------------
+-- Try Sorting as numbers
+
+trySortAsNum :: [String] -> Maybe [String]
+trySortAsNum str =
+  case valueType of
+    -- If they are Integers I dont see how this can fail
+    Int ->  Just $ map show $ sort $ (map read str :: [Int])
+    -- If they are doubles, mae sure read/show invariant holds
+    Double ->
+      let sorted = map show $ sort $ (map read str :: [Double])
+      in if (all (\x -> elem x sorted) str) then Just sorted else Nothing
+
+    -- If they are words. Well, could sort, but doing nothing. 
+    String -> Nothing 
+      
+  where 
+    valueType = recogValueType str 
 
 
 
@@ -401,7 +392,11 @@ applyGroup flags csv =
 
     groupingIsValid = all (\r -> length r == 3) csv
 
-    theGroups = nub $ sort $ map (\r -> r !! groupBy) csv
+    theGroups' = nub $ sort $  map (\r -> r !! groupBy) csv 
+    theGroups  =
+      case trySortAsNum theGroups' of
+        Nothing -> theGroups
+        Just sorted -> sorted 
 
     --- Ooh dangerous!!! 
     valueIx = head $ delete groupBy [1,2]
@@ -416,8 +411,16 @@ applyGroup flags csv =
     allGroups = map (\n -> extractValues n csv) theNames --theGroups
 
 
-    -- for each NAME. Pull out all members of the Group
-    extractValues name rows = [r !! valueIx | r <- rows ,getKey r == name] 
+    -- for each NAME. Pull out all values 
+    extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
+
+    --organize the values in the order specified by "theGroups"
+    organize [] [] = []
+    organize [] xs  = error $ show xs
+    organize (x:xs) ys = 
+      case lookup x ys of
+        Nothing -> error "applyGroup: Bug alert!"
+        Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
     
     
     doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
