@@ -225,7 +225,7 @@ renderPlot s pl =
      
     (s1:s2:s3:_) = split s 
     (v1,code1)  = dataSet s1 (map lgData lines) 
-    (_v2,code2) = dataSet s2 (map pgData points)
+    (v2,code2) = dataSet s2 (map pgData points)
     (v3,code3)  = dataSet s3 (map bgData bars)
     
     plot c = "var someplot = $.plot(\"#placeholder\", [" ++ 
@@ -237,7 +237,8 @@ renderPlot s pl =
     body = code1 ++ code2 ++ code3 
 
     charts = (concat $ intersperse ", " $ chartLines v1 lines) ++
-             (concat $ intersperse ", " $ chartBars barWidth v3 (zip order bars)) 
+             (concat $ intersperse ", " $ chartBars barWidth v3 (zip order bars)) ++
+             (concat $ intersperse ", " $ chartPoints v2 points)
 
     order = [1..] :: [Int]
     nBarGraphs = length bars
@@ -265,6 +266,20 @@ renderPlot s pl =
           "label: " ++ show (bgLabel b) ++ ",\n" ++
           "color: " ++ show (bgColor b) ++ "\n" ++
           "}") : chartBars bw vs bs
+
+    chartPoints [] [] = [""]
+    chartPoints _  [] = error "chartPoints: not mathing!"
+    chartPoints [] _  = error "chartPoints: not mathing!"
+    chartPoints (v:vs) (p:ps) =
+      ("{\n data: " ++ v ++ ",\n" ++
+       "points: {show: true," ++
+                 "fill: true," ++
+                 "radius: 3,"  ++
+                 "fillColor: " ++ show (pgColor p) ++ "},\n" ++ 
+       "label: " ++ show (pgLabel p) ++ ",\n" ++
+       "color: " ++ show (pgColor p) ++ "\n" ++
+       "}") : chartPoints vs ps
+         
     
     plotOptions
       = "var options = {canvas: true," ++ 
