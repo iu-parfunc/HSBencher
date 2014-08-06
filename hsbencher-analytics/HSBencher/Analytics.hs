@@ -61,7 +61,11 @@ data Plot x y =
          pLegend :: Bool,
          pDimensions :: (Int,Int),
          pXLabel :: String,
-         pYLabel :: String 
+         pYLabel :: String,
+         pXAxisTicks :: Maybe [x],
+         pYAxisTicks :: Maybe [y],
+         pXAxisLog :: Bool,
+         pYAxisLog :: Bool
        }
   deriving (Eq,Show, Read, Ord)
 
@@ -76,91 +80,102 @@ data BarStackPlot x y =
   deriving (Eq,Show, Read, Ord)
 
 ---------------------------------------------------------------------------
--- Exampleplots 
-exampleLG :: Plot Double Double
-exampleLG = Plot {pLines = [LineGraph "#F00"
-                                      "Line1"
-                                      Nothing
-                                      [(x,x)|x <- [0..7]]],
-                  pPoints = [],
-                  pBars   = [],
-                  pLegend = True,
-                  pDimensions = (800,400),
-                  pXLabel = "Threads",
-                  pYLabel = "ms" }
-examplePG :: Plot Double Double
-examplePG = Plot {pPoints = [PointGraph "#F00"
-                                        "Points1"
-                                        "circle" 
-                                        [(x,7-x)| x <- [0..7]]],
-                  pLines = [],
-                  pBars  = [],
-                  pLegend = True,
-                  pDimensions = (800,400),
-                  pXLabel = "Threads",
-                  pYLabel = "ms" }
+-- Exampleplots
+
+-- exampleLG :: Plot Double Double
+-- exampleLG = Plot {pLines = [LineGraph "#F00"
+--                                       "Line1"
+--                                       Nothing
+--                                       [(x,x)|x <- [0..7]]],
+--                   pPoints = [],
+--                   pBars   = [],
+--                   pLegend = True,
+--                   pDimensions = (800,400),
+--                   pXLabel = "Threads",
+--                   pYLabel = "ms" ,
+--                   pXAxisLog = False,
+--                   pYAxisLog = False}
+            
+-- examplePG :: Plot Double Double
+-- examplePG = Plot {pPoints = [PointGraph "#F00"
+--                                         "Points1"
+--                                         "circle" 
+--                                         [(x,7-x)| x <- [0..7]]],
+--                   pLines = [],
+--                   pBars  = [],
+--                   pLegend = True,
+--                   pDimensions = (800,400),
+--                   pXLabel = "Threads",
+--                   pYLabel = "ms",
+--                   pXAxisLog = False,
+--                   pYAxisLog = False}
             
 
-exampleBG :: Plot Double Double
-exampleBG = Plot {pBars = [BarGraph "#F00"
-                                    "Bars1"
-                                    [(x,x)| x <- [0..7]],
-                           BarGraph "#0F0"
-                                    "Bars2"
-                                    [(x,(7-x))| x <- [0..7]],
-                           BarGraph "#00F"
-                                    "Bars3"
-                                    [(x,5.5)| x <- [0..7]]],
-                  pLines = [],
-                  pPoints = [],
-                  pLegend = True,
-                  pDimensions = (800,400),
-                  pXLabel = "Threads",
-                  pYLabel = "ms"
-                 }
+-- exampleBG :: Plot Double Double
+-- exampleBG = Plot {pBars = [BarGraph "#F00"
+--                                     "Bars1"
+--                                     [(x,x)| x <- [0..7]],
+--                            BarGraph "#0F0"
+--                                     "Bars2"
+--                                     [(x,(7-x))| x <- [0..7]],
+--                            BarGraph "#00F"
+--                                     "Bars3"
+--                                     [(x,5.5)| x <- [0..7]]],
+--                   pLines = [],
+--                   pPoints = [],
+--                   pLegend = True,
+--                   pDimensions = (800,400),
+--                   pXLabel = "Threads",
+--                   pYLabel = "ms",
+--                   pXAxisLog = False,
+--                   pYAxisLog = False
+--                  }
 
 
-exampleMG :: Plot Int Double
-exampleMG = Plot {pBars = [BarGraph "#F00"
-                                    "Bars1"
-                                    [(x,fromIntegral x)| x <- [0..7]],
-                           BarGraph "#0F0"
-                                    "Bars2"
-                                    [(x,fromIntegral (7-x))| x <- [0..7]],
-                           BarGraph "#00F"
-                                    "Bars3"
-                                    [(x,5)| x <- [0..7]]],
-                  pLines = [LineGraph "#000"
-                                      "Line1"
-                                      Nothing
-                                      [(x,4+sin (fromIntegral x))|x <- [0..7]]],
+-- exampleMG :: Plot Int Double
+-- exampleMG = Plot {pBars = [BarGraph "#F00"
+--                                     "Bars1"
+--                                     [(x,fromIntegral x)| x <- [0..7]],
+--                            BarGraph "#0F0"
+--                                     "Bars2"
+--                                     [(x,fromIntegral (7-x))| x <- [0..7]],
+--                            BarGraph "#00F"
+--                                     "Bars3"
+--                                     [(x,5)| x <- [0..7]]],
+--                   pLines = [LineGraph "#000"
+--                                       "Line1"
+--                                       Nothing
+--                                       [(x,4+sin (fromIntegral x))|x <- [0..7]]],
 
-                  pPoints = [],
-                  pLegend = True,
-                  pDimensions = (800,400),
-                  pXLabel = "Threads",
-                  pYLabel = "ms"
-                 }
+--                   pPoints = [],
+--                   pLegend = True,
+--                   pDimensions = (800,400),
+--                   pXLabel = "Threads",
+--                   pYLabel = "ms",
+--                   pXAxisLog = False,
+--                   pYAxisLog = False
+--                  }
 
-exampleStack :: BarStackPlot String Double
-exampleStack =
-  BarStackPlot { bsStacks = [[BarGraph "#F00"
-                                       "Dynaprof"
-                                       [("gcc",4.5),("tar",3.3)],
-                              BarGraph "#F07"
-                                       "Dynaprof startup"
-                                       [("gcc",1.2),("tar",1.2)]],
-                             [BarGraph "#00F"
-                                       "Leading contender"
-                                       [("gcc",5.5),("tar",4.3)],
-                              BarGraph "#07F"
-                                       "Leading contender startup"
-                                       [("gcc",0.7),("tar",0.7)]]],
-                 bsLegend = True,
-                 bsDimensions = (800,400),
-                 bsXLabel = "Program",
-                 bsYLabel = "Time"
-               } 
+-- exampleStack :: BarStackPlot String Double
+-- exampleStack =
+--   BarStackPlot { bsStacks = [[BarGraph "#F00"
+--                                        "Dynaprof"
+--                                        [("gcc",4.5),("tar",3.3)],
+--                               BarGraph "#F07"
+--                                        "Dynaprof startup"
+--                                        [("gcc",1.2),("tar",1.2)]],
+--                              [BarGraph "#00F"
+--                                        "Leading contender"
+--                                        [("gcc",5.5),("tar",4.3)],
+--                               BarGraph "#07F"
+--                                        "Leading contender startup"
+--                                        [("gcc",0.7),("tar",0.7)]]],
+--                  bsLegend = True,
+--                  bsDimensions = (800,400),
+--                  bsXLabel = "Program",
+--                  bsYLabel = "Time"
+                            
+--                } 
                              
 
 ---------------------------------------------------------------------------
@@ -189,7 +204,7 @@ class Plotable a where
 
 instance Plotable String where
   toPlot str = show str -- want the extra " "
-  plotKind _str = "mode: \"categories\""  
+  plotKind _str = "mode: \"categories\","  
 
 instance Plotable Double where
   toPlot d = show d
@@ -197,7 +212,7 @@ instance Plotable Double where
 
 instance Plotable Int where
   toPlot i = show i
-  plotKind _i = "tickDecimals: 0" 
+  plotKind _i = "tickDecimals: 0," 
   
 ---------------------------------------------------------------------------
 {-
@@ -221,7 +236,11 @@ renderPlot s pl =
          _legend
          (_width,_height)
          xlabel
-         ylabel = pl
+         ylabel
+         xticks
+         yticks
+         xlog
+         ylog = pl
      
     (s1:s2:s3:_) = split s 
     (v1,code1)  = dataSet s1 (map lgData lines) 
@@ -279,15 +298,33 @@ renderPlot s pl =
        "label: " ++ show (pgLabel p) ++ ",\n" ++
        "color: " ++ show (pgColor p) ++ "\n" ++
        "}") : chartPoints vs ps
-         
+
+
+    ticks Nothing = ""
+    ticks (Just ts) = "ticks: [" ++ concat (intersperse "," (map toPlot ts)) ++ "]," 
     
     plotOptions
       = "var options = {canvas: true," ++ 
                        "legend: {position: \"nw\", type: \"canvas\" }," ++
                        "axisLabels: {show: true}," ++
-                       "xaxis: {axisLabel: " ++ show xlabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: x) ++ " }," ++
-                       "yaxis: {axisLabel: " ++ show ylabel ++ ", axisLabelUseCanvas: true, " ++ plotKind (undefined :: y) ++ " }};" 
-        
+                       "xaxis: {axisLabel: " ++ show xlabel ++ "," ++
+                               ticks xticks ++ 
+                               "axisLabelUseCanvas: true, " ++
+                               plotKind (undefined :: x) ++ 
+                               (if xlog
+                                then " transform: function(v) {return Math.log(v+0.0001);}, "
+                                else "") ++       
+                               " }," ++
+                       "yaxis: {axisLabel: " ++ show ylabel ++ "," ++
+                               ticks yticks ++ 
+                               "axisLabelUseCanvas: true, " ++ 
+                               plotKind (undefined :: y) ++
+                               (if ylog
+                                then " transform: function(v) {return Math.log(v+0.0001);}, "
+                                else "") ++       
+                               " }};" 
+
+              
     pngButton
       = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
         "var canvas = someplot.getCanvas();\n" ++
