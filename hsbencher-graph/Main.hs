@@ -29,9 +29,9 @@ import Control.Exception
 import Data.Typeable
 
 -- Charting library
-import Graphics.Rendering.Chart
-import Graphics.Rendering.Chart
-import Graphics.Rendering.Chart.Backend.Cairo
+import Graphics.Rendering.Chart as C
+import Graphics.Rendering.Chart as C 
+import Graphics.Rendering.Chart.Backend.Cairo as C
 import Data.Colour
 import Data.Colour.Names
 import Data.Default.Class
@@ -128,7 +128,11 @@ main = do
   args <- getArgs
 
   let (options,plainargs,_unrec,errs) = getOpt' Permute core_cli_options args
-  
+
+  let outputSpecified = (not . null) [() | OutFile _ <- options]
+      outfile = head [nom | OutFile nom <- options] 
+
+      
   unless (null errs) $ do
     putStrLn$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
@@ -137,6 +141,10 @@ main = do
   when (ShowHelp `elem` options) $ do 
     putStrLn fullUsageInfo
     exitSuccess
+
+  when (not outputSpecified) $ do
+    putStrLn$ "Error: an output file has to be specified"
+    exitFailure
 
   ---------------------------------------------------------------------------
   -- read csv from stdin. 
@@ -154,22 +162,28 @@ main = do
   -- Perform the task specified by the command line args
 
   -- apply key
+  -- These transformations should check is a specified transformation
+  -- is sane given the plot style.
+  -- List the rules for this. For example, a bar graph is not sane with more than one datapoint per "name"
   let csv_rekeyed = applyKey options csv
       csv_grouped = applyGroup options csv_rekeyed 
       
   putStrLn $ show csv_grouped 
   
-  renderPlot options csv_grouped
+  renderableToFile def (toRenderable (renderPlot options (take 10 csv_grouped))) outfile -- "example11_big.png" 
+  return ()
+
     
 
 ---------------------------------------------------------------------------
 -- Render a plot based on the options and the csv
 
-renderPlot :: [Flag] -> [[String]] -> IO ()
+--renderPlot :: [Flag] -> [[String]] -> FilePath -> IO ()
 renderPlot flags csv = 
    case plotKind of
      [] -> error "No graph mode specified"
-     (Bars:_) -> doBarClusters series cates title xLabel yLabel 
+     (Bars:_) -> doBars series title xLabel yLabel
+     (BarClusters:_) -> doBarClusters series cates title xLabel yLabel 
      (Lines:_) -> doLines series title xLabel yLabel 
      
                        
@@ -223,20 +237,21 @@ barClusterCategories input =
     False -> cates
   where cates = tail $ head input 
 
--- Just a test..
+-- Just a test.. (Now why is there a transpose in there !!!) 
 seriesToBarClusters :: [Serie] -> [[Double]]
 seriesToBarClusters ss = transpose the_data 
   where
     the_data = map (\(Serie _ d) -> d) ss
-    
 
+-- Assumes one data point 
+seriesToBars :: [Serie] -> [[Double]]
+seriesToBars ss = map (\(Serie _ d) -> d) ss 
 
 ------------------------------------------------------------------------------
 -- Plot bars
-doBarClusters :: [Serie] -> [String] -> String -> String -> String -> IO ()
-doBarClusters series categories title xlabel ylabel =
-  do renderableToFile def (toRenderable layout) "example11_big.png" 
-     return () 
+-- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> IO ()
+-- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> Layout PlotIndex Double
+doBarClusters series categories title xlabel ylabel = layout
  where
   layout = 
         layout_title .~ title
@@ -260,9 +275,34 @@ doBarClusters series categories title xlabel ylabel =
   mkstyle c = (solidFillStyle c, bstyle)
 
 
+--doBars :: [Serie] -> String -> String -> String -> SOMETHING!!!
+doBars series title xlabel ylabel = layout
+  where
+    layout =
+        layout_title .~ title
+      $ layout_title_style . font_size .~ 10
+      $ layout_x_axis . laxis_generate .~ autoIndexAxis (map serieName series)
+      $ layout_y_axis . laxis_override .~ axisGridHide
+      $ layout_left_axis_visibility . axis_show_ticks .~ False
+      $ layout_plots .~ [ plotBars bars ]
+      $ def :: Layout PlotIndex Double
+
+    
+    bars =
+        plot_bars_titles .~ []
+      $ plot_bars_values .~ addIndexes (seriesToBars series) -- [[20,45],[45,30],[30,20],[70,25]]
+      $ plot_bars_style .~ C.BarsClustered
+      $ plot_bars_spacing .~ BarsFixGap 30 5
+      $ plot_bars_item_styles .~ map mkstyle (repeat (head (cycle defaultColorSeq)))
+      $ def
+
+    bstyle = Just (solidLine 1.0 $ opaque black)
+    mkstyle c = (solidFillStyle c, bstyle)
+
+
 ------------------------------------------------------------------------------
 -- Plot lines
-doLines :: [Serie] -> String -> String -> String -> IO ()
+-- doLines :: [Serie] -> String -> String -> String -> IO ()
 doLines = undefined
 
 ---------------------------------------------------------------------------

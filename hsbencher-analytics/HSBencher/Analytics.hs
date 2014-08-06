@@ -249,6 +249,7 @@ renderPlot s pl =
     chartLines (v:vs) (l:ls)
       = ("{\n data: "++ v ++ ",\n" ++
          "lines: { show: true, fill: false },\n" ++
+         "points: { show: true },\n" ++ 
          "label: " ++ show (lgLabel l) ++ ",\n" ++
          "color: " ++ show (lgColor l) ++ "\n" ++
          "}") :  chartLines vs ls
