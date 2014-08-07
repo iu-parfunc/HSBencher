@@ -316,17 +316,21 @@ renderPlot s pl =
                                plotKind (undefined :: x) ++ 
                                (if xlog
                                 then " transform: function(v) {return Math.log(v+0.0001);}, "
-                                else "") ++       
-                               " }," ++
+                                else "") ++
+                               "axisLabelFontSizePixels: 35," ++ 
+                               "axisLabelPadding: 20" ++ 
+                               " }," ++ 
                        "yaxis: {axisLabel: " ++ show ylabel ++ "," ++
                                ticks yticks ++ 
                                "axisLabelUseCanvas: true, " ++ 
                                plotKind (undefined :: y) ++
                                (if ylog
                                 then " transform: function(v) {return Math.log(v+0.0001);}, "
-                                else "") ++       
+                                else "") ++
+                               "axisLabelFontSizePixels: 35," ++
+                               "axisLabelPadding: 0" ++
                                " }};" 
-
+-- var options = {canvas: true,legend: {position: "nw", type: "canvas",color : "#000000", weight: "bold"  },axisLabels: {show: true },xaxis: { axisLabelFontSizePixels: 35, axisLabelPadding: 20, axisLabel: "Backoff threshold",axisLabelUseCanvas: true, mode: "categories", },yaxis: {axisLabelFontSizePixels: 35, axisLabelPadding: 0, axisLabel: "Overhead %",axisLabelUseCanvas: true,  }};
               
     pngButton
       = "document.getElementById(\"toPNGButton\").onclick = function (somePlot) {\n" ++
