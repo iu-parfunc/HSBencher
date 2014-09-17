@@ -170,7 +170,7 @@ main = do
       
   putStrLn $ show csv_grouped 
   
-  renderableToFile def (toRenderable (renderPlot options (take 10 csv_grouped))) outfile -- "example11_big.png" 
+  renderableToFile def (toRenderable (renderPlot options (take 10 csv_grouped))) outfile 
   return ()
 
     
@@ -237,7 +237,8 @@ barClusterCategories input =
     False -> cates
   where cates = tail $ head input 
 
--- Just a test.. (Now why is there a transpose in there !!!) 
+-- Just a test.. (Now why is there a transpose in there !!!)
+-- The transpose is related to not near groupBy. 
 seriesToBarClusters :: [Serie] -> [[Double]]
 seriesToBarClusters ss = transpose the_data 
   where
@@ -464,5 +465,83 @@ applyGroup flags csv =
     
     
     doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
+
+-- This is what you get. 
+-- groupBy "THREADS" 
+-- Key     1   2   4   8   16
+-- key1    v1  v2  v3  v4  v5
+
+-- But it seems having data series in columns is the standard approach.
+-- So this would be desireable.
+-- groupBy "THREADS"
+
+--  Threads key1 key2 key3 key4 
+--  1       v1   w1   u1   ü1    
+--  2       v2   w2   u2   ü2
+--  4       v3   w3   u3   ü3
+
+-- New applyGroup that uses a different result layout.
+-- I think this is the layout more often requested by plotting tools. 
+applyGroup :: [Flag] -> [[String]] -> [[String]]
+applyGroup flags csv = 
+  if groupActive
+  then
+            
+    case groupingIsValid of
+      True -> doIt -- groupBy csv
+      False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
+  else csv
+
+  where
+    groupActive = (not . null) [() | GroupBy _ <- flags]
+    -- This could also potentially be a name, right ? 
+    groupSpecifierColumn = head [read x :: Int |  GroupBy x <- flags]
+
+    -- After rearrangement the key will be at the head of the list
+    -- (Thats why grouping requires keying) 
+    getKey r = head r
+
+    -- I have no idea what to do if the table has too many column,
+    -- Could require that the user specify Key, Group and Value column,
+    -- and filter out those in the process of grouping. 
+    groupingIsValid = all (\r -> length r == 3) csv
+
+    -- Read out all different values in the groupSpecifierColumn.
+    theGroups' = nub $ sort $  map (\r -> r !! groupSpecifierColumn) csv 
+    theGroups  =
+      case trySortAsNum theGroups' of
+        Nothing -> theGroups
+        Just sorted -> sorted 
+
+    --- Ooh dangerous!!!
+    --  But should work if key is in column 0 (user has rekeyed) 
+    --  and if number of columns is 3. 
+    valueIx = head $ delete groupSpecifyerColumn [1,2]
     
-              
+
+    -- extract all the different keys.
+    -- Could try to sort these as numbers as well.. 
+    allKeys = nub $ sort $ map head csv 
+
+    allGroups = map (\n -> extractValues n csv) theNames --theGroups
+
+
+    -- for each NAME. Pull out all values 
+    extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
+
+    --organize the values in the order specified by "theGroups"
+    organize [] [] = []
+    organize [] xs  = error $ show xs
+    organize (x:xs) ys = 
+      case lookup x ys of
+        Nothing -> error "applyGroup: Bug alert!"
+        Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
+    
+    
+    doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
+
+
+    -- Can potentially find a whole list of values at a given key
+    -- and a given groupID
+    extractGroup :: (String,Int) -> (String,Int) -> [[String]] -> (String,(String, [String]))
+    extractGroup (key,keyix) (groupElem,gix) table = undefined 
