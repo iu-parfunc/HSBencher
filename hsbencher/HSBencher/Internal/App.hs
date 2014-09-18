@@ -487,12 +487,6 @@ removePlugin p cfg =
   where
     byNom (SomePlugin p1) =  plugName p1 /= plugName p
 
-removePlugin p cfg = 
-  cfg { plugIns = filter byNom  (plugIns cfg)}
-  where
-    byNom (SomePlugin p1) =  plugName p1 /= plugName p
-
-
 
 --------------------------------------------------------------------------------
 
@@ -504,7 +498,7 @@ doShowHelp allplugs = do
     mapM putStr (map (uncurry usageInfo) all_cli_options)
     putStrLn ""
     forM_ allplugs $ \ (SomePlugin p) -> do  
-      putStrLn $ ((uncurry usageInfo) (plugCmdOpts p))
+      putStrLn $ "["++ plugName p++"] "++ ((uncurry usageInfo) (plugCmdOpts p))
     putStrLn$ generalUsageStr
 
 -- TODO/FIXME: Break up the giant function below.  Also move to using
