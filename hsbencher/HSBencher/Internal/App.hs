@@ -497,6 +497,9 @@ doShowHelp allplugs = do
     putStrLn$ "     to run, based on name."
     mapM putStr (map (uncurry usageInfo) all_cli_options)
     putStrLn ""
+    putStrLn $ show (length allplugs) ++ " plugins enabled: "++ 
+               show [ plugName p | SomePlugin p <- allplugs ]
+    putStrLn ""
     forM_ allplugs $ \ (SomePlugin p) -> do  
       putStrLn $ "["++ plugName p++"] "++ ((uncurry usageInfo) (plugCmdOpts p))
     putStrLn$ generalUsageStr
@@ -526,8 +529,9 @@ defaultMainModifyConfig modConfig = do
       showHelp     = not$ null [ () | ShowHelp <- options]
       gotVersion   = not$ null [ () | ShowVersion <- options]
       showBenchs   = not$ null [ () | ShowBenchmarks <- options]
-      cabalAllowed = not$ null [ () | NoCabal <- options]
+      cabalAllowed = not$ null [ () | NoCabal  <- options]
       parBench     = not$ null [ () | ParBench <- options]
+      disabled     = [ s | DisablePlug s <- options ]
 
   when gotVersion  $ do
     putStrLn$ "hsbencher version "++ hsbencherVersion
@@ -546,7 +550,9 @@ defaultMainModifyConfig modConfig = do
   -- The phasing here is rather funny.  We need to get the initial config to know
   -- WHICH plugins are active.  And then their individual per-plugin configs need to
   -- be computed and added to the global config.
-  let allplugs = plugIns conf1
+  let allplugs = [ SomePlugin p 
+                 | SomePlugin p <- plugIns conf1
+                 , not (or [ isInfixOf d (plugName p)| d <- disabled ]) ]
 
   ------------------------------------------------------------
   let fullBenchList = 

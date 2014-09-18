@@ -48,6 +48,7 @@ data Flag = ParBench
           | RunID String | CIBuildID String | ForceHostName String
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion | ShowBenchmarks
+          | DisablePlug String
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
 
@@ -99,7 +100,10 @@ core_cli_options =
         "Show this help message and exit."
 
       , Option ['l'] ["list-benchmarks"] (NoArg ShowBenchmarks)
-        "Show names of benchmarks, match them by substring in cmdln arg"
+        "Show names of benchmarks, match them by substring in cmdln arg."
+
+      , Option ['d'] ["disable"] (ReqArg DisablePlug "STR")
+        "Disable a plugin by name, even if support for it was compiled in."
 
       , Option ['V'] ["version"] (NoArg ShowVersion)
         "Show the version and exit"
@@ -263,6 +267,7 @@ getConfig cmd_line_options benches = do
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r
       doFlag ShowBenchmarks r = r
+      doFlag (DisablePlug _) r = r
       doFlag NoRecomp r = r
       doFlag NoCabal  r = r
       doFlag NoClean  r = r { doClean = False }
