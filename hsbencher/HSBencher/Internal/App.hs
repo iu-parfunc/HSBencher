@@ -550,9 +550,17 @@ defaultMainModifyConfig modConfig = do
   -- The phasing here is rather funny.  We need to get the initial config to know
   -- WHICH plugins are active.  And then their individual per-plugin configs need to
   -- be computed and added to the global config.
-  let allplugs = [ SomePlugin p 
-                 | SomePlugin p <- plugIns conf1
-                 , not (or [ isInfixOf d (plugName p)| d <- disabled ]) ]
+  let plugnames = [ plugName p | SomePlugin p <- plugIns conf1 ]
+
+  let plugs = [ if (or [ isInfixOf d (plugName p)| d <- disabled ])
+                then Right (plugName p, SomePlugin p) -- Disabled
+                else Left  (plugName p, SomePlugin p) -- Enabled
+              | SomePlugin p <- plugIns conf1 ]
+  let offplugs = [ n  | Right (n, _)  <- plugs ]
+      allplugs = [ sp | Left  (_, sp) <- plugs ]
+
+  unless (null offplugs) $ 
+    putStrLn $ hsbencher_tag ++ " DISABLED plugins that were compiled/linked in: "++unwords offplugs
 
   ------------------------------------------------------------
   let fullBenchList = 
