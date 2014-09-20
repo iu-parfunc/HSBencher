@@ -582,7 +582,9 @@ defaultMainModifyConfig modConfig = do
   let conf2 = conf1 { plugInConfs = M.fromList pconfs }
   -- Combine all plugins command line options, and reparse the command line.
 
-  putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured, now initializing them."
+  putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured ("++ 
+            concat (intersperse ", " [ plugName p | SomePlugin p <- allplugs ])
+            ++"), now initializing them."
 
   -- TODO/FIXME: CATCH ERRORS... should remove the plugin from the list if it errors on init.
   -- JS attempted fix
