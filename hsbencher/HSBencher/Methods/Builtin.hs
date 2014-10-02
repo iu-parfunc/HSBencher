@@ -151,6 +151,10 @@ cabalMethod = BuildMethod
 
        -- Ugh... how could we separate out args to the different phases of cabal?
        log$ tag++" Switched to "++dir++", and cleared temporary directory."
+       
+       -- some extra printing (debugging Obsidian benchmarks) 
+       curr_dir <- liftIO$ getCurrentDirectory
+       log$ tag++" Curently in directory: " ++ curr_dir
        let extra_args  = "--bindir="++tmpdir++" ./ --program-suffix="++suffix
            extra_args' = if ghcPath /= "ghc"
                          then extra_args -- ++ " --with-ghc='"++ghcPath++"'"
