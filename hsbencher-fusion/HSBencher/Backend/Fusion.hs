@@ -52,9 +52,9 @@ import System.Environment (getEnvironment)
 import System.Exit
 import Control.Concurrent.MVar
 
-
--- | A default plugin.  This may seem pointless, but we abstract over the internals
--- of FusionPlug to enable backwards compatibility in the phase of future extensions.
+-- | A default plugin.  This binding provides future-proof way to get
+--   a default instance of the plugin, in the eventuality that more
+--   configuration options are added in the future.
 defaultFusionPlugin :: FusionPlug
 defaultFusionPlugin = FusionPlug
 

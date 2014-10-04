@@ -102,8 +102,8 @@ description: Benchmark frameworks are usually very specific to the
 
 license:             BSD3
 license-file:        LICENSE
-author:              Ryan Newton
-maintainer:          rrnewton@gmail.com
+author:              Ryan Newton, Joel Svensson
+maintainer:          bo.joel.svensson@gmail.com
 copyright:           (c) Ryan Newton 2013
 category:            Development
 build-type:          Simple
