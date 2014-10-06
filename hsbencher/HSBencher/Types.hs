@@ -731,10 +731,15 @@ genericCmdOpts p = map (fmap lift) (snd (plugCmdOpts p))
 
 -- | Retrieve our own Plugin's configuration from the global config.
 --   This involves a dynamic type cast.
+-- 
+--   If there is no configuration for this plugin currently
+--   registered, the default configuration for that plugin is
+--   returned.
 getMyConf :: forall p . Plugin p => p -> Config -> PlugConf p 
 getMyConf p Config{plugInConfs} = 
   case M.lookup (plugName p) plugInConfs of 
-   Nothing -> error$ "getMyConf: expected to find plugin config for "++show p
+--   Nothing -> error$ "getMyConf: expected to find plugin config for "++show p
+   Nothing -> defaultPlugConf p
    Just (SomePluginConf p2 pc) -> 
      case (fromDynamic (toDyn pc)) :: Maybe (PlugConf p) of
        Nothing -> error $ "getMyConf: internal failure.  Performed lookup for plugin conf "

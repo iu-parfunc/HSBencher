@@ -387,7 +387,11 @@ runC_produceOutput (args,fullargs) nruns testRoot progname runconfig = do
         --JS: May 21 2014, added try and case on result. 
         result3 <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ()) 
         case result3 of
-          Left _ -> logT$"plugUploadRow:Failed"
+          Left err -> logT$("plugUploadRow:Failed, error: \n"++
+                            "------------------begin-error----------------------\n"++
+                            show err ++
+                            "\n-------------------end-error-----------------------\n"
+                            )
           Right () -> return ()
         return ()
 
@@ -578,13 +582,15 @@ defaultMainModifyConfig modConfig = do
   when showHelp   $ do doShowHelp    allplugs; exitSuccess
 
   ------------------------------------------------------------
+  -- Fully populate the per-plugin configurations, folding in command line args:
+  -- 
   -- Hmm, not really a strong reason to *combine* the options lists, rather we do
   -- them one at a time:
   let pconfs = [ (plugName p, SomePluginConf p pconf)
                | (SomePlugin p) <- (plugIns conf1)
                , let (_pusage,popts) = plugCmdOpts p
                , let (o2,_,_,_) = getOpt' Permute popts cli_args 
-               , let pconf = foldFlags p o2 (defaultPlugConf p)
+               , let pconf = foldFlags p o2 (getMyConf p conf1)
                ]
 
   let conf2 = conf1 { plugInConfs = M.fromList pconfs }
