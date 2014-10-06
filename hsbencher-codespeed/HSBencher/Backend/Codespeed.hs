@@ -31,15 +31,16 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.ByteString.Lazy.Char8 as B
+import qualified Data.ByteString.Char8 as BS
 import Data.Time.Clock
 import Data.Time.Calendar
 import Data.Time.Format ()
 
+import Network.HTTP.Conduit (HttpException, Request(..), http, httpLbs, parseUrl, newManager)
+import Network.HTTP.Conduit (Response(..), RequestBody(..), def, queryString, urlEncodedBody)
+-- import Network.HTTP.Conduit (setQueryString)
+import Network.HTTP.Types (renderQuery)
 
-import Network.HTTP.Conduit (HttpException, Request(..), http, httpLbs, parseUrl, newManager, conduitManagerSettings)
-import Network.HTTP.Conduit (Response(..), RequestBody(..))
--- import Network.HTTP.Conduit (Manager, Request(..), RequestBody(..), Response(..), HttpException, 
---                              closeManager, def, httpLbs, newManager, responseBody)
 import Control.Monad.Trans.Resource (runResourceT)
 import Text.JSON -- (encodeStrict, toJSObject)
 
@@ -89,18 +90,28 @@ getDateTime = do
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult br = do 
+  lift$ putStrLn " [codespeed] Begin upload of one benchmark result."
   conf <- ask
   -- Look up our configuration dynamically based the plugin type:
   let codespeedConfig = getMyConf CodespeedPlug conf
+
+  -- lift$ putStrLn$ " [codespeed] Running with config: \n"++show conf
+  lift$ putStrLn$ " [codespeed] Running with plugin config: \n"++show codespeedConfig
+
   let CodespeedConfig {codespeedURL} = codespeedConfig
   lift $ runResourceT $ do 
-    req0    <- liftIO$ parseUrl (codespeedURL ++ "/result/add")
+    req0    <- liftIO$ parseUrl (codespeedURL ++ "/result/add/json/")
     let bod = renderJSONResult br
-        req = req0 { method = "POST"
-                   , secure = False
-                   , requestBody = RequestBodyLBS bod
-                   }
-    manager <- liftIO$ newManager conduitManagerSettings
+        req1 = req0 { method = "POST"
+                    , secure = False
+--                   , requestBody = RequestBodyLBS bod
+                    , queryString = renderQuery False [("json",Just (B.toStrict bod))]
+                    }
+--        req = setQueryString [("json",bod)] req1
+--        req = urlEncodedBody [("json",bod)] req1
+        req = req1
+    lift$ putStrLn$ " [codespeed] Submitting HTTP Post request: \n"++show req
+    manager <- liftIO$ newManager def
     res     <- httpLbs req manager
     -- We could do something with the result (ByteString), but as long
     -- as its not error, we don't care:
@@ -108,9 +119,16 @@ uploadBenchResult br = do
     return ()
   return ()
 
+setQueryString = undefined
+
 renderJSONResult :: BenchmarkResult -> B.ByteString
-renderJSONResult _ = -- BenchmarkResult{} = 
-  B.pack $ encodeStrict $ JSObject $ toJSObject $ 
+renderJSONResult _ = 
+  -- Wrap on the boilerplate:
+  B.pack $ encodeStrict $ 
+    JSArray [bench1]
+--    JSObject$ toJSObject [("json", JSArray [bench1])]
+ where 
+  bench1 = JSObject $ toJSObject $ 
    [ ("commitid", showJSON (14::Int))
    , ("branch",      s "blah")
    , ("project",     s "Accelerate")
@@ -129,7 +147,7 @@ renderJSONResult _ = -- BenchmarkResult{} =
 --   , ("min", d 3995.1)  -- Optional. Default is blank    
    -- RRN: Question: are max and min the observed max and min presumably?
    ]
- where 
+
   d :: Double -> JSValue
   d = showJSON
   s = JSString . toJSString
@@ -179,11 +197,12 @@ instance Plugin CodespeedPlug where
   type PlugFlag CodespeedPlug = CodespeedCmdLnFlag
 
   defaultPlugConf _ = CodespeedConfig 
-    { codespeedURL  = error "Must set Codespeed URL to use this plugin!"
+--    { codespeedURL  = error "Must set Codespeed URL to use this plugin!"
+    { codespeedURL  = "http://unknown address of codespeed server -- please set it to use this plugin"
     }
 
   -- | Better be globally unique!  Careful.
-  plugName _ = "codespeed" 
+  plugName _    = "codespeed"
   plugCmdOpts _ = codespeed_cli_options
   plugUploadRow p cfg row = runReaderT (uploadBenchResult row) cfg
   plugInitialize p gconf = do
