@@ -139,7 +139,7 @@ cabalMethod = BuildMethod
      benchroot <- liftIO$ getCurrentDirectory
      let suffix = "_"++bldid
          cabalPath = M.findWithDefault "cabal" "cabal" pathMap
-         ghcPath   = M.findWithDefault "ghc" "ghc" pathMap
+         ghcPath   = M.findWithDefault "ghc"   "ghc"   pathMap
          binD      = benchroot </> "bin"
      liftIO$ createDirectoryIfMissing True binD
 
@@ -155,13 +155,13 @@ cabalMethod = BuildMethod
        -- some extra printing (debugging Obsidian benchmarks) 
        curr_dir <- liftIO$ getCurrentDirectory
        log$ tag++" Curently in directory: " ++ curr_dir
-       let extra_args  = "--bindir="++tmpdir++" ./ --program-suffix="++suffix
-           extra_args' = if ghcPath /= "ghc"
-                         then extra_args -- ++ " --with-ghc='"++ghcPath++"'"
-                         else extra_args
-       let cmd = cabalPath++" install "++ extra_args' ++" "++unwords flags
-       log$ tag++"Running cabal command: "++cmd
-       _ <- runSuccessful tag cmd
+       let cmd0 = cabalPath++" install "++" "++unwords flags
+           cmd1 = cmd0++" --only-dependencies"
+           cmd2 = cmd0++" --bindir="++tmpdir++" ./ --program-suffix="++suffix
+       log$ tag++"Running cabal command for deps only: "++cmd1
+       _ <- runSuccessful tag cmd1
+       log$ tag++"Running cabal command to build benchmark: "++cmd2
+       _ <- runSuccessful tag cmd2
        -- Now make sure we got exactly one binary as output:
        ls <- liftIO$ filesInDir tmpdir
        case ls of
