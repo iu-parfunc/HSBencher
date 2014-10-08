@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.9.0.0
+version:             1.9.0.1
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -37,6 +37,7 @@ version:             1.9.0.0
 -- 1.8.0.8 : Added "-l" command line arg.
 -- 1.8.1.0 : Added "-d" command line arg.
 -- 1.9.0.0 : bug fix and change of behavior for `getMyConf`
+-- 1.9.0.1 : no timeout for internal/compiler commands
 
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
