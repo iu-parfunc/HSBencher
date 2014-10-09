@@ -23,6 +23,7 @@ library
 -- TODO: need to come forward to modern http-conduit:
 --                  http-conduit >=2.0 && <2.1, 
                   http-conduit >= 1.9.0,
+                  HTTP         >= 4000.2.18,
                   http-types   >= 0.8,
                   resourcet    >= 0.4,
                   json         >= 0.7,
