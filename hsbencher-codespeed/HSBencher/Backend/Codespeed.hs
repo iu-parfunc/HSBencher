@@ -105,9 +105,8 @@ uploadBenchResult br = do
 --      contentType = "application/json"
       addURL = (codespeedURL ++ "/result/add/json/")
 
-#if 1
 -- Version that uses HTTP pkg:
-  let bod = BS.append "json=" $ urlEncode False $ B.toStrict $ renderJSONResult br
+  let bod = urlEncode False $ BS.pack $ renderJSONResult br
       working2 = urlEncode False $ 
                  "json=[{\"project\": \"MyProject\", \"executable\": \"myexe O3 48bits\", \"environment\": \"cutter\", \"benchmark\": \"float\", \"commitid\": \"8\", \"result_value\": 2500.0, \"branch\": \"default\"}]"
       failed3 = urlEncode False $ 
@@ -115,9 +114,9 @@ uploadBenchResult br = do
 
   let req = postRequestWithBody addURL contentType $ BS.unpack $ 
           -- working1 
-          working2 
+          -- working2 
           -- failed3
-          -- bod
+          bod
 
   lift$ putStrLn$ " [codespeed] working1 == its reincode\n"++ show (working1 == urlEncode False (urlDecode False working1))
   lift$ putStrLn$ " [codespeed] working1:\n"++          show (working1)
@@ -126,40 +125,14 @@ uploadBenchResult br = do
   lift$ putStrLn$ " [codespeed] failed3:\n"++ show failed3
   lift$ putStrLn$ " [codespeed] working1 decoded \n"++ BS.unpack (urlDecode False working1)
   lift$ putStrLn$ " [codespeed] working2 decoded \n"++ BS.unpack (urlDecode False working2)
-  lift$ putStrLn$ " [codespeed] Bod computed \n"++BS.unpack bod
+  lift$ putStrLn$ " [codespeed] Bod computed \n"++ show bod
   lift$ putStrLn$ " [codespeed] Bod decoded \n"++BS.unpack (urlDecode False bod)
-  lift$ putStrLn$ " [codespeed] Bod computed from: \n"++ B.unpack(renderJSONResult br)
+  lift$ putStrLn$ " [codespeed] Bod computed from: \n"++  show (renderJSONResult br)
   lift$ putStrLn$ " [codespeed] Submitting HTTP Post request: \n"++show req
   resp <- lift$ simpleHTTP req
   case resp of 
     Left err -> lift$ putStrLn$ " [codespeed] ERROR uploading: \n"++show err
     Right x  -> lift$ putStrLn$ " [codespeed] Got response from server:\n"++show x
-#else
--- Version that uses http-conduit pkg:
-  let bod = B.toStrict $ renderJSONResult br
-  lift $ runResourceT $ do 
-    req0    <- liftIO$ parseUrl addURL
-    let 
-        req1 = req0 { method = "POST"
-                    , secure = False
---                    , requestBody = RequestBodyBS bod
---                    , requestBody = renderQuery False [("json",Just bod)]
---                    , queryString = renderQuery False [("json",Just (B.toStrict bod))]
-
-                      -- Hardcode a working string from python:
-                      , requestBody = RequestBodyBS working1
-                    }
---        req = setQueryString [("json",bod)] req1
---        req = urlEncodedBody [("json",bod)] req1
-        req = req1
-    lift$ putStrLn$ " [codespeed] Submitting HTTP Post request: \n"++show req
-    manager <- liftIO$ newManager def
-    res     <- httpLbs req manager
-    -- We could do something with the result (ByteString), but as long
-    -- as its not error, we don't care:
-    let _bstr = responseBody res
-    return ()
-#endif
 
   return ()
 
@@ -186,20 +159,27 @@ Which is:
 
  -}
 
-renderJSONResult :: BenchmarkResult -> B.ByteString
-renderJSONResult _ = 
-  -- Wrap on the boilerplate:
-  B.pack $ encodeStrict $ JSArray [bench1]
---    JSObject$ toJSObject [("json", JSArray [bench1])]
- where 
-  bench1 = JSObject $ toJSObject $ 
-   [ ("project",     s "Accelerate")
-   , ("executable",  s "myexe 04 32bits")
-   , ("benchmark",   s "float")
-   , ("commitid",    s "14")
-   , ("environment", s "cutter")
-   , ("result_value", d 3.8)
-   , ("branch",      s "default")
+data RHS = S String | D Double
+
+simpleFormat :: [(String,RHS)] -> String
+simpleFormat prs = "json=[{" ++ bod ++"}]"
+ where
+  bod = L.concat $ L.intersperse ", " $ L.map fn prs
+  fn (l,r) = show l ++ ": " ++ rhs r
+  rhs (S s) = show s
+  rhs (D d) = show d
+
+renderJSONResult :: BenchmarkResult -> String
+renderJSONResult _br = 
+  simpleFormat
+   [ ("project",     S "MyProject")
+--   [ ("project",     S "Accelerate") -- This causes an Internal Error 500
+   , ("executable",  S "myexe 04 32bits")
+   , ("benchmark",   S "float")
+   , ("commitid",    S "8")
+   , ("environment", S "cutter")
+   , ("result_value", D 2500.1)
+   , ("branch",      S "default")
 
 -- json=[{"project": "MyProject", "executable": "myexe O3 48bits", "environment": "cutter", "benchmark": "float", "commitid": "8", "result_value": 2500.0, "branch": "default"}]
 
@@ -213,41 +193,7 @@ renderJSONResult _ =
    -- RRN: Question: are max and min the observed max and min presumably?
    ]
 
-  d :: Double -> JSValue
-  d = showJSON
-  s = JSString . toJSString
 
--- # Optional fields
--- data.update({
--- })
-
-
-
-   -- req = appendHeaders [("Content-Type", "application/json")] $
-   --        appendBody (BL.pack json)
-   --        (makeRequest tok fusiontableApi "POST"
-   --          (fusiontableHost, "fusiontables/v1/tables" ))
-{-
-makeRequest ::
-     AccessToken       -- ^ The OAuth 2.0 access token.
-  -> (String, String)  -- ^ The Google API name and version.
-  -> String            -- ^ The HTTP method.
-  -> (String, String)  -- ^ The host and path for the request.
-  -> Request m         -- ^ The HTTP request.
-makeRequest accessToken (apiName, apiVersion) method (host, path) =
-  -- TODO: In principle, we should UTF-8 encode the bytestrings packed below.
-  def {
-    method = BS8.pack method
-  , secure = True
-  , host = BS8.pack host
-  , port = 443
-  , path = BS8.pack path
-  , requestHeaders = [
-      (makeHeaderName apiName, BS8.pack apiVersion)
-    , (makeHeaderName "Authorization",  BS8.append (BS8.pack "OAuth ") accessToken)
-    ]
-  }
--}
 
 
 
