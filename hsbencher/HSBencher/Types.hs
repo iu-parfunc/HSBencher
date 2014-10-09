@@ -499,6 +499,7 @@ instance Show SomeResult where
 --   makes up a "row" in a table of benchmark results.
 --   Note that multiple "trials" (actual executions) go into a single BenchmarkResult
 data BenchmarkResult =
+  -- FIXME: Threads should really be a (Maybe Nat):
   BenchmarkResult
   { _PROGNAME :: String    -- ^ Which benchmark are we running
   , _VARIANT  :: String    -- ^ If there are multiple ways to run the benchmark, this shoud record which was used.
@@ -506,7 +507,7 @@ data BenchmarkResult =
   , _HOSTNAME :: String    -- ^ Which machine did we run on?
   , _RUNID    :: String    -- ^ A unique identifier for the full hsbencher that included this benchmark.
   , _CI_BUILD_ID :: String -- ^ When launched from Jenkins or Travis, it can help to record where we came from.
-  , _THREADS  :: Int       -- ^ If multithreaded, how many CPU threads did this benchmark run with.
+  , _THREADS  :: Int       -- ^ If multithreaded, how many CPU threads did this benchmark run with, zero otherwise.       
   , _DATETIME :: String -- Datetime
   , _MINTIME    ::  Double -- ^ Time of the fastest run
   , _MEDIANTIME ::  Double -- ^ Time of the median run

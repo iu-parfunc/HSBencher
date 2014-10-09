@@ -68,11 +68,13 @@ defaultCodespeedPlugin = CodespeedPlug
 
 -- | Configuration options for Codespeed uploading.
 data CodespeedConfig = 
-  CodespeedConfig { codespeedURL :: URL }
+  CodespeedConfig { codespeedURL :: URL
+                  , projName     :: String }
   deriving (Show,Read,Ord,Eq, Typeable)
 
 -- | Parsed command line options provided by the user that initiaties benchmarking.
 data CodespeedCmdLnFlag = CodespeedURL URL
+                        | CodespeedProjName String
  -- TODO: Authentication!
  deriving (Show,Read,Ord,Eq, Typeable)
 
@@ -102,7 +104,7 @@ uploadBenchResult br = do
       addURL = (codespeedURL ++ "/result/add/json/")
 
 -- Version that uses HTTP pkg:
-  let json = renderJSONResult br
+  let json = renderJSONResult codespeedConfig br
       bod = urlEncode False $ BS.pack json
   let req = postRequestWithBody addURL contentType $ BS.unpack bod
   lift$ putStrLn$ " [codespeed] Uploading json: "++ json
@@ -115,25 +117,66 @@ uploadBenchResult br = do
   return ()
 
 
-renderJSONResult :: BenchmarkResult -> String
-renderJSONResult _br = 
+renderJSONResult :: CodespeedConfig -> BenchmarkResult -> String
+renderJSONResult CodespeedConfig{projName} benchRes = 
+   -- _PROGNAME _VARIANT _ARGS _HOSTNAME _RUNID _CI_BUILD_ID _THREADS
+   -- _DATETIME _MINTIME _MEDIANTIME _MAXTIME _MINTIME_PRODUCTIVITY
+   -- _MEDIANTIME_PRODUCTIVITY _MAXTIME_PRODUCTIVITY _ALLTIMES _TRIALS
+   -- _COMPILER _COMPILE_FLAGS _RUNTIME_FLAGS _ENV_VARS _BENCH_VERSION
+   -- _BENCH_FILE _UNAME _PROCESSOR _TOPOLOGY _GIT_BRANCH _GIT_HASH
+   -- _GIT_DEPTH _WHO _ETC_ISSUE _LSPCI _FULL_LOG _MEDIANTIME_ALLOCRATE
+   -- _MEDIANTIME_MEMFOOTPRINT _ALLJITTIMES _CUSTOM
   simpleFormat
-  [ ("project",     S "MyProject")
-   , ("executable",  S "myexe 04 32bits")
-   , ("benchmark",   S "float")
-   , ("commitid",    S "8")
-   , ("environment", S "cutter")
-   , ("result_value", D 2500.1)
-   , ("branch",      S "default")
+  [ 
+    -- A working example:
+       --     ("project",     S "MyProject2")
+       --   , ("executable",  S "myexe 04 32bits")
+       --   , ("benchmark",   S "float")
+       --   , ("commitid",    S "8")
+       --   , ("environment", S "cutter")
+       --   , ("result_value", D 2500.1)
+       --   , ("branch",      S "default")
+
+     ("project",     S projName)
+   , ("executable",  S exec)
+   , ("benchmark",   S bench)
+   , ("commitid",    S _GIT_HASH)
+   -- , ("environment", S "129-79-241-98") -- Results in 400 / BAD REQUEST
+   -- , ("environment", S "1297924198") -- Results in 400 / BAD REQUEST
+   -- Apparently this is the error on the server:
+     -- Exception Value:	
+     -- Expecting ',' delimiter: line 1 column 235 (char 234)
+     -- Exception Location: /opt/python/2.7.8/lib/python2.7/json/decoder.py in raw_decode, line 382
+   -- , ("environment", S "hello1297924198") -- Results in 400 / BAD REQUEST
+   -- , ("environment", S "hello") -- Also 400 / BAD REQUEST 
+         -- Seems to fail if the environment is not REGISTERED already
+         -- on the website.  Does not create on demand?
+   , ("environment",  S _HOSTNAME) 
+   , ("result_value", D _MEDIANTIME)
+   , ("branch",       S _GIT_BRANCH)
    -- Plus add optional fields:
 --   , ("revision_date", s "")  -- Optional. Default is taken either
 --                            -- from VCS integration or from current date
 --   , ("result_date", s "")    -- Optional, default is current date
 --   , ("std_dev", showJSON (1.11111 :: Double))  -- Optional. Default is blank
---   , ("max", d 4001.6)  -- Optional. Default is blank
---   , ("min", d 3995.1)  -- Optional. Default is blank    
-   -- RRN: Question: are max and min the observed max and min presumably?
+   , ("max", D _MAXTIME)  -- Optional. Default is blank
+   , ("min", D _MINTIME)  -- Optional. Default is blank    
+   -- RRN: Question: are max and min the *observed* max and min presumably?
    ]
+ where 
+  -- Populate the CodeSpeed fields using the HSBencher fields:
+  BenchmarkResult{..} = benchRes
+  exec  = combine $ [_VARIANT] ++ if _THREADS==0 then [] 
+                                  else [show _THREADS ++ "T"]
+  bench = combine [_PROGNAME, unwords _ARGS]
+
+-- | This is a hacky way to pack multiple fields into one field of the
+-- destination schema.  There is a tradeoff here between readability
+-- and ease of dissection.
+combine :: [String] -> String
+combine fields = 
+  let fields' = filter (not . null) fields in
+  L.concat (L.intersperse "|" fields')
 
 data RHS = S String | D Double
 
@@ -162,8 +205,9 @@ instance Plugin CodespeedPlug where
   type PlugFlag CodespeedPlug = CodespeedCmdLnFlag
 
   defaultPlugConf _ = CodespeedConfig 
---    { codespeedURL  = error "Must set Codespeed URL to use this plugin!"
-    { codespeedURL  = "http://unknown address of codespeed server -- please set it to use this plugin"
+    { codespeedURL  = error "Must set Codespeed URL to use this plugin!"
+    , projName      = error "Must set Codespeed --projname to use this plugin!"
+    -- codespeedURL  = "http://unknown address of codespeed server -- please set it to use this plugin"
     }
 
   -- | Better be globally unique!  Careful.
@@ -177,7 +221,8 @@ instance Plugin CodespeedPlug where
   foldFlags p flgs cnf0 = 
       foldr ($) cnf0 (map doFlag flgs)
     where      
-      doFlag (CodespeedURL url) r = r { codespeedURL = url} 
+      doFlag (CodespeedURL url)     r = r { codespeedURL = url} 
+      doFlag (CodespeedProjName nm) r = r { projName = nm }
 
 theEnv :: [(String,String)] 
 theEnv = unsafePerformIO getEnvironment
@@ -188,5 +233,7 @@ codespeed_cli_options =
   ("Codespeed Table Options:",
       [ Option [] ["codespeed"] (ReqArg CodespeedURL "URL")
         "specify the root URL of the Codespeed installation"
+      , Option [] ["projname"] (ReqArg CodespeedProjName "NAME")
+        "specify which Codespeed Project receives the uploaded results"
       ])
 
