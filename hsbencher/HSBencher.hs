@@ -10,6 +10,7 @@ module HSBencher
 
          -- * The main entrypoints for building new benchmark suites.
          defaultMainWithBechmarks, defaultMainModifyConfig,
+         addPlugin,
 
          -- * Command-line configuration
          Flag(..),
@@ -28,3 +29,4 @@ module HSBencher
 import HSBencher.Types
 import HSBencher.Internal.App
 import HSBencher.Harvesters
+import HSBencher.Internal.Config (addPlugin)

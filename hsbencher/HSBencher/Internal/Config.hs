@@ -9,6 +9,7 @@
 module HSBencher.Internal.Config
        ( -- * Configurations
          getConfig, augmentResultWithConfig,
+         addPlugin, 
 
          -- * Command line options
          Flag(..), all_cli_options
@@ -157,7 +158,15 @@ augmentResultWithConfig Config{..} base = do
     , _WHO           = unlines whos
     }
 
--- Retrieve the (default) configuration from the environment, it may
+-- | This abstracts over the actions we need to take to properly add
+-- an additional plugin to the `Config`.
+addPlugin :: Plugin p => p -> PlugConf p -> Config -> Config
+addPlugin plug pconf conf = 
+  conf { plugIns = SomePlugin plug : plugIns conf
+       , plugInConfs = M.insert (plugName plug) (SomePluginConf plug pconf) $ 
+                       plugInConfs conf }
+
+-- | Retrieve the (default) configuration from the environment, it may
 -- subsequently be tinkered with.  This procedure should be idempotent.
 getConfig :: [Flag] -> [Benchmark DefaultParamMeaning] -> IO Config
 getConfig cmd_line_options benches = do
