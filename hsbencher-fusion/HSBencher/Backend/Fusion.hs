@@ -24,6 +24,7 @@ import Control.Concurrent (threadDelay)
 import qualified Control.Exception as E
 import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import Data.Dynamic
+import Data.Default (Default(..))
 import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.List as L
@@ -57,6 +58,10 @@ import Control.Concurrent.MVar
 --   configuration options are added in the future.
 defaultFusionPlugin :: FusionPlug
 defaultFusionPlugin = FusionPlug
+
+-- | This is the same as defaultFusionPlugin
+instance Default CodespeedPlug where 
+  def = defaultCodespeedPlugin
 
 ----------------------------------------------------------------------------------------------------
 -- #ifdef FUSION_TABLES

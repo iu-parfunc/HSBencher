@@ -27,6 +27,7 @@ import Control.Concurrent (threadDelay)
 import qualified Control.Exception as E
 import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import Data.Dynamic
+import Data.Default (Default(..))
 import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.List as L
@@ -64,6 +65,10 @@ import Control.Concurrent.MVar
 defaultCodespeedPlugin :: CodespeedPlug
 defaultCodespeedPlugin = CodespeedPlug
 
+-- | This is the same as defaultCodespeedPlugin
+instance Default CodespeedPlug where 
+  def = defaultCodespeedPlugin
+
 -- TODO: may need to grab stdRetry / retryIORequest from the Fusion plugin..
 
 -- | Configuration options for Codespeed uploading.
@@ -71,6 +76,14 @@ data CodespeedConfig =
   CodespeedConfig { codespeedURL :: URL
                   , projName     :: String }
   deriving (Show,Read,Ord,Eq, Typeable)
+
+-- | Note, the default config may not be complete and thus may have
+--   some required fields to fill in, or errors will ensue.
+instance Default CodespeedConfig where 
+  def = CodespeedConfig 
+    { codespeedURL  = error "incomplete CodespeedConfig: Must set Codespeed URL (--codespeed) to use this plugin!"
+    , projName      = error "incomplete CodespeedConfig: Must set Codespeed --projname to use this plugin!"
+    }
 
 -- | Parsed command line options provided by the user that initiaties benchmarking.
 data CodespeedCmdLnFlag = CodespeedURL URL
@@ -204,11 +217,7 @@ instance Plugin CodespeedPlug where
   type PlugConf CodespeedPlug = CodespeedConfig
   type PlugFlag CodespeedPlug = CodespeedCmdLnFlag
 
-  defaultPlugConf _ = CodespeedConfig 
-    { codespeedURL  = error "Must set Codespeed URL to use this plugin!"
-    , projName      = error "Must set Codespeed --projname to use this plugin!"
-    -- codespeedURL  = "http://unknown address of codespeed server -- please set it to use this plugin"
-    }
+  defaultPlugConf _ = def 
 
   -- | Better be globally unique!  Careful.
   plugName _    = "codespeed"

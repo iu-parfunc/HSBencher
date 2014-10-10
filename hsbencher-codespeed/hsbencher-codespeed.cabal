@@ -28,5 +28,6 @@ library
                   resourcet    >= 0.4,
                   json         >= 0.7,
                   network      == 2.5.0.0,
+                  data-default >= 0.5.3,
                   hsbencher    >= 1.9 && < 2.0
   default-language:    Haskell2010
