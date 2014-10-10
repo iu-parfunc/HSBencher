@@ -22,14 +22,14 @@ version:             0.1.0.0
 license:             BSD3
 
 -- The file containing the license text.
-license-file:        LICENSE
+-- license-file:        LICENSE
 
 -- The package author(s).
-author:              Joel Svensson, Ryan Newton
+author:              Ryan Newton
 
 -- An email address to which users can send suggestions, bug reports, and 
 -- patches.
-maintainer:          svenssonjoel@yahoo.se
+maintainer:          rrnewton@gmail.com
 
 -- A copyright notice.
 -- copyright:           
@@ -62,7 +62,8 @@ executable codespeed-backend-example
                        hsbencher-codespeed >= 0.1,
                        filepath, 
                        directory,
-                       bytestring
+                       bytestring,
+                       data-default
 		  
   
   -- Directories containing source files.

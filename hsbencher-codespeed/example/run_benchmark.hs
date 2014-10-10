@@ -5,6 +5,7 @@ import Data.Monoid
 import HSBencher
 import HSBencher.Backend.Codespeed
 import Debug.Trace
+import Data.Default(Default(def))
 
 import Prelude hiding (log)
 --------------------------------------------------------------------------------
@@ -28,9 +29,8 @@ myconf conf0 =
   trace ("Modifying config to "++show conf2) conf2
  where
   thePlug = defaultCodespeedPlugin
-  csconf = (defaultPlugConf thePlug)
-            { codespeedURL = "http://codespeed.crest.iu.edu"
-            , projName     = "ExampleProject" }
+  csconf = def { codespeedURL = "http://codespeed.crest.iu.edu"
+               , projName     = "ExampleProject" }
   conf2 = setMyConf thePlug csconf conf1
   conf1 = (conf0
    { benchlist = all_benchmarks,
