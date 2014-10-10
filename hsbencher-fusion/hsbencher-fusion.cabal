@@ -26,6 +26,7 @@ library
 --                  http-conduit >=2.0 && <2.1, 
                   http-conduit == 1.9.0,
                   network      == 2.5.0.0,
+                  data-default >= 0.5.3,
                   -- mtl >=2.1 && <2.2, 
                   mtl,
                   handa-gdata >= 0.6.9.3 && <0.7, 

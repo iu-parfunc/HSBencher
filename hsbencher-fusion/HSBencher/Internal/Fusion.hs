@@ -50,6 +50,7 @@ import qualified Data.List as L
 import qualified Data.ByteString.Char8 as B
 import Data.Maybe  (isJust, fromJust, catMaybes, fromMaybe) 
 import Data.Dynamic 
+import Data.Default (Default(def))
 
 -- Print to stderr
 import System.IO (hPutStrLn, stderr)
@@ -59,6 +60,8 @@ import Prelude hiding (init)
 
 -- TEMPORARY
 import Network.HTTP.Conduit (Request(..), RequestBody(..),parseUrl)
+import System.Environment (getEnvironment)
+import System.IO.Unsafe (unsafePerformIO)
 
 ---------------------------------------------------------------------------
 -- Exception
@@ -214,5 +217,13 @@ data FusionConfig =
   }
   deriving (Show,Read,Ord,Eq, Typeable)
 
+instance Default FusionConfig where
+ def = FusionConfig 
+    { fusionTableID  = Nothing 
+    , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" theEnv
+    , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" theEnv
+    , serverColumns      = []
+    }
 
-
+theEnv :: [(String,String)] 
+theEnv = unsafePerformIO getEnvironment

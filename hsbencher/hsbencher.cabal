@@ -155,6 +155,7 @@ Library
       directory, filepath, random, unix, containers, time, mtl, 
       async >= 2.0, 
       io-streams >= 1.1,
+      data-default >= 0.5.3,
       GenericPretty >= 1.2
 
   if flag(hydra) {

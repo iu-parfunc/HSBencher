@@ -60,8 +60,8 @@ defaultFusionPlugin :: FusionPlug
 defaultFusionPlugin = FusionPlug
 
 -- | This is the same as defaultFusionPlugin
-instance Default CodespeedPlug where 
-  def = defaultCodespeedPlugin
+instance Default FusionPlug where
+  def = defaultFusionPlugin
 
 ----------------------------------------------------------------------------------------------------
 -- #ifdef FUSION_TABLES
@@ -306,13 +306,6 @@ instance Plugin FusionPlug where
   type PlugConf FusionPlug = FusionConfig
   type PlugFlag FusionPlug = FusionCmdLnFlag
 
-  defaultPlugConf _ = FusionConfig 
-    { fusionTableID  = Nothing 
-    , fusionClientID     = lookup "HSBENCHER_GOOGLE_CLIENTID" theEnv
-    , fusionClientSecret = lookup "HSBENCHER_GOOGLE_CLIENTSECRET" theEnv
-    , serverColumns      = []
-    }
-
   -- | Better be globally unique!  Careful.
   plugName _ = "fusion" 
   --  plugName _ = "Google_FusionTable_Backend"
@@ -385,7 +378,5 @@ data FusionCmdLnFlag =
  | ClientSecret String
  | FusionTest
  deriving (Show,Read,Ord,Eq, Typeable)
-
-
 
 

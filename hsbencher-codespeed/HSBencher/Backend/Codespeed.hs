@@ -217,8 +217,6 @@ instance Plugin CodespeedPlug where
   type PlugConf CodespeedPlug = CodespeedConfig
   type PlugFlag CodespeedPlug = CodespeedCmdLnFlag
 
-  defaultPlugConf _ = def 
-
   -- | Better be globally unique!  Careful.
   plugName _    = "codespeed"
   plugCmdOpts _ = codespeed_cli_options

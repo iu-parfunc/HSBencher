@@ -62,6 +62,7 @@ import Data.List
 import Data.Monoid
 import Data.Maybe (fromMaybe)
 import Data.Dynamic
+import Data.Default (Default(..))
 import qualified Data.Map as M
 import Data.Maybe (catMaybes)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
@@ -652,7 +653,8 @@ instance Functor ArgDescr where
 -- new backends for uploading benchmark data.
 class (Show p, Eq p, Ord p,
        Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p), 
-       Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p)) => 
+       Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p),
+       Default p, Default (PlugConf p)) => 
       Plugin p where
   -- | A configuration flag for the plugin (parsed from the command line)
   type PlugFlag p 
@@ -671,9 +673,6 @@ class (Show p, Eq p, Ord p,
 
   -- | Process flags and update a configuration accordingly.
   foldFlags :: p -> [PlugFlag p] -> PlugConf p -> PlugConf p
-
-  -- | The default configuration for this plugin.
-  defaultPlugConf :: p -> PlugConf p
 
   -- | Take any initialization actions, which may include reading or writing files
   -- and connecting to network services, as the main purpose of plugin is to provide
@@ -740,7 +739,7 @@ getMyConf :: forall p . Plugin p => p -> Config -> PlugConf p
 getMyConf p Config{plugInConfs} = 
   case M.lookup (plugName p) plugInConfs of 
 --   Nothing -> error$ "getMyConf: expected to find plugin config for "++show p
-   Nothing -> defaultPlugConf p
+   Nothing -> def :: (PlugConf p)
    Just (SomePluginConf p2 pc) -> 
      case (fromDynamic (toDyn pc)) :: Maybe (PlugConf p) of
        Nothing -> error $ "getMyConf: internal failure.  Performed lookup for plugin conf "

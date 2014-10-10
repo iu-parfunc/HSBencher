@@ -22,6 +22,7 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import Data.Typeable
+import Data.Default (Default(def))
 import System.IO.Unsafe (unsafePerformIO)
 import System.Directory 
 import System.FilePath ((</>),(<.>), splitExtension)
@@ -49,13 +50,17 @@ data DribbleConf = DribbleConf { csvfile :: Maybe String }
 
 --------------------------------------------------------------------------------
 
+instance Default DribblePlugin where
+  def = defaultDribblePlugin
+
+instance Default DribbleConf where
+  def = DribbleConf { csvfile = Nothing }
+
 instance Plugin DribblePlugin where
   -- | No configuration info for this plugin currently:
   type PlugConf DribblePlugin = DribbleConf
   -- | No command line flags either:
   type PlugFlag DribblePlugin = ()
-
-  defaultPlugConf _ = DribbleConf { csvfile = Nothing }
 
   -- | Going with simple names, but had better make them unique!
   plugName _ = "dribble"
