@@ -118,8 +118,10 @@ getWithSQLQuery auth table_id query = do
 
 -- \\\\
 
--- | Obtain the id of a FusionTable
-getTableId :: OAuth2Client -> String -> IO TableId -- [String])
+-- | Obtain the id of a FusionTable identified by name.
+getTableId :: OAuth2Client 
+           -> String  -- ^ Human-readable name of the fusion table
+           -> IO TableId
 getTableId auth table_name = do
   hPutStrLn stderr $ fusionTag "Fetching information from Google"
 
