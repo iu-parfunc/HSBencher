@@ -166,8 +166,6 @@ runOne :: (Int,Int) -> BuildID -> BuildResult
 runOne (iterNum, totalIters) _bldid bldres
        Benchmark{target=testPath, cmdargs, progname, benchTimeOut}
        runconfig = do       
-      
-  let runFlags = toRunFlags runconfig
 
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters ++": "++testPath++" "++unwords cmdargs
@@ -193,11 +191,13 @@ runOne (iterNum, totalIters) _bldid bldres
 runA_gatherContext :: FilePath -> [String] -> [(a, ParamSetting)] -> ReaderT Config IO ([String], [String], FilePath)
 runA_gatherContext testPath cmdargs runconfig = do 
   Config{shortrun, argsBeforeFlags} <- ask
-  let runFlags = toRunFlags runconfig
-  let args = if shortrun then shortArgs cmdargs else cmdargs 
+  let runParams = [ s | (_,RuntimeParam s) <- runconfig ]
+      runArgs   = [ s | (_,RuntimeArg s) <- runconfig ]
+      args0 = cmdargs ++ runArgs 
+  let args = if shortrun then shortArgs args0 else args0
   let fullargs = if argsBeforeFlags 
-                 then args ++ runFlags
-                 else runFlags ++ args
+                 then args ++ runParams
+                 else runParams ++ args
       testRoot = fetchBaseName testPath
   log$ nest 3 $ show$ doc$ map snd runconfig
   log$ "--------------------------------------------------------------------------------\n"
@@ -283,7 +283,6 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
 runC_produceOutput :: ([String], [String]) -> [RunResult] -> String -> Maybe String 
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
 runC_produceOutput (args,fullargs) nruns testRoot progname runconfig = do
-  let runFlags = toRunFlags runconfig
   let numthreads = foldl (\ acc (x,_) ->
                            case x of
                              Threads n -> n
@@ -367,7 +366,7 @@ runC_produceOutput (args,fullargs) nruns testRoot progname runconfig = do
             , _MEDIANTIME_ALLOCRATE    = getallocrate medianR
             , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
-            , _RUNTIME_FLAGS =  unwords runFlags
+            , _RUNTIME_FLAGS =  unwords [ s | (_,RuntimeParam s) <- runconfig ]
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
             , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials

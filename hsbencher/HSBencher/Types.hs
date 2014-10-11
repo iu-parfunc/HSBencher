@@ -30,7 +30,7 @@ module HSBencher.Types
          -- benchmarks.           
          BenchSpace(..), ParamSetting(..),
          enumerateBenchSpace, compileOptsOnly, isCompileTime,
-         toCompileFlags, toRunFlags, toEnvVars, toCmdPaths,
+         toCompileFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
          
@@ -309,6 +309,7 @@ isCompileTime :: ParamSetting -> Bool
 isCompileTime CompileParam{} = True
 isCompileTime CmdPath     {} = True
 isCompileTime RuntimeParam{} = False
+isCompileTime RuntimeArg{}   = False
 isCompileTime RuntimeEnv  {} = False
 
 -- | Extract the parameters that affect the compile-time arguments.
@@ -317,11 +318,6 @@ toCompileFlags [] = []
 toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl
 toCompileFlags (_ : tl)                   =      toCompileFlags tl
 
--- | Extract the parameters that affect the runtime arguments.
-toRunFlags :: [(a,ParamSetting)] -> RunFlags
-toRunFlags [] = []
-toRunFlags ((_,RuntimeParam s1) : tl) = (s1) : toRunFlags tl
-toRunFlags (_ : tl)                  =            toRunFlags tl
 
 toCmdPaths :: [(a,ParamSetting)] -> [(String,String)]
 toCmdPaths = catMaybes . map fn
@@ -379,7 +375,10 @@ test3 = And [test1, test2]
 -- | Different types of parameters that may be set or varied.
 data ParamSetting 
   = RuntimeParam String -- ^ String contains runtime options, expanded and tokenized by the shell.
+  | RuntimeArg   String -- ^ Runtime "args" are like runtime params but are more prominent.  
+                        --   They typically are part of the "key" of the benchmark.
   | CompileParam String -- ^ String contains compile-time options, expanded and tokenized by the shell.
+--  CompileEnv   String String -- ^ Establish an environment variable binding during compile time.
   | RuntimeEnv   String String -- ^ The name of the env var and its value, respectively.
                                --   For now Env Vars ONLY affect runtime.
   | CmdPath      String String -- ^ Takes CMD PATH, and establishes a benchmark-private setting to use PATH for CMD.

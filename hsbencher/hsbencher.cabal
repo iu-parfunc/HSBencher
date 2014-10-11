@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.10.0.1
+version:             1.11.0.0
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -40,6 +40,7 @@ version:             1.10.0.1
 -- 1.9.0.1 : no timeout for internal/compiler commands
 -- 1.9.0.2 : fix issue #40
 -- 1.10.0.0 : add addPlugin, remove defaultPlugConf
+-- 1.11.0.0 : remove toRunFlags, add RuntimeArg
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 
