@@ -227,3 +227,4 @@ Test-suite hsbencher-test2
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
   }
+

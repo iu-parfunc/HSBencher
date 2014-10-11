@@ -57,7 +57,7 @@ executable custom-tag
   -- other-extensions:    
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.6 && <4.7,
+  build-depends:       base >=4.6,
                        hsbencher >= 1.8, 
                        filepath, 
                        directory,
