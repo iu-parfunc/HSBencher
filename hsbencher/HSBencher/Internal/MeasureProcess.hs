@@ -231,12 +231,14 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
   let fail = (id, False) in 
   case B.words ln of
     [] -> fail
+    -- Match either "TAG" or "TAG:"
     hd:tl | hd == tag || hd == (tag `B.append` ":") ->
       case tl of
         [time] ->
           case reads (B.unpack time) of
             (dbl,_):_ -> (stickit dbl, True)
-            _ -> error$ "Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
+            _ -> error$ "[taggedLineHarvester] Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
+        _ -> error$ "[taggedLineHarvester] Error: tagged line followed by more than one token: "++B.unpack ln
     _ -> fail
 
 
