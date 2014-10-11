@@ -17,7 +17,7 @@ $CABAL install $PKGS -j --run-tests
 # because we don't want to connect to the network and upload data:
 mkdir -p ./bin
 $CABAL install --bindir=./bin ./hsbencher/example/custom_tag
-$CABAL exec custom-tag
+# $CABAL exec custom-tag
 
 $CABAL install --bindir=./bin ./hsbencher-fusion/examples/fusion_backend/
 
