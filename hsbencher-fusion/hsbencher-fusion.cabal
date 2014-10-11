@@ -10,7 +10,7 @@ description:         Google Fusion tables are a type of Google Doc that resemble
                      More information can be found at:
                        https://support.google.com/fusiontables/answer/2571232?hl=en
 
-license:             BSD.
+license:             BSD3
 license-file:        LICENSE
 author:              Ryan Newton
 maintainer:          rrnewton@gmail.com
