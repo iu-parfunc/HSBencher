@@ -4,8 +4,8 @@ version:             0.1
 synopsis:            Backend for uploading benchmark data to CodeSpeed
 description:         The CodeSpeed project provides a performance dashboard and
                      is described at 'https://github.com/tobami/codespeed'.
-license:             MIT
--- license-file:        LICENSE
+license:             BSD3
+license-file:        LICENSE
 author:              Ryan Newton
 maintainer:          rrnewton@gmail.com
 -- copyright:           
@@ -29,5 +29,6 @@ library
                   json         >= 0.7,
                   network      == 2.5.0.0,
                   data-default >= 0.5.3,
-                  hsbencher    >= 1.9 && < 2.0
+                  hsbencher    >= 1.11 && < 2.0
   default-language:    Haskell2010
+

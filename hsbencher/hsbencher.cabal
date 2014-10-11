@@ -201,14 +201,13 @@ Test-suite hsbencher-unit-tests
   }
 
 Test-suite hsbencher-test1
-  main-is: example/cabal/benchmark.hs
+  main-is: benchmark.hs
+  hs-source-dirs: example/cabal/
   type: exitcode-stdio-1.0
-  build-depends:
-    -- <DUPLICATED from above>
-    base >= 4.5 && <= 4.8, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
-    io-streams >= 1.0,
-    GenericPretty >= 1.2, hsbencher
-    -- </DUPLICATED>
+  -- Self dependency:
+  build-depends: hsbencher
+  -- Standard stuff:
+  build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
   ghc-options: -threaded 
   default-language:  Haskell2010
   if flag(hydra) {
@@ -216,14 +215,13 @@ Test-suite hsbencher-test1
   }
 
 Test-suite hsbencher-test2
-  main-is: example/make_and_ghc/benchmark.hs
+  main-is: benchmark.hs
+  hs-source-dirs: example/make_and_ghc/
   type: exitcode-stdio-1.0
-  build-depends:
-    -- <DUPLICATED from above>
-    base >= 4.5 && <= 4.8, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
-    io-streams >= 1.0,
-    GenericPretty >= 1.2, hsbencher
-    -- </DUPLICATED>
+  -- Self dependency:
+  build-depends: hsbencher
+  -- Standard stuff:
+  build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
   ghc-options: -threaded 
   default-language:  Haskell2010
   if flag(hydra) {
