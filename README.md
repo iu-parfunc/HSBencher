@@ -1,7 +1,11 @@
 
 
 
-See hsbencher.cabal for a general overview.
+See hsbencher.cabal for a general overview.  Here are a few useful facts:
+
+ * The `hsbencher` package is for describing benchmark configuration spaces, launching jobs, and collecting data for them
+ * Jobs can take many forms.  Some included protocols are described below, but you can always add your own `BuildMethod`.
+ * Other packages like `hsbencher-fusion` and `hsbencher-codespeed` provide additional backends for uploading benchmark data to network destinations.
 
 
 Protocols for benchmarks to follow
