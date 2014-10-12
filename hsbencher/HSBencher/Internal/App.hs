@@ -85,32 +85,7 @@ generalUsageStr = unlines $
    " Note: This bench harness was built against hsbencher library version "++hsbencherVersion
  ]
 
-----------------------------------------------------------------------------------------------------
-
-
-gc_stats_flag :: String
-gc_stats_flag = " -s " 
--- gc_stats_flag = " --machine-readable -t "
-
-exedir :: String
-exedir = "./bin"
-
-
---------------------------------------------------------------------------------
-
--- | Remove RTS options that are specific to -threaded mode.
-pruneThreadedOpts :: [String] -> [String]
-pruneThreadedOpts = filter (`notElem` ["-qa", "-qb"])
-
   
---------------------------------------------------------------------------------
--- Error handling
---------------------------------------------------------------------------------
-
-path :: [FilePath] -> FilePath
-path [] = ""
-path ls = foldl1 (</>) ls
-
 --------------------------------------------------------------------------------
 -- Compiling Benchmarks
 --------------------------------------------------------------------------------
@@ -118,9 +93,9 @@ path ls = foldl1 (</>) ls
 -- | Build a single benchmark in a single configuration.
 compileOne :: (Int,Int) -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
 compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
-  Config{shortrun, resultsOut, stdOut, buildMethods, pathRegistry, doClean} <- ask
+  cfg@Config{buildMethods, pathRegistry, doClean} <- ask
 
-  let (diroffset,testRoot) = splitFileName testPath
+  let (_diroffset,testRoot) = splitFileName testPath
       flags = toCompileFlags cconf
       paths = toCmdPaths     cconf
       bldid = makeBuildID testPath flags
@@ -140,16 +115,23 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
        lift exitFailure     
   logT$ printf "Found %d methods that can handle %s: %s" 
          (length matches) testPath (show$ map methodName matches)
-  let BuildMethod{methodName,clean,compile,concurrentBuild} = head matches
+  let BuildMethod{methodName,clean,compile} = head matches
   when (length matches > 1) $
     logT$ " WARNING: resolving ambiguity, picking method: "++methodName
 
-  let pathR = (M.union (M.fromList paths) pathRegistry)
+  -- Add the static path information to the path information for this specific benchmark:
+  let newpathR = (M.union (M.fromList paths) pathRegistry)
   
-  when doClean $ clean pathR bldid testPath
+  when doClean $ clean newpathR bldid testPath
+
+  -- This is a bit weird... we could recast ALL fields of the Config
+  -- by specializing them to the benchmark particular compile
+  -- configuration.  But right now we are doing that just for
+  -- pathRegistry:
+  let cfg2 = cfg{pathRegistry=newpathR}
 
   -- Prefer the benchmark-local path definitions:
-  x <- compile pathR bldid flags testPath
+  x <- compile cfg2 bldid flags testPath
   logT$ "Compile finished, result: "++ show x
   return x
   

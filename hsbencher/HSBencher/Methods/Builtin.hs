@@ -10,10 +10,8 @@ module HSBencher.Methods.Builtin
 
 import Control.Monad
 import Control.Monad.Reader
-import Control.Exception (bracket)
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Map as M
--- import Control.Monad.IO.Class (liftIO, MonadIO)
 import System.Process
 import System.Directory
 import System.FilePath
@@ -22,8 +20,7 @@ import Prelude hiding (log)
 
 import HSBencher.Types
 import HSBencher.Internal.Logging (log)
-import HSBencher.Internal.MeasureProcess
-import HSBencher.Internal.Utils (runLogged, defaultTimeout)
+import HSBencher.Internal.Utils (runLogged)
 
 --------------------------------------------------------------------------------
 -- Some useful build methods
@@ -52,15 +49,15 @@ makeMethod = BuildMethod
      doMake pathMap target $ \ makePath -> do
        _ <- runSuccessful subtag (makePath++" clean")
        return ()
-  , compile = \ pathMap bldid flags target -> do
-     doMake pathMap target $ \ makePath -> do
+  , compile = \ Config{pathRegistry, runTimeOut} _bldid flags target -> do
+     doMake pathRegistry target $ \ makePath -> do
        absolute <- liftIO getCurrentDirectory
        _ <- runSuccessful subtag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'")
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
        let runit args envVars =
              CommandDescr
              { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
-             , timeout = Nothing
+             , timeout = runTimeOut
              , workingDir = Just absolute
              , tolerateError = False
              , envVars
@@ -91,22 +88,22 @@ ghcMethod = BuildMethod
   , setThreads = Just $ \ n -> [ CompileParam "-threaded -rtsopts"
                                , RuntimeParam ("+RTS -N"++ show n++" -RTS")]
   -- , needsInPlace = False
-  , clean = \ pathMap bldid target -> do
+  , clean = \ _cfg bldid _target -> do
      let buildD = "buildoutput_" ++ bldid
      liftIO$ do b <- doesDirectoryExist buildD
                 when b$ removeDirectoryRecursive buildD
      return ()
-  , compile = \ pathMap bldid flags target -> do
+  , compile = \ Config{pathRegistry} bldid flags target -> do
      let dir  = takeDirectory target
          file = takeBaseName target
          suffix = "_"++bldid
-         ghcPath = M.findWithDefault "ghc" "ghc" pathMap
+         ghcPath = M.findWithDefault "ghc" "ghc" pathRegistry
      log$ tag++" Building target with GHC method: "++show target  
      inDirectory dir $ do
        let buildD = "buildoutput_" ++ bldid
        liftIO$ createDirectoryIfMissing True buildD
        let dest = buildD </> file ++ suffix
-       runSuccessful " [ghc] " $
+       _ <- runSuccessful " [ghc] " $
          printf "%s %s -outputdir ./%s -o %s %s"
            ghcPath file buildD dest (unwords flags)
        -- Consider... -fforce-recomp  
@@ -132,14 +129,13 @@ cabalMethod = BuildMethod
   , concurrentBuild = True
   , setThreads = Just $ \ n -> [ CompileParam "--ghc-option='-threaded' --ghc-option='-rtsopts'"
                                , RuntimeParam ("+RTS -N"++ show n++" -RTS")]
-  , clean = \ pathMap _ target -> do
-     return ()
-  , compile = \ pathMap bldid flags target -> do
+  , clean = \ _ _ _target -> return ()
+  , compile = \ Config{pathRegistry} bldid flags target -> do
 
      benchroot <- liftIO$ getCurrentDirectory
      let suffix = "_"++bldid
-         cabalPath = M.findWithDefault "cabal" "cabal" pathMap
-         ghcPath   = M.findWithDefault "ghc"   "ghc"   pathMap
+         cabalPath = M.findWithDefault "cabal" "cabal" pathRegistry
+         _ghcPath  = M.findWithDefault "ghc"   "ghc"   pathRegistry
          binD      = benchroot </> "bin"
      liftIO$ createDirectoryIfMissing True binD
 
@@ -223,8 +219,8 @@ filesInDir d = do
 -- Returns lines of output if successful.
 runSuccessful :: String -> String -> BenchM [B.ByteString]
 runSuccessful tag cmd = do
-  (res,lines) <- runLogged tag cmd
+  (res,lns) <- runLogged tag cmd
   case res of
     ExitError code  -> error$ "expected this command to succeed! But it exited with code "++show code++ ":\n  "++ cmd
     RunTimeOut {}   -> error$ "Methods.hs/runSuccessful - error! The following command timed out:\n  "++show cmd
-    RunCompleted {} -> return lines
+    RunCompleted {} -> return lns
