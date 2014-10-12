@@ -1,4 +1,9 @@
 
+HSBencher: A flexible benchmarking framework
+============================================
+
+Overview
+--------
 
 
 See hsbencher.cabal for a general overview.  Here are a few useful facts:
