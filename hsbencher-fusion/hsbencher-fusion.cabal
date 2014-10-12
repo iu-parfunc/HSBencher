@@ -8,7 +8,7 @@ description:         Google Fusion tables are a type of Google Doc that resemble
                      SQL database more than a spreadsheet.  They have a web 
                      interface and permissions model similar to toher google docs.
                      More information can be found at:
-                       https://support.google.com/fusiontables/answer/2571232?hl=en
+                       <https://support.google.com/fusiontables/answer/2571232?hl=en>
 
 license:             BSD3
 license-file:        LICENSE

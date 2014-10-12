@@ -3,7 +3,7 @@ name:                hsbencher-codespeed
 version:             0.1
 synopsis:            Backend for uploading benchmark data to CodeSpeed
 description:         The CodeSpeed project provides a performance dashboard and
-                     is described at 'https://github.com/tobami/codespeed'.
+                     is described at <https://github.com/tobami/codespeed>.
 license:             BSD3
 license-file:        LICENSE
 author:              Ryan Newton
