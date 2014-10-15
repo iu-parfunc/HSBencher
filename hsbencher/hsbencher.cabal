@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.12
+version:             1.12.1
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -42,6 +42,7 @@ version:             1.12
 -- 1.10.0.0 : add addPlugin, remove defaultPlugConf
 -- 1.11.0.0 : remove toRunFlags, add RuntimeArg
 -- 1.12     : breaking change to `BuildMethod` type: expose `Config` to `compile`
+-- 1.12.1   : Update the format of "-l" printout, but its behavior is unchanged.
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 

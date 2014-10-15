@@ -551,8 +551,9 @@ defaultMainModifyConfig modConfig = do
   let fullBenchList = 
        case conf1 of 
         Config{benchlist=ls} -> 
-          (unlines  [ (target ++ (unwords cmdargs))
-                    | Benchmark{cmdargs,target} <- ls])
+          (unlines  [ (maybe "" (++" = ") progname) ++
+                      (target ++ (unwords cmdargs))
+                    | Benchmark{progname, cmdargs,target} <- ls])
   when showBenchs $ do putStrLn ("All benchmarks handled by this script:\n"++fullBenchList)
                        exitSuccess
   unless (null errs) $ do
