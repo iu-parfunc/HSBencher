@@ -1,15 +1,24 @@
 
+HSBencher: A flexible benchmarking framework
+============================================
+
+Overview
+--------
 
 
-See hsbencher.cabal for a general overview.
+See hsbencher.cabal for a general overview.  Here are a few useful facts:
+
+ * The `hsbencher` package is for describing benchmark configuration spaces, launching jobs, and collecting data for them
+ * Jobs can take many forms.  Some included protocols are described below, but you can always add your own `BuildMethod`.
+ * Other packages like `hsbencher-fusion` and `hsbencher-codespeed` provide additional backends for uploading benchmark data to network destinations.
 
 
 Protocols for benchmarks to follow
-==================================
+----------------------------------
 
 
-All benchmarks, via all BuildMethods
-------------------------------------
+### All benchmarks, via all BuildMethods
+
 
 Benchmarks using any BuildMethod, including BuildMethods added by the
 end user obey the following conventions:
@@ -27,16 +36,14 @@ end user obey the following conventions:
    passes in environment variables and "parameters", it elides only
    the `cmdargs` field of the `Benchmark` record.
 
-Benchmarks using the builtin 'make' BuildMethod
------------------------------------------------
+### Benchmarks using the builtin 'make' BuildMethod
 
  * `make` should build the benchmark.
  * `make run` should run the benchmark
  * compile time arguments are provided with `make COMPILE_ARGS='...'`
  * runtime arguments are provided with `make run RUN_ARGS='...'`
 
-Benchmarks using the builtin cabal BuildMethod
-----------------------------------------------
+### Benchmarks using the builtin cabal BuildMethod
 
  * One .cabal file should be contained in the directory.
  * Either the directory itself, or a file within the directory can be
@@ -47,8 +54,7 @@ Benchmarks using the builtin cabal BuildMethod
  * runtime arguments are provided to the resulting executable, raw
    (i.e. you need to include `+RTS -RTS` yourself)
 
-Benchmarks using the builtin ghc BuildMethod
---------------------------------------------
+### Benchmarks using the builtin ghc BuildMethod
 
  * A single .hs file should be specified as the build target
  * It should build by running `ghc --make` on the target file; any
