@@ -92,7 +92,7 @@ generalUsageStr = unlines $
 
 -- | Build a single benchmark in a single configuration.
 compileOne :: (Int,Int) -> Benchmark DefaultParamMeaning -> [(DefaultParamMeaning,ParamSetting)] -> BenchM BuildResult
-compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
+compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMethod} cconf = do
   cfg@Config{buildMethods, pathRegistry, doClean} <- ask
 
   let (_diroffset,testRoot) = splitFileName testPath
@@ -104,8 +104,10 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs} cconf = do
        ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++ show bldid
   log  "--------------------------------------------------------------------------------\n"
 
-  matches <- lift$ 
-             filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods 
+  matches <- case overrideMethod of
+    Nothing -> lift$
+               filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods
+    Just m -> return [m]
   when (null matches) $ do
        logT$ "ERROR, no build method matches path: "++testPath
        logT$ "  Tried methods: "++show(map methodName buildMethods)
