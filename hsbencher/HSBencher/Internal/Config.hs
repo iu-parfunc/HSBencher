@@ -138,7 +138,7 @@ augmentResultWithConfig Config{..} base = do
   uname    <- runSL "uname -a"
   lspci    <- case doLSPCI of 
                 True  -> runLines "lspci"
-                False -> return ()
+                False -> return []
   whos     <- runLines "who"
   let newRunID = (hostname ++ "_" ++ show startTime)
   let (branch,revision,depth) = gitInfo      
