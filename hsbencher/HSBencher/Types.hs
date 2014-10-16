@@ -263,7 +263,8 @@ data Benchmark a = Benchmark
  , configs :: BenchSpace a  -- ^ The configration space to iterate over.
  , progname :: Maybe String -- ^ Optional name to use to identify this benchmark, INSTEAD of the basename from `target`.
  , benchTimeOut :: Maybe Double -- ^ Specific timeout for this benchmark in seconds.  Overrides global setting.
- } deriving (Eq, Show, Ord, Generic)
+ , overrideMethod :: Maybe BuildMethod -- ^ Force use of this specific build method.
+ } deriving (Show, Generic)
 
 -- TODO: We could allow arbitrary shell scripts in lieu of the "target" file:
 -- data BenchTarget
@@ -275,7 +276,7 @@ data Benchmark a = Benchmark
 -- defaults to fill in the rest.  Takes target, cmdargs, configs.
 mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a 
 mkBenchmark  target  cmdargs configs = 
-  Benchmark {target, cmdargs, configs, progname=Nothing, benchTimeOut=Nothing }
+  Benchmark {target, cmdargs, configs, progname=Nothing, benchTimeOut=Nothing, overrideMethod=Nothing }
 
 
 -- | A datatype for describing (generating) benchmark configuration spaces.
@@ -457,6 +458,9 @@ data SubProcess =
 instance Out ParamSetting
 instance Out FilePredicate
 instance Out DefaultParamMeaning
+instance Out BuildMethod where
+  docPrec n m = docPrec n $ methodName m
+  doc         = docPrec 0
 instance Out a => Out (BenchSpace a)
 instance Out a => Out (Benchmark a)
 
