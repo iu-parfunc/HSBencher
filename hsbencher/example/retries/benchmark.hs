@@ -5,10 +5,9 @@ import HSBencher.Backend.Dribble (defaultDribblePlugin)
 import Data.Default (Default(def))
 
 main :: IO ()
--- main = defaultMainWithBechmarks benches
-main = defaultMainModifyConfig $ \ conf -> 
-    addPlugin defaultDribblePlugin def $ 
-    conf { benchlist= benches }
+main = defaultMainModifyConfig $
+    (addPlugin defaultDribblePlugin def) . 
+    (addBenchmarks benches)
 
 benches :: [Benchmark DefaultParamMeaning]
 benches =

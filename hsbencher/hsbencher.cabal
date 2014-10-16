@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.14
+version:             1.14.1
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -83,7 +83,7 @@ description: Benchmark frameworks are usually very specific to the
  .
  @
  import HSBencher
- main = defaultMainWithBechmarks
+ main = defaultMainModifyConfig $ addBenchmarks
  .      [ mkBenchmark \"bench1/bench1.cabal\" [\"1000\"] $
  .        Or [ Set NoMeaning (RuntimeParam \"+RTS -qa -RTS\")
  .            , Set NoMeaning (RuntimeEnv \"HELLO\" \"yes\") ] ]

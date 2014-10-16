@@ -19,7 +19,6 @@ main = do
       let hackD = "./example/make_and_ghc"
       putStrLn$"HACK: changing from "++path++" to "++hackD
       setCurrentDirectory hackD 
---  defaultMainWithBechmarks benches
   defaultMainModifyConfig myconfig
 
 

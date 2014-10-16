@@ -16,7 +16,7 @@ main = do
       let hackD = "./example/cabal"
       putStrLn$"HACK: changing from "++path++" to "++hackD
       setCurrentDirectory hackD 
-  defaultMainWithBechmarks benches
+  defaultMainModifyConfig $ addBenchmarks benches
 
 benches =
   [ mkBenchmark "bench1/" ["unused_cmdline_arg"] withthreads
