@@ -201,11 +201,11 @@ runB_runTrials :: [String] -> Maybe Double -> BuildResult
 runB_runTrials fullargs benchTimeOut bldres runconfig = do 
     Config{ retryFailed, trials } <- ask 
     let retryBudget = fromMaybe 0 retryFailed
-    trialLoop 1 trials retryBudget []
+    trialLoop 1 trials retryBudget 0 []
  where   
-  trialLoop :: Int -> Int -> Int -> [RunResult] -> ReaderT Config IO (Int,[RunResult])
-  trialLoop ind trials retries acc 
-   | ind > trials = return (retries, reverse acc)
+  trialLoop :: Int -> Int -> Int -> Int -> [RunResult] -> ReaderT Config IO (Int,[RunResult])
+  trialLoop ind trials retries retryAcc acc 
+   | ind > trials = return (retryAcc, reverse acc)
    | otherwise = do 
     Config{ runTimeOut, shortrun, harvesters } <- ask 
     log$ printf "  Running trial %d of %d" ind trials
@@ -256,12 +256,12 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
      then if retries > 0 
           then do logT$ " Failed Trial!  Retrying config, repeating trial "++
                         show ind++", "++show (retries - 1)++" retries left."
-                  trialLoop ind trials (retries - 1) acc
+                  trialLoop ind trials (retries - 1) (retryAcc + 1) acc
           else do logT$ " Failed Trial "++show ind++"!  Out of retries, aborting remaining trials."
                   return (retries, this:acc)
      else do -- When we advance, we reset the retry counter:
              Config{ retryFailed } <- ask 
-             trialLoop (ind+1) trials (fromMaybe 0 retryFailed) (this:acc)
+             trialLoop (ind+1) trials (fromMaybe 0 retryFailed) retryAcc (this:acc)
 
 ------------------------------------------------------------
 runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> Maybe String 
