@@ -50,6 +50,7 @@ data Flag = ParBench
           | CabalPath String | GHCPath String                               
           | ShowHelp | ShowVersion | ShowBenchmarks
           | DisablePlug String
+          | AddLSPCI
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
 
@@ -97,6 +98,9 @@ core_cli_options =
       , Option [] ["retry"] (ReqArg (mkPosIntFlag RetryFailed) "NUM")
         "Counter nondeterminism while debugging.  Retry failed tests NUM times."
 
+      , Option [] ["lspci"] (NoArg AddLSPCI) 
+        "Add the output of lspci to each benchmark result in the LSPCI column" 
+
       , Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
 
@@ -132,7 +136,9 @@ augmentResultWithConfig Config{..} base = do
   -- let ghcVer' = collapsePrefix "The Glorious Glasgow Haskell Compilation System," "GHC" ghcVer
   datetime <- getCurrentTime
   uname    <- runSL "uname -a"
-  lspci    <- runLines "lspci"
+  lspci    <- case doLSPCI of 
+                True  -> runLines "lspci"
+                False -> return ()
   whos     <- runLines "who"
   let newRunID = (hostname ++ "_" ++ show startTime)
   let (branch,revision,depth) = gitInfo      
@@ -216,6 +222,7 @@ getConfig cmd_line_options benches = do
            { hostname, startTime
            , shortrun       = False
            , doClean        = True
+           , doLSPCI        = False
            , benchsetName   = Nothing
 --	   , trials         = read$ get "TRIALS"    "1"
 	   , trials         = 1
@@ -273,6 +280,9 @@ getConfig cmd_line_options benches = do
       doFlag (ForceHostName s) r = r { hostname= s }
       doFlag (CIBuildID s) r = r { ciBuildID= Just s }
 
+      doFlag AddLSPCI r = r { doLSPCI = True }
+      doFlag NoClean  r = r { doClean = False }
+
       -- Ignored options:
       doFlag ShowHelp r = r
       doFlag ShowVersion r = r
@@ -280,7 +290,6 @@ getConfig cmd_line_options benches = do
       doFlag (DisablePlug _) r = r
       doFlag NoRecomp r = r
       doFlag NoCabal  r = r
-      doFlag NoClean  r = r { doClean = False }
       doFlag ParBench r = r
       --------------------
       finalconf = foldr ($) base_conf (map doFlag cmd_line_options)

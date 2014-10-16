@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.15
+version:             1.15.1
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -46,6 +46,7 @@ version:             1.15
 -- 1.13     : Add RETRIES field to the core result schema
 -- 1.14     : remove terrible function with typo in name, add addBenchmarks
 -- 1.15     : Add systemCleaner field to Config
+-- 1.15.1   : Switch off lspci unless we ask for it.
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 

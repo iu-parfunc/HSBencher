@@ -200,6 +200,7 @@ data Config = Config
                            --   HSBencher relies on a convention where benchmarks WITHOUT command-line
                            --   arguments must do a short run.
  , doClean        :: Bool  -- ^ Invoke the build method's clean operation before compilation.
+ , doLSPCI        :: Bool  -- ^ Use the "lspci" command to gather more machine details on each run.
  , keepgoing      :: Bool  -- ^ Keep going after error.
  , pathRegistry   :: PathRegistry -- ^ Paths to executables
  , hostname       :: String  -- ^ Manually override the machine hostname.  
