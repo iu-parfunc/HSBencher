@@ -2,13 +2,19 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hsbencher-fusion
-version:             0.2
+version:             0.3
 synopsis:            Backend for uploading benchmark data to Google Fusion Tables.
-description:         Google Fusion tables are a type of Google Doc that resembles a
-                     SQL database more than a spreadsheet.  They have a web 
-                     interface and permissions model similar to toher google docs.
-                     More information can be found at:
-                       <https://support.google.com/fusiontables/answer/2571232?hl=en>
+description:
+         Google Fusion tables are a type of Google Doc that resembles a
+         SQL database more than a spreadsheet.  They have a web 
+         interface and permissions model similar to toher google docs.
+         More information can be found at:
+           <https://support.google.com/fusiontables/answer/2571232?hl=en>
+         . 
+         ChangeLog:
+         .
+         * (0.3) Added RETRIES field to the core schema.
+
 
 license:             BSD3
 license-file:        LICENSE

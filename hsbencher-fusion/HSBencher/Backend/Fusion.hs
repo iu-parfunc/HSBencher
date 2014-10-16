@@ -241,11 +241,13 @@ uploadBenchResult  br@BenchmarkResult{..} = do
 
 
 -- | A representaton used for creating tables.  Must be isomorphic to
--- `BenchmarkResult`.  This could perhaps be generated automatically.
+-- `BenchmarkResult`.  This could perhaps be generated automatically
+-- (e.g. from a Generic instance, or even by creating a default
+-- benchmarkResult and feeding it to resultToTuple).
 -- 
 -- Note, order is important here, because this is the preferred order we'd like to
 -- have it in the Fusion table.
- 
+--  
 fusionSchema :: [(String, CellType)]
 fusionSchema =
   [ ("PROGNAME",STRING)
@@ -255,10 +257,11 @@ fusionSchema =
   , ("MINTIME", NUMBER)
   , ("MEDIANTIME", NUMBER)
   , ("MAXTIME", NUMBER)
+  , ("THREADS",NUMBER)
+  , ("RETRIES",NUMBER)
   -- The run is identified by hostname_secondsSinceEpoch:
   , ("RUNID",STRING)
   , ("CI_BUILD_ID",STRING)  
-  , ("THREADS",NUMBER)
   , ("DATETIME",DATETIME)    
   , ("MINTIME_PRODUCTIVITY", NUMBER)
   , ("MEDIANTIME_PRODUCTIVITY", NUMBER)
@@ -288,6 +291,9 @@ fusionSchema =
   -- New field: [2014.02.19]
   , ("ALLJITTIMES", STRING) -- In order of trials like ALLTIMES.
   ]
+
+-- FIMXE: at least test that resultToTuple returns lits the same
+-- length as fusionSchema.
  
 
 benchmarkResultToSchema bm = fusionSchema ++ map custom (_CUSTOM bm) 
