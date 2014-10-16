@@ -12,7 +12,7 @@
 -}
 
 module HSBencher.Internal.App
-       (defaultMainWithBechmarks, defaultMainModifyConfig,
+       (defaultMainModifyConfig,
         Flag(..), all_cli_options, fullUsageInfo)
        where 
 
@@ -452,11 +452,11 @@ defaultMain = do
   --      benchF = get "BENCHLIST" "benchlist.txt"
 --  putStrLn$ hsbencher_tag ++ " Reading benchmark list from file: "
   error "FINISHME: defaultMain requires reading benchmark list from a file.  Implement it!"
---  defaultMainWithBechmarks undefined
+--  defaultMainWithBenchmarks undefined
 
 -- | In this version, user provides a list of benchmarks to run, explicitly.
-defaultMainWithBechmarks :: [Benchmark DefaultParamMeaning] -> IO ()
-defaultMainWithBechmarks benches = do
+defaultMainWithBenchmarks :: [Benchmark DefaultParamMeaning] -> IO ()
+defaultMainWithBenchmarks benches = do
   defaultMainModifyConfig (\ conf -> conf{ benchlist=benches })
 
 -- | Multiple lines of usage info help docs.

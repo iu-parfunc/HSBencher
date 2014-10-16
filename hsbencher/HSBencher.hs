@@ -9,8 +9,8 @@ module HSBencher
          -- won't list all the bindings for reexports.
 
          -- * The main entrypoints for building new benchmark suites.
-         defaultMainWithBechmarks, defaultMainModifyConfig,
-         addPlugin, 
+         defaultMainModifyConfig,
+         addPlugin, addBenchmarks,
 
          -- * Command-line configuration
          Flag(..),
@@ -30,3 +30,9 @@ import HSBencher.Types
 import HSBencher.Internal.App
 import HSBencher.Harvesters
 import HSBencher.Internal.Config (addPlugin)
+
+-- | A convenience combinator for composing together with other
+-- `Config` transformers.  This one adds benchmarks to whatever is
+-- already in the `benchlist` field.
+addBenchmarks :: [Benchmark DefaultParamMeaning] -> Config -> Config
+addBenchmarks ls conf = conf { benchlist = ls ++ benchlist conf } 
