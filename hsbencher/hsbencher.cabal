@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.14.1
+version:             1.15
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -45,6 +45,7 @@ version:             1.14.1
 -- 1.12.1   : Update the format of "-l" printout, but its behavior is unchanged.
 -- 1.13     : Add RETRIES field to the core result schema
 -- 1.14     : remove terrible function with typo in name, add addBenchmarks
+-- 1.15     : Add systemCleaner field to Config
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 
@@ -106,6 +107,21 @@ description: Benchmark frameworks are usually very specific to the
  * (1.5) New columns in schema.
  .
  * (1.8) Backend plugins, hsbencher-fusion package factored out.
+ .
+ * (1.9) 
+ .
+ * (1.10) 
+ .
+ * (1.11) 
+ . 
+ * (1.12) 
+ . 
+ * (1.13) 
+ . 
+ * (1.14) 
+ .
+ * (1.15) Add systemCleaner field to Config
+
 
 
 license:             BSD3

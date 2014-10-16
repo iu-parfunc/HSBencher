@@ -35,7 +35,7 @@ module HSBencher.Types
          DefaultParamMeaning(..),
          
          -- * HSBencher Driver Configuration
-         Config(..), BenchM,
+         Config(..), BenchM, CleanupAction(..),
 
          -- * Subprocesses and system commands
          CommandDescr(..), RunResult(..), emptyRunResult,
@@ -212,6 +212,10 @@ data Config = Config
 
  , buildMethods   :: [BuildMethod] -- ^ Known methods for building benchmark targets.
                                    -- Starts with cabal/make/ghc, can be extended by user.
+ , systemCleaner  :: CleanupAction
+                    -- ^ An optional action to run between benchmark runs to make sure the system is clean.
+                    -- For example, this could kill off zombie processes if any were left by previous
+                    -- benchmark trials.
    
  -- These are all LINES-streams (implicit newlines).
  , logOut         :: Strm.OutputStream B.ByteString -- ^ Internal use only
@@ -230,6 +234,11 @@ data Config = Config
  }
  deriving Show
 
+-- ^ This is isomorphic to `Maybe (IO ())` but it has a `Show` instance.
+data CleanupAction = NoCleanup
+                   | Cleanup (IO ())
+instance Show CleanupAction where
+  show _ = "<CleanupAction>"
 
 instance Show (Strm.OutputStream a) where
   show _ = "<OutputStream>"

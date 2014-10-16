@@ -20,7 +20,7 @@ module HSBencher.Internal.App
 -- Standard library imports
 import Control.Concurrent
 import qualified Control.Concurrent.Async as A
-import Control.Exception (SomeException, try)
+import Control.Exception (SomeException, try, catch)
 import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import Data.IORef
@@ -207,9 +207,15 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
   trialLoop ind trials retries retryAcc acc 
    | ind > trials = return (retryAcc, reverse acc)
    | otherwise = do 
-    Config{ runTimeOut, shortrun, harvesters } <- ask 
+    Config{ runTimeOut, shortrun, harvesters, systemCleaner } <- ask 
     log$ printf "  Running trial %d of %d" ind trials
     log "  ------------------------"
+    case systemCleaner of 
+      NoCleanup   -> return ()
+      Cleanup act -> lift $ do 
+                       printf "(Cleaning system with user-specified action to achieve an isolated run...)"
+                       catch act $ \ (e::SomeException) -> 
+                          printf $ "WARNING! user-specified cleanup action threw an exception: "++show e
     let envVars = toEnvVars  runconfig
     let doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-

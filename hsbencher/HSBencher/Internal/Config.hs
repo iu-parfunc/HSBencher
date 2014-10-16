@@ -239,12 +239,13 @@ getConfig cmd_line_options benches = do
            , gitInfo        = (trim branch, trim revision, length hashes)
            -- This is in priority order:                   
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
+           , systemCleaner  = NoCleanup
            , argsBeforeFlags = True
            , harvesters = selftimedHarvester       `mappend`
                           ghcProductivityHarvester `mappend`
                           ghcMemFootprintHarvester `mappend`
                           ghcAllocRateHarvester    `mappend`
-                          jittimeHarvester
+                          jittimeHarvester           
            , plugIns = []
            , plugInConfs = M.empty
 	   }
