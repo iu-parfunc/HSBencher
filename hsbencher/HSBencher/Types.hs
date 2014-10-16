@@ -539,9 +539,10 @@ data BenchmarkResult =
   , _ALLJITTIMES   ::  String -- ^ Space separated list of numbers, JIT compile times
                               -- (if applicable), with a 1-1 correspondence to the exec times in ALLTIMES.
                               -- Time should not be double counted as JIT and exec time; these should be disjoint.
+  , _RETRIES :: Int -- ^ The number of times any trial of the benchmark was reexecuted because of failure.
                         
   , _CUSTOM :: [(Tag, SomeResult)]
-               -- A List of custom results
+               -- ^ A List of custom results
                -- The tag corresponds to column "title"
   }
   deriving (Show,Read,Ord,Eq)
@@ -584,6 +585,7 @@ emptyBenchmarkResult = BenchmarkResult
   , _MEDIANTIME_ALLOCRATE    = Nothing
   , _MEDIANTIME_MEMFOOTPRINT = Nothing
   , _ALLJITTIMES = ""
+  , _RETRIES = 0
   , _CUSTOM = [] 
   }
 
@@ -626,6 +628,7 @@ resultToTuple r =
   , ("MEDIANTIME_ALLOCRATE",    fromMaybe "" $ fmap show $ _MEDIANTIME_ALLOCRATE r)
   , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
   , ("ALLJITTIMES", _ALLJITTIMES r)
+  , ("RETRIES", show (_RETRIES r))
   ] ++ map (\ (t,s) -> (t, show s)) (_CUSTOM r)
 
 

@@ -10,7 +10,7 @@ module HSBencher
 
          -- * The main entrypoints for building new benchmark suites.
          defaultMainWithBechmarks, defaultMainModifyConfig,
-         addPlugin,
+         addPlugin, 
 
          -- * Command-line configuration
          Flag(..),

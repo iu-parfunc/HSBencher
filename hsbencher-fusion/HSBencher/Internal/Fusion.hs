@@ -181,6 +181,7 @@ stdRetry msg client toks action = do
   retryIORequest action retryHook $
           [1,2,4,4,4,4,4,4,8,16] --- 32,64,
           ++ replicate 30 5
+          ++ replicate 10 10 -- Adding this.  Still failing a few on Google API's [2014.10.15]
   
   
 retryIORequest :: IO a -> (Int -> HttpException -> IO ()) -> [Double] -> IO (Maybe a)

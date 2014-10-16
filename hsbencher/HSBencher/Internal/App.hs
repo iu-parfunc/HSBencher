@@ -162,11 +162,11 @@ runOne (iterNum, totalIters) _bldid bldres
   ----------------------------------------
   -- TODO (One option woud be dynamic feedback where if the first one
   -- takes a long time we don't bother doing more trials.)
-  nruns <- runB_runTrials fullargs benchTimeOut bldres runconfig
+  (retries,nruns) <- runB_runTrials fullargs benchTimeOut bldres runconfig
 
   -- (3) Produce output to the right places:
   ------------------------------------------
-  runC_produceOutput (args,fullargs) nruns testRoot progname runconfig
+  runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig
 
 
 ------------------------------------------------------------
@@ -197,15 +197,17 @@ runA_gatherContext testPath cmdargs runconfig = do
 
 ------------------------------------------------------------
 runB_runTrials :: [String] -> Maybe Double -> BuildResult 
-               -> [(a, ParamSetting)] -> ReaderT Config IO [RunResult]
+               -> [(a, ParamSetting)] -> ReaderT Config IO (Int,[RunResult])
 runB_runTrials fullargs benchTimeOut bldres runconfig = do 
     Config{ retryFailed, trials } <- ask 
-    trialLoop 1 trials (fromMaybe 0 retryFailed) []
- where 
+    let retryBudget = fromMaybe 0 retryFailed
+    trialLoop 1 trials retryBudget []
+ where   
+  trialLoop :: Int -> Int -> Int -> [RunResult] -> ReaderT Config IO (Int,[RunResult])
   trialLoop ind trials retries acc 
-   | ind > trials = return $ reverse acc
+   | ind > trials = return (retries, reverse acc)
    | otherwise = do 
-    Config{ runTimeOut, shortrun, harvesters, retryFailed } <- ask 
+    Config{ runTimeOut, shortrun, harvesters } <- ask 
     log$ printf "  Running trial %d of %d" ind trials
     log "  ------------------------"
     let envVars = toEnvVars  runconfig
@@ -256,15 +258,15 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
                         show ind++", "++show (retries - 1)++" retries left."
                   trialLoop ind trials (retries - 1) acc
           else do logT$ " Failed Trial "++show ind++"!  Out of retries, aborting remaining trials."
-                  return (this:acc)
+                  return (retries, this:acc)
      else do -- When we advance, we reset the retry counter:
              Config{ retryFailed } <- ask 
              trialLoop (ind+1) trials (fromMaybe 0 retryFailed) (this:acc)
 
 ------------------------------------------------------------
-runC_produceOutput :: ([String], [String]) -> [RunResult] -> String -> Maybe String 
+runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> Maybe String 
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
-runC_produceOutput (args,fullargs) nruns testRoot progname runconfig = do
+runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig = do
   let numthreads = foldl (\ acc (x,_) ->
                            case x of
                              Threads n -> n
@@ -352,7 +354,7 @@ runC_produceOutput (args,fullargs) nruns testRoot progname runconfig = do
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
             , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials
-
+            , _RETRIES       =  retries
                                 -- Should the user specify how the
                                 -- results over many goodruns are reduced ?
                                 -- I think so. 
@@ -522,10 +524,6 @@ defaultMainModifyConfig modConfig = do
     putStrLn$ "hsbencher version "++ hsbencherVersion
       -- (unwords$ versionTags version)
     exitSuccess 
-
-  let printHelp :: [OptDescr ()] -> IO ()
-      printHelp opts = 
-        error "FINISHME"
 
   ------------------------------------------------------------
   putStrLn$ "\n"++hsbencher_tag++"Harvesting environment data to build Config."
