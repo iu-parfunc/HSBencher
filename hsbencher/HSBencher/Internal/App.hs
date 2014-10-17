@@ -215,9 +215,9 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
     case systemCleaner of 
       NoCleanup   -> return ()
       Cleanup act -> lift $ do 
-                       printf "(Cleaning system with user-specified action to achieve an isolated run...)"
+                       printf "(Cleaning system with user-specified action to achieve an isolated run...)\n"
                        catch act $ \ (e::SomeException) -> 
-                          printf $ "WARNING! user-specified cleanup action threw an exception: "++show e
+                          printf $ "WARNING! user-specified cleanup action threw an exception:\n  "++show e++"\n"
     let envVars = toEnvVars  runconfig
     let doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
