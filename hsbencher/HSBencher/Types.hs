@@ -48,7 +48,7 @@ module HSBencher.Types
 
          Plugin(..), genericCmdOpts, getMyConf, setMyConf,
 
-         SomeResult(..),
+         SomeResult(..), Tag,
          
          -- * For convenience -- large records demand pretty-printing
          doc
