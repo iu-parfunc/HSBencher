@@ -22,7 +22,7 @@ module HSBencher.Backend.Fusion
 import Control.Monad.Reader
 import Control.Concurrent (threadDelay)
 import qualified Control.Exception as E
-import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
+import Data.Maybe (fromJust, fromMaybe)
 import Data.Dynamic
 import Data.Default (Default(..))
 import qualified Data.Set as S
@@ -30,28 +30,17 @@ import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.ByteString.Char8 as B
 import Data.Time.Clock
-import Data.Time.Calendar
 import Data.Time.Format ()
--- import Network.Google (retryIORequest)
 import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
 import Network.Google.FusionTables (createTable, createColumn, listTables, listColumns,
-                                    bulkImportRows, insertRows,
+                                    bulkImportRows, 
                                     TableId, CellType(..), TableMetadata(..), ColumnMetadata(..))
 import Network.HTTP.Conduit (HttpException)
 import HSBencher.Types
 import HSBencher.Internal.Logging (log)
 import HSBencher.Internal.Fusion
 import Prelude hiding (log)
-import System.IO (hPutStrLn, stderr)
-import System.IO.Unsafe (unsafePerformIO)
-import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
-import System.Directory (doesFileExist, doesDirectoryExist, getAppUserDataDirectory,
-                         createDirectory, renameFile, removeFile)
-import System.FilePath ((</>),(<.>), splitExtension)
-import System.IO.Unsafe (unsafePerformIO)
-import System.Environment (getEnvironment)
-import System.Exit
-import Control.Concurrent.MVar
+import System.Console.GetOpt (OptDescr(Option), ArgDescr(..))
 
 -- | A default plugin.  This binding provides future-proof way to get
 --   a default instance of the plugin, in the eventuality that more
@@ -125,6 +114,7 @@ retryIORequest req retryHook times = loop 0 times
         threadDelay (round$ delay * 1000 * 1000) -- Microseconds
         loop (num+1) tl
 
+fromJustErr :: String -> Maybe t -> t
 fromJustErr msg Nothing  = error msg
 fromJustErr _   (Just x) = x
 
@@ -296,6 +286,7 @@ fusionSchema =
 -- length as fusionSchema.
  
 
+benchmarkResultToSchema :: BenchmarkResult -> [(String, CellType)]
 benchmarkResultToSchema bm = fusionSchema ++ map custom (_CUSTOM bm) 
   where
     custom (tag, IntResult _) = (tag,NUMBER)
@@ -318,7 +309,7 @@ instance Plugin FusionPlug where
 
   plugCmdOpts _ = fusion_cli_options
 
-  plugUploadRow p cfg row = runReaderT (uploadBenchResult row) cfg
+  plugUploadRow _ cfg row = runReaderT (uploadBenchResult row) cfg
 
   plugInitialize p gconf = do 
    putStrLn " [fusiontable] Fusion table plugin initializing.. First, find config."
@@ -326,7 +317,7 @@ instance Plugin FusionPlug where
                   getMyConf p gconf in 
           case (benchsetName gconf, fusionTableID) of
             (Nothing,Nothing) -> error "No way to find which fusion table to use!  No name given and no explicit table ID."
-            (_, Just tid)     -> return gconf
+            (_, Just _tid)     -> return gconf
             (Just name,_) -> do
               case (fusionClientID, fusionClientSecret) of
                 (Just cid, Just sec ) -> do
@@ -339,7 +330,7 @@ instance Plugin FusionPlug where
    let (Just cid, Just sec) = (fusionClientID fc2, fusionClientSecret fc2)
        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
    putStrLn " [fusiontable] Second, lets retrieved cached auth tokens on the file system..."
-   toks  <- getCachedTokens authclient
+   _toks <- getCachedTokens authclient
 
    -- TEMP: This should become another command line flag: --fusion-list to list the tables.
 {-
@@ -349,7 +340,7 @@ instance Plugin FusionPlug where
 -}
    return gc2
 
-  foldFlags p flgs cnf0 = 
+  foldFlags _p flgs cnf0 = 
       foldr ($) cnf0 (map doFlag flgs)
     where      
       -- TODO: Move this one to the global config
@@ -362,9 +353,6 @@ instance Plugin FusionPlug where
            Just tid -> r { fusionTableID = Just tid } 
            Nothing  -> r
 
-
-theEnv :: [(String,String)] 
-theEnv = unsafePerformIO getEnvironment
 
 -- | All the command line options understood by this plugin.
 fusion_cli_options :: (String, [OptDescr FusionCmdLnFlag])
