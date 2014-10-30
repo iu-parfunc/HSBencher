@@ -15,147 +15,23 @@ module Main where
 import HSBencher
 import HSBencher.Internal.Config (augmentResultWithConfig, getConfig)
 import HSBencher.Backend.Fusion
-import HSBencher.Backend.Fusion (defaultFusionPlugin)
 
 import Criterion.Types                                  ( Report(..), SampleAnalysis(..), Regression(..) )
 import Criterion.IO                                     ( readReports )
-import Statistics.Resampling.Bootstrap                  ( Estimate(..), scale )
+import Statistics.Resampling.Bootstrap                  ( Estimate(..) )
 
 -- Standard:
 import Control.Monad.Reader
-import Data.Char
-import Data.Text                                        ( Text )
-import Data.Label
 import Data.List as L
-import Data.Monoid
-import Control.Monad
-import Network.HTTP                                     ( simpleHTTP, postRequestWithBody, Response(..) )
-import Network.HTTP.Types                               ( urlEncode )
-import System.IO
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs)
 import System.Exit
-import qualified Data.ByteString.Char8                  as BS
-import qualified Data.ByteString.Lazy.Char8             as BL
 import qualified Data.Map                               as Map
-import qualified Data.Text
-
-import Debug.Trace
 
 ----------------------------------------------------------------------------------------------------
 
-    
-
-data Sample = Sample
-  {
-    sampleName          :: String       -- benchmark name
-  , sampleTime          :: Estimate     -- sample result (via OLS regression)
-  , sampleRSquare       :: Estimate     -- R^2 goodness-of-fit estimate of regression
-  , sampleMean          :: Estimate     -- result mean
-  , sampleStdDev        :: Estimate     -- standard deviation
-  , sampleUnits         :: Unit
-  }
-
-data Unit = Unit
-  {
-    unitName            :: String       -- e.g. seconds
-  , unitType            :: String       -- description of the unit, e.g. Time
-  , lessIsMore          :: Bool         -- so python, much philosophical
-  }
-
-
--- Treat a sample as being in milliseconds
---
-ms :: Sample -> Sample
-ms Sample{..} =
-  Sample { sampleTime           = scale 1000 sampleTime
-         , sampleRSquare        = scale 1000 sampleRSquare
-         , sampleMean           = scale 1000 sampleMean
-         , sampleStdDev         = scale 1000 sampleStdDev
-         , sampleUnits          = Unit { unitName   = "ms"
-                                       , unitType   = "Time"
-                                       , lessIsMore = True }
-         , ..
-         }
-
-
--- Extract benchmark information from the Criterion report
---
--- TODO: Extract any other regressions present in the report into separate
---       samples, e.g. GC statistics
---
-sample :: Report -> Sample
-sample Report{..} = ms $ Sample
-  { sampleName          = reportName
-  , sampleTime          = regIters
-  , sampleRSquare       = regRSquare
-  , sampleMean          = anMean
-  , sampleStdDev        = anStdDev
-  , sampleUnits         = error "sample has no unit assigned"
-  }
-  where
-    SampleAnalysis{..}  = reportAnalysis
-    Regression{..}      = head anRegress
-    regIters            = case Map.lookup "iters" regCoeffs of
-                            Nothing -> error "sample: no benchmark result found"
-                            Just t  -> t
-
-_ = estPoint
-    
-{-
-                                       
--- Encode a sample to a JSON value suitable for upload to codespeed
---
-toValue :: Options -> Sample -> Value
-toValue opt Sample{..} = object
-  [ "commitid"          .= $(_HEAD)
-  , "branch"            .= $(_BRANCH)
-  , "project"           .= ("accelerate-examples" :: Text)
-  , "executable"        .= get optVariant opt
-  , "environment"       .= get optHostname opt
-  , "benchmark"         .= sampleName
-  , "result_value"      .= estPoint sampleTime
-  , "min"               .= estLowerBound sampleTime
-  , "max"               .= estUpperBound sampleTime
-  , "std_dev"           .= estPoint sampleStdDev
-  , "units"             .= unitName sampleUnits
-  , "units_title"       .= unitType sampleUnits
-  , "lessismore"        .= lessIsMore sampleUnits
-  ]
-
-
--- Upload a set of criterion reports to the codespeed server
---
-uploadReports :: Options -> [Report] -> IO ()
-uploadReports opt reports =
-  when upload $ do
-    putStr ("Uploading results to " ++ server ++ " ... ") >> hFlush stdout
-    rsp <- simpleHTTP $ postRequestWithBody url contentType content
-    case rsp of
-      Left err -> do
-        putStrLn "failed"
-        hPutStrLn stderr (show err)
-
-      Right Response{..} ->
-        case rspCode of
-          (2,0,2) -> putStrLn "Ok"
-          (a,b,c) -> do putStrLn $ map intToDigit [a,b,c] ++ ' ' : rspReason
-                        hPutStrLn stderr rspBody
-  where
-    (upload, server)    = maybe (False, undefined) (True,) (get optCodespeed opt)
-
-    contentType         = "application/x-www-form-urlencoded"
-    url                 = server <> "/result/add/json/"
-    payload             = "json=" <> encode (map (toValue opt . sample) reports)
-    content             = BS.unpack . urlEncode False $ BL.toStrict payload
--}
-
-
--- main :: IO ()
--- main = putStrLn "Hello world"
-
-
-data ExtraFlag = TableName String | PrintHelp
+data ExtraFlag = TableName String
+               | PrintHelp
   deriving (Eq,Ord,Show,Read)
 
 extra_cli_options :: [OptDescr ExtraFlag]
@@ -230,6 +106,9 @@ addReport :: Report -> BenchmarkResult -> BenchmarkResult
 addReport rep@Report{..} BenchmarkResult{..} =
   BenchmarkResult
   { _PROGNAME = reportName
+  , _VARIANT = if null _VARIANT
+               then "criterion" -- This is just helpful for filtering down the fusion table.
+               else _VARIANT
   , _MEDIANTIME = medtime
   , _MINTIME    = estLowerBound $ fetch "time" "iters"
   , _MAXTIME    = estUpperBound $ fetch "time" "iters"
