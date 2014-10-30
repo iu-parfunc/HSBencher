@@ -161,7 +161,8 @@ getTableId auth tablename = do
               unless (S.null missing) $ do                
                 log$ "WARNING: These fields are missing server-side, creating them: "++show misslist
                 forM_ misslist $ \ colname -> do
-                  ColumnMetadata{col_name, col_columnId} <- liftIO$ createColumn atok tid (colname, STRING)
+                  Just ColumnMetadata{col_name, col_columnId} <- stdRetry "createColumn" auth toks $
+                                                                 createColumn atok tid (colname, STRING)
                   log$ "   -> Created column with name,id: "++show (col_name, col_columnId)
               unless (S.null extra) $ do
                 log$ "WARNING: The fusion table has extra fields that HSBencher does not know about: "++
@@ -204,7 +205,8 @@ uploadBenchResult  br@BenchmarkResult{..} = do
     log$ " [fusiontable] There were " ++ show (length misslist) ++ " columns missing"
     unless (S.null missing) $ do
       forM_ misslist $ \ colname -> do
-        liftIO$ createColumn atok tid (colname, STRING)
+        stdRetry "createColumn" authclient toks $
+                createColumn atok tid (colname, STRING)
         -- Create with the correct type !? Above just states STRING. 
          
 --- ////// END

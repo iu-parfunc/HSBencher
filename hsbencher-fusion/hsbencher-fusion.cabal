@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hsbencher-fusion
-version:             0.3
+version:             0.3.2
 synopsis:            Backend for uploading benchmark data to Google Fusion Tables.
 description:
          Google Fusion tables are a type of Google Doc that resembles a
@@ -54,8 +54,6 @@ Executable fusion-upload-criterion
   
   build-depends: base >=4.5 && < 4.8,
                  text >= 1.1, bytestring >= 0.10, containers >= 0.5,
-                 HTTP >= 4000.2.18, http-types >= 0.8,
-                 fclabels >= 2.0, 
                  criterion >= 1.0, statistics,
                  mtl
   build-depends: hsbencher-fusion, hsbencher >=1.15 && <2.0
