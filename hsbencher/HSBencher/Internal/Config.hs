@@ -185,7 +185,7 @@ getConfig cmd_line_options benches = do
   branch   <- runSL  "git name-rev --name-only HEAD"
   revision <- runSL  "git rev-parse HEAD"
   -- Note that this will NOT be newline-terminated:
-  hashes   <- runLines "git log --pretty=format:'%H'"
+  hashes   <- runLines "git log --pretty=format:''"
 
   let       
       -- Read an ENV var with default:
