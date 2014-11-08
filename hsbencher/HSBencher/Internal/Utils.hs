@@ -97,7 +97,7 @@ runLogged tag cmd = do
   log$ " * Executing command: " ++ cmd
   Config{ harvesters } <- ask
   SubProcess {wait,process_out,process_err} <-
-    lift$ measureProcess harvesters
+    lift$ measureProcess Nothing harvesters
             --- BJS: There is a hardcoded timeout for IO streams here. (USED TO BE 150) 
             -- RRN: Setting this to no timeout for now... could maybe do 10 hrs or something.
             CommandDescr{ command=ShellCommand cmd, envVars=[], timeout=Nothing, 

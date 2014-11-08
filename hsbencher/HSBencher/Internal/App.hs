@@ -36,7 +36,7 @@ import System.Directory
 import System.Environment (getArgs, getEnv, getProgName)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
-import System.Process (CmdSpec(..))
+import System.Process (CmdSpec(..), readProcess)
 import Text.Printf
 
 ----------------------------
@@ -56,7 +56,7 @@ import HSBencher.Types
 import HSBencher.Internal.Utils
 import HSBencher.Internal.Logging
 import HSBencher.Internal.Config
-import HSBencher.Internal.MeasureProcess 
+import HSBencher.Internal.MeasureProcess  (measureProcess,measureProcessDBG)
 import Paths_hsbencher (version) -- Thanks, cabal!
 
 ----------------------------------------------------------------------------------------------------
@@ -221,7 +221,7 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
     let envVars = toEnvVars  runconfig
     let doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
-            lift$ measureProcess harvesters cmddescr
+            lift$ measureProcess Nothing harvesters cmddescr
           err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
           both <- lift$ Strm.concurrentMerge [process_out, err2]
           mv   <- echoStream (not shortrun) both
@@ -234,7 +234,7 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
     -- 50 benchmarks (* 3 trials), all runs fail but there is NO
     -- echo'd output. So here we try something simpler as a test.
     let doMeasure2 cmddescr = do
-          (lines,result) <- lift$ measureProcessDBG harvesters cmddescr 
+          (lines,result) <- lift$ measureProcessDBG Nothing harvesters cmddescr 
           mapM_ (logT . B.unpack) lines 
           logT $ "Subprocess completed with "++show(length lines)++" of output."
           return result

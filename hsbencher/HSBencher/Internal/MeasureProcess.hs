@@ -8,7 +8,8 @@ module HSBencher.Internal.MeasureProcess
        (measureProcess, measureProcessDBG,
         selftimedHarvester, jittimeHarvester,
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
-        taggedLineHarvester
+        taggedLineHarvester,
+        setCPUAffinity
         )
        where
 
@@ -21,19 +22,22 @@ import Data.IORef
 import Data.Monoid
 import System.Exit
 import System.Directory
-import System.IO (hClose, stderr, hGetContents)
+import System.IO (hClose, stderr, hGetContents, hPutStrLn)
 import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, terminateProcess)
 import System.Process (createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
-import System.Posix.Process (getProcessStatus)
+import System.Posix.Process (getProcessStatus, getProcessID)
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
 import qualified System.IO.Streams.Process as Strm
 import qualified System.IO.Streams.Combinators as Strm
 import qualified Data.ByteString.Char8 as B
+import qualified Data.List as L
+import qualified Data.Set as S
 import System.Environment (getEnvironment)
 
 import HSBencher.Types
 import Debug.Trace
+import Prelude hiding (fail)
 
 --------------------------------------------------------------------------------  
 
@@ -53,10 +57,18 @@ import Debug.Trace
 --
 -- This procedure is currently not threadsafe, because it changes the current working
 -- directory.
-measureProcess :: LineHarvester -- ^ Stack of harvesters
+measureProcess :: Maybe CPUAffinity
+               -> LineHarvester -- ^ Stack of harvesters
                -> CommandDescr
                -> IO SubProcess
-measureProcess (LineHarvester harvest)
+measureProcess (Just aff) hrv descr =
+  -- The way we do things here is we set it before launching the
+  -- subprocess and we don't worry about unsetting it.  The child
+  -- process will inherit the affinity.
+  do setCPUAffinity aff 
+     measureProcess Nothing hrv descr
+               
+measureProcess Nothing (LineHarvester harvest)
                CommandDescr{command, envVars, timeout, workingDir, tolerateError} = do
   origDir <- getCurrentDirectory
   case workingDir of
@@ -151,10 +163,19 @@ measureProcess (LineHarvester harvest)
 
 -- | A simpler and SINGLE-THREADED alternative to `measureProcess`.
 --   This is part of the process of trying to debug the HSBencher zombie state (Issue #32).
-measureProcessDBG :: LineHarvester -- ^ Stack of harvesters
+measureProcessDBG :: Maybe CPUAffinity
+                  -> LineHarvester -- ^ Stack of harvesters
                   -> CommandDescr
                   -> IO ([B.ByteString], RunResult)
-measureProcessDBG (LineHarvester harvest)
+
+measureProcessDBG (Just aff) hrv descr =
+  -- The way we do things here is we set it before launching the
+  -- subprocess and we don't worry about unsetting it.  The child
+  -- process will inherit the affinity.
+  do setCPUAffinity aff 
+     measureProcessDBG Nothing hrv descr
+                  
+measureProcessDBG Nothing (LineHarvester harvest)
                CommandDescr{command, envVars, timeout, workingDir, tolerateError} = do
   curEnv <- getEnvironment
   -- Create the subprocess:
@@ -212,6 +233,55 @@ data ProcessEvt = ErrLine B.ByteString
                 | ProcessClosed
                 | TimerFire 
   deriving (Show,Eq,Read)
+
+-------------------------------------------------------------------
+-- Affinity
+-------------------------------------------------------------------
+
+-- | Set the affinity of the *current* process.
+setCPUAffinity :: CPUAffinity -> IO ()
+setCPUAffinity aff = do
+  pid <- getProcessID
+  -- We use readProcess to error out if there is a non-zero exit code:
+  dump <- readProcess "numactl" ["--hardware"] []
+  let filt0 = filter (L.isInfixOf "cpus:") (lines dump)
+      cpusets = [ rst | ("node":_:"cpus:":rst) <- map words filt0 ]
+      numDomains = length cpusets
+      allCPUs = concat cpusets
+  hPutStrLn stderr $ " [hsbencher] numactl found  "++show numDomains++
+            " NUMA domains: "++show (map (map readInt) cpusets)
+--  __fin  "numactl --hardware | grep cpus:"
+  let assertLen n l
+        | length l == n = l
+        | otherwise = error $ "setCPUAffinity: requested "++show n
+                             ++" cpus, only got "++show (length l)
+      subset = case aff of
+                Default  -> concat cpusets
+                Packed n -> assertLen n $ take n (concat cpusets)
+                SpreadOut n -> assertLen n $ 
+                  let (q,r) = n `quotRem` numDomains
+                      frsts = concat $ map (take q) cpusets
+                      leftover = S.toList (S.difference (S.fromList allCPUs) (S.fromList frsts))
+                  in frsts ++ take r leftover
+
+  case subset of
+    [] -> error "setCPUAffinity: internal error: zero cpus selected."
+    _  -> do 
+      let cmd = ("taskset -pc "++L.intercalate "," subset++" "++show pid)
+      hPutStrLn stderr $ " [hsbencher] Attempting to set CPU affinity: "++cmd
+      cde <- system cmd
+      -- TODO: Having problems with hyperthreading.  Read back the
+      -- affinity set and make sure it MATCHES!      
+      case cde of
+        ExitSuccess -> return ()
+        ExitFailure c -> error $ "setCPUAffinity: taskset command returned error code: "++show c
+
+-- TODO: parse strings like 0-3,10 or parse the hex representation
+-- parse taskset  
+
+readInt :: String -> Int
+readInt = read
+
 
 -------------------------------------------------------------------
 -- Hacks for looking for particular bits of text in process output:
@@ -306,10 +376,6 @@ timeOutStream time = do
          return$ Just ()
   Strm.take 1 s1
 
-
-orMaybe :: Maybe a -> Maybe a -> Maybe a 
-orMaybe Nothing x  = x
-orMaybe x@(Just _) _ = x 
 
 -- | This makes the EOS into an /explicit/, penultimate message. This way it survives
 -- `concurrentMerge`.  It represents this end of stream by Nothing, but beware the

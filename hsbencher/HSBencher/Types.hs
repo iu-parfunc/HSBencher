@@ -28,7 +28,7 @@ module HSBencher.Types
          -- * Benchmark configuration spaces
          -- | Describe how many different ways you want to run your
          -- benchmarks.           
-         BenchSpace(..), ParamSetting(..),
+         BenchSpace(..), ParamSetting(..), CPUAffinity(..),
          enumerateBenchSpace, compileOptsOnly, isCompileTime,
          toCompileFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
@@ -317,6 +317,8 @@ enumerateBenchSpace bs =
       [ c++r | c <- confs
              , r <- loop tl ]
 
+-- TODO: We need to have a "filterBenchSpace" for filtration on the dynamic options. See issue #50 .
+
 -- | Is it a setting that affects compile time?
 isCompileTime :: ParamSetting -> Bool
 isCompileTime CompileParam{} = True
@@ -324,6 +326,7 @@ isCompileTime CmdPath     {} = True
 isCompileTime RuntimeParam{} = False
 isCompileTime RuntimeArg{}   = False
 isCompileTime RuntimeEnv  {} = False
+isCompileTime CPUSet      {} = False
 
 -- | Extract the parameters that affect the compile-time arguments.
 toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
@@ -381,8 +384,13 @@ compileOptsOnly x =
    mayb (Or  []) = Nothing
    mayb x        = Just x
 
+test1 :: BenchSpace ()
 test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32])
+
+test2 :: BenchSpace ()
 test2 = Or$ map (Set () . RuntimeParam . ("-A"++)) ["1M", "2M"]
+
+test3 :: BenchSpace ()
 test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
@@ -396,10 +404,19 @@ data ParamSetting
                                --   For now Env Vars ONLY affect runtime.
   | CmdPath      String String -- ^ Takes CMD PATH, and establishes a benchmark-private setting to use PATH for CMD.
                                --   For example `CmdPath "ghc" "ghc-7.6.3"`.
+  | CPUSet  CPUAffinity -- ^ Set the cpu affinity in a particular way before launching the benchmark process.
+    
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
 -- | TimeOut      Double        -- ^ Set the timeout for this benchmark.
  deriving (Show, Eq, Read, Ord, Generic)
+
+data CPUAffinity = Packed    Int -- ^ Takes a number of cores, picks that many packed into as few
+                                 -- NUMA domains as possible.
+                 | SpreadOut Int -- ^ Takes a number of cores, picks that many spread over as many
+                                 -- NUMA domains as possible.
+                 | Default
+   deriving (Show, Eq, Read, Ord, Generic)
 
 ----------------------------------------------------------------------------------------------------
 -- Subprocesses and system commands
@@ -458,6 +475,7 @@ data SubProcess =
   , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
   }
 
+instance Out CPUAffinity
 instance Out ParamSetting
 instance Out FilePredicate
 instance Out DefaultParamMeaning
