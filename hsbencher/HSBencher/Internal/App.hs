@@ -200,7 +200,7 @@ runA_gatherContext testPath cmdargs runconfig = do
 
 ------------------------------------------------------------
 runB_runTrials :: [String] -> Maybe Double -> BuildResult 
-               -> [(a, ParamSetting)] -> ReaderT Config IO (Int,[RunResult])
+               -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO (Int,[RunResult])
 runB_runTrials fullargs benchTimeOut bldres runconfig = do 
     Config{ retryFailed, trials } <- ask 
     let retryBudget = fromMaybe 0 retryFailed
@@ -274,21 +274,24 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
              Config{ retryFailed } <- ask 
              trialLoop (ind+1) trials (fromMaybe 0 retryFailed) retryAcc (this:acc)
 
-getAffinity :: [(t, ParamSetting)] -> Maybe CPUAffinity
+getAffinity :: [(DefaultParamMeaning, ParamSetting)] -> Maybe (Int, CPUAffinity)
 getAffinity cfg = case [ aff | (_, CPUSet aff) <- cfg ] of
                     []  -> Nothing
-                    [x] -> Just x
+                    [x] -> Just (getNumThreads cfg, x)
                     ls  -> error$"hsbencher: got more than one CPUAffinity setting: "++show ls
+
+getNumThreads :: [(DefaultParamMeaning, ParamSetting)] -> Int
+getNumThreads = foldl (\ acc (x,_) ->
+                           case x of
+                             Threads n -> n
+                             _         -> acc)
+                   0 
 
 ------------------------------------------------------------
 runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> Maybe String 
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
 runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig = do
-  let numthreads = foldl (\ acc (x,_) ->
-                           case x of
-                             Threads n -> n
-                             _         -> acc)
-                   0 runconfig
+  let numthreads = getNumThreads runconfig 
       sched      = foldl (\ acc (x,_) ->
                            case x of
                              Variant s -> s

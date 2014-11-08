@@ -423,10 +423,10 @@ data ParamSetting
 -- | TimeOut      Double        -- ^ Set the timeout for this benchmark.
  deriving (Show, Eq, Read, Ord, Generic)
 
-data CPUAffinity = Packed    Int -- ^ Takes a number of cores, picks that many packed into as few
-                                 -- NUMA domains as possible.
-                 | SpreadOut Int -- ^ Takes a number of cores, picks that many spread over as many
-                                 -- NUMA domains as possible.
+data CPUAffinity = Packed    -- ^ Picks cores packed into as few
+                             -- NUMA domains as possible.
+                 | SpreadOut -- ^ Picks cores spread over as many
+                             -- NUMA domains as possible.
                  | Default
    deriving (Show, Eq, Read, Ord, Generic)
 

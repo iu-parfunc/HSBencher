@@ -57,7 +57,7 @@ import Prelude hiding (fail)
 --
 -- This procedure is currently not threadsafe, because it changes the current working
 -- directory.
-measureProcess :: Maybe CPUAffinity
+measureProcess :: Maybe (Int,CPUAffinity)
                -> LineHarvester -- ^ Stack of harvesters
                -> CommandDescr
                -> IO SubProcess
@@ -163,7 +163,7 @@ measureProcess Nothing (LineHarvester harvest)
 
 -- | A simpler and SINGLE-THREADED alternative to `measureProcess`.
 --   This is part of the process of trying to debug the HSBencher zombie state (Issue #32).
-measureProcessDBG :: Maybe CPUAffinity
+measureProcessDBG :: Maybe (Int,CPUAffinity)
                   -> LineHarvester -- ^ Stack of harvesters
                   -> CommandDescr
                   -> IO ([B.ByteString], RunResult)
@@ -239,8 +239,8 @@ data ProcessEvt = ErrLine B.ByteString
 -------------------------------------------------------------------
 
 -- | Set the affinity of the *current* process.
-setCPUAffinity :: CPUAffinity -> IO ()
-setCPUAffinity aff = do
+setCPUAffinity :: (Int,CPUAffinity) -> IO ()
+setCPUAffinity (numthreads,aff) = do
   pid <- getProcessID
   -- We use readProcess to error out if there is a non-zero exit code:
   dump <- readProcess "numactl" ["--hardware"] []
@@ -257,9 +257,9 @@ setCPUAffinity aff = do
                              ++" cpus, only got "++show (length l)
       subset = case aff of
                 Default  -> concat cpusets
-                Packed n -> assertLen n $ take n (concat cpusets)
-                SpreadOut n -> assertLen n $ 
-                  let (q,r) = n `quotRem` numDomains
+                Packed   -> assertLen numthreads $ take numthreads (concat cpusets)
+                SpreadOut -> assertLen numthreads $ 
+                  let (q,r) = numthreads `quotRem` numDomains
                       frsts = concat $ map (take q) cpusets
                       leftover = S.toList (S.difference (S.fromList allCPUs) (S.fromList frsts))
                   in frsts ++ take r leftover
