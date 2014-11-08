@@ -402,7 +402,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
 -- | Write the results header out stdout and to disk.
 printBenchrunHeader :: BenchM ()
 printBenchrunHeader = do
-  Config{trials, maxthreads, pathRegistry, 
+  Config{trials, maxthreads, pathRegistry, defTopology,
          logOut, resultsOut, stdOut, benchversion, shortrun, gitInfo=(branch,revision,depth) } <- ask
   liftIO $ do   
 --    let (benchfile, ver) = benchversion
@@ -413,6 +413,7 @@ printBenchrunHeader = do
              , e$ "# `uname -a`" 
              , e$ "# Ran by: `whoami` " 
              , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
+             , e$ "# Default topology: "++defTopology
              , e$ "# "                                                                
              , e$ "# Running each test for "++show trials++" trial(s)."
 --             , e$ "# Benchmarks_File: " ++ benchfile
