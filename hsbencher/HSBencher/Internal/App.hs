@@ -25,6 +25,7 @@ import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import Data.IORef
 import Data.List (intercalate, sortBy, intersperse, isInfixOf)
+import qualified Data.List as L
 import qualified Data.Map as M
 import Data.Maybe (isJust, fromJust, fromMaybe)
 import Data.Version (versionBranch)
@@ -219,11 +220,7 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
                        catch act $ \ (e::SomeException) -> 
                           printf $ "WARNING! user-specified cleanup action threw an exception:\n  "++show e++"\n"
     let envVars = toEnvVars  runconfig
-
-    let affinity = case [ aff | (_, CPUSet aff) <- runconfig ] of
-                     []  -> Nothing
-                     [x] -> Just x
-                     ls  -> error$"hsbencher: got more than one CPUAffinity setting: "++show ls
+    let affinity = getAffinity runconfig 
     
     let doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
@@ -277,6 +274,12 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
              Config{ retryFailed } <- ask 
              trialLoop (ind+1) trials (fromMaybe 0 retryFailed) retryAcc (this:acc)
 
+getAffinity :: [(t, ParamSetting)] -> Maybe CPUAffinity
+getAffinity cfg = case [ aff | (_, CPUSet aff) <- cfg ] of
+                    []  -> Nothing
+                    [x] -> Just x
+                    ls  -> error$"hsbencher: got more than one CPUAffinity setting: "++show ls
+
 ------------------------------------------------------------
 runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> Maybe String 
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
@@ -302,6 +305,8 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
   let exitCheck = when (any isError nruns && not keepgoing) $ do 
                     log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
                     liftIO exitFailure
+                    
+  -- FIXME: this old output format can be factored out into a plugin or discarded:
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
@@ -347,6 +352,8 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
                                log "  Zeroing those that did not report."
                                return $ unwords (map (show . fromMaybe 0) jittimes0)
 
+      let affinity = getAffinity runconfig 
+
       Config{ trials } <- ask 
       let result =
             emptyBenchmarkResult
@@ -368,6 +375,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
             , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials
+            , _TOPOLOGY      =  show affinity
             , _RETRIES       =  retries
                                 -- Should the user specify how the
                                 -- results over many goodruns are reduced ?
@@ -620,8 +628,12 @@ defaultMainModifyConfig modConfig = do
                                           )
                                           patterns)
                                     (benchlist conf3)
-  let conf4@Config{benchlist} = conf3{benchlist=cutlist}
+  let conf4@Config{extraParams} = conf3{benchlist=cutlist}
 
+  -- Finally, put the extra Params right into the benchmark config
+  -- spaces at the last minute:
+  let conf5@Config{benchlist} = L.foldr andAddParam conf4 extraParams
+    
   ------------------------------------------------------------
   rootDir <- getCurrentDirectory  
   runReaderT 
@@ -713,8 +725,15 @@ defaultMainModifyConfig modConfig = do
         else do
         --------------------------------------------------------------------------------
         -- Serial version:
-          -- TODO: make this a foldlM:
-          let allruns = map (enumerateBenchSpace . configs) benchlist
+         -- TODO: make this a foldlM:
+
+          -- Config{extraParams} <- ask
+          -- let addExtras :: [(DefaultParamMeaning,ParamSetting)] -> [(DefaultParamMeaning,ParamSetting)]
+          --     addExtras ls = (map (NoMeaning,) extraParams) ++ ls
+          -- let allruns :: [[[(DefaultParamMeaning,ParamSetting)]]]
+          --     allruns = map (map addExtras . enumerateBenchSpace . configs) benchlist
+          let allruns :: [[[(DefaultParamMeaning,ParamSetting)]]]
+              allruns = map (enumerateBenchSpace . configs) benchlist
               allrunsLens = map length allruns
               totalruns = sum allrunsLens
           let 
@@ -806,7 +825,7 @@ defaultMainModifyConfig modConfig = do
         log$ "--------------------------------------------------------------------------------"
 	liftIO$ exitSuccess
     )
-    conf4
+    conf5
 
 
 -- Several different options for how to display output in parallel:

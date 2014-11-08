@@ -183,6 +183,7 @@ type BenchM a = ReaderT Config IO a
 -- structure.  You shouldn't really use it.
 data Config = Config 
  { benchlist      :: [Benchmark DefaultParamMeaning]
+ , extraParams    :: [ParamSetting] -- ^ Extra parameter settings to fold into EVERY benchmark we run.
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?
                      -- In some upload backends this is the name of the dataset or table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)

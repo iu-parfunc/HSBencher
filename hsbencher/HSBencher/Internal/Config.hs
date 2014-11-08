@@ -151,6 +151,7 @@ augmentResultWithConfig Config{..} base = do
                 True  -> runLines "lspci"
                 False -> return []
   whos     <- runLines "who"
+  
   let newRunID = (hostname ++ "_" ++ show startTime)
   let (branch,revision,depth) = gitInfo      
   return $
@@ -168,7 +169,9 @@ augmentResultWithConfig Config{..} base = do
     , _BENCH_VERSION = show$ snd benchversion
     , _BENCH_FILE    = fst benchversion
     , _UNAME         = uname
-    , _TOPOLOGY      = defTopology -- FIXME: need a "TOPOLOGY:" harvester.
+    , _TOPOLOGY      = if _TOPOLOGY base == ""
+                       then defTopology -- FIXME: need a "TOPOLOGY:" harvester.
+                       else _TOPOLOGY base
     , _LSPCI         = unlines lspci
     , _GIT_BRANCH    = branch   
     , _GIT_HASH      = revision 
@@ -253,6 +256,7 @@ getConfig cmd_line_options benches = do
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
            , benchlist      = benches
+           , extraParams    = []
 	   , benchversion   = ("",0)
 	   , maxthreads     = maxthreads
 --	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
@@ -292,7 +296,7 @@ getConfig cmd_line_options benches = do
                                       (n,_):_ | n >= 1    -> Just n
                                               | otherwise -> error$ "--skipto must be positive: "++s
                                       [] -> error$ "--skipto given bad argument: "++s }
-      doFlag (ExtraParam p) r = andAddParam p r
+      doFlag (ExtraParam p) r = r { extraParams = p : extraParams r }
   
       doFlag (RunOnly n) r = r { runOnly= Just n }
       doFlag (RetryFailed n) r = r { retryFailed= Just n }
