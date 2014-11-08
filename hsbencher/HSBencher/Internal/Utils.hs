@@ -142,7 +142,7 @@ runLines cmd = do
   return (lines str)
 
 -- | Runs a command through the OS shell and returns the first line of
--- output.
+-- output. (Ignore exit code and stderr.)
 runSL :: String -> IO String
 runSL cmd = do
   lns <- runLines cmd

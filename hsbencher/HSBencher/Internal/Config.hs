@@ -157,6 +157,7 @@ augmentResultWithConfig Config{..} base = do
     , _BENCH_VERSION = show$ snd benchversion
     , _BENCH_FILE    = fst benchversion
     , _UNAME         = uname
+    , _TOPOLOGY      = defTopology -- FIXME: need a "TOPOLOGY:" harvester.
     , _LSPCI         = unlines lspci
     , _GIT_BRANCH    = branch   
     , _GIT_HASH      = revision 
@@ -198,9 +199,15 @@ getConfig cmd_line_options benches = do
   case get "GENERIC" "" of 
     "" -> return ()
     s  -> error$ "GENERIC env variable not handled yet.  Set to: " ++ show s
-  
+
+  defTopology <- case get "WHICHCORES" "" of
+                   "" -> runSL "taskset -pc $$"
+                   s  -> return s
+
   maxthreads <- getNumProcessors
 
+  -- RRN: Note this is the old results format, needs to be factored
+  -- into a plugin or eliminated:
   backupResults resultsFile logFile
 
   rhnd <- openFile resultsFile WriteMode 
@@ -214,12 +221,12 @@ getConfig cmd_line_options benches = do
   stdOut     <- Strm.unlines Strm.stdout
 
   let -- Messy way to extract the benchlist version:
-      -- ver = case filter (isInfixOf "ersion") (lines benchstr) of 
+      -- ver = case filter (isInfixOf "ersion") (liines benchstr) of 
       --         (h:_t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
       --         []    -> 0
       -- This is our starting point BEFORE processing command line flags:
       base_conf = Config 
-           { hostname, startTime
+           { hostname, startTime, defTopology
            , shortrun       = False
            , doClean        = True
            , doLSPCI        = False

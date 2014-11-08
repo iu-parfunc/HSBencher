@@ -205,6 +205,8 @@ data Config = Config
  , pathRegistry   :: PathRegistry -- ^ Paths to executables
  , hostname       :: String  -- ^ Manually override the machine hostname.  
                              --   Defaults to the output of the `hostname` command.
+ , defTopology    :: String -- ^ The default for the TOPOLOGY field, if a benchmark does not specify.
+                            --   Usually, what cores we run on is fixed for a whole run of hsbencher.
  , startTime      :: Integer -- ^ Seconds since Epoch. 
  , resultsFile    :: String -- ^ Where to put timing results.
  , logFile        :: String -- ^ Where to put full, verbose testing output.
@@ -539,7 +541,7 @@ data BenchmarkResult =
   , _BENCH_FILE ::  String    
   , _UNAME      :: String     -- ^ Information about the host machine that ran the benchmark.
   , _PROCESSOR  :: String
-  , _TOPOLOGY   :: String     -- todo, output of lstopo
+  , _TOPOLOGY   :: String     -- ^ Some freeform indication of what cores we ran on
   , _GIT_BRANCH :: String     -- ^ Which branch was the benchmark run from
   , _GIT_HASH   :: String     -- ^ Which exact revision of the code was run.
   , _GIT_DEPTH  :: Int        -- ^ How many git commits deep was that rev (rough proxy for age)
