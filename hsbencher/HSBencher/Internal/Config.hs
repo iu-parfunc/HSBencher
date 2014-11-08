@@ -51,8 +51,15 @@ data Flag = ParBench
           | ShowHelp | ShowVersion | ShowBenchmarks
           | DisablePlug String
           | AddLSPCI
+          | ExtraParam ParamSetting
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
+
+readParam :: String -> ParamSetting
+readParam s =
+  case reads s of
+    []  -> error$ "Could not read this string as a ParamSetting: "++show s
+    (x,_):_ -> x 
 
 -- | Command line options.
 core_cli_options :: (String, [OptDescr Flag])
@@ -95,6 +102,10 @@ core_cli_options =
         "Skip ahead to a specific point in the configuration space."
       , Option [] ["runonly"] (ReqArg (mkPosIntFlag RunOnly) "NUM")
         "Run only NUM configurations, from wherever we start."
+
+      , Option [] ["param"] (ReqArg (ExtraParam . readParam) "STR")
+        "Parse STR as a ParamSetting and AND it into the param config space."
+
       , Option [] ["retry"] (ReqArg (mkPosIntFlag RetryFailed) "NUM")
         "Counter nondeterminism while debugging.  Retry failed tests NUM times."
 
@@ -281,6 +292,8 @@ getConfig cmd_line_options benches = do
                                       (n,_):_ | n >= 1    -> Just n
                                               | otherwise -> error$ "--skipto must be positive: "++s
                                       [] -> error$ "--skipto given bad argument: "++s }
+      doFlag (ExtraParam p) r = andAddParam p r
+  
       doFlag (RunOnly n) r = r { runOnly= Just n }
       doFlag (RetryFailed n) r = r { retryFailed= Just n }
       doFlag (RunID s) r = r { runID= Just s }

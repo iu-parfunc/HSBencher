@@ -29,7 +29,8 @@ module HSBencher.Types
          -- | Describe how many different ways you want to run your
          -- benchmarks.           
          BenchSpace(..), ParamSetting(..), CPUAffinity(..),
-         enumerateBenchSpace, compileOptsOnly, isCompileTime,
+         enumerateBenchSpace, andAddParam, 
+         compileOptsOnly, isCompileTime,
          toCompileFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
@@ -316,6 +317,16 @@ enumerateBenchSpace bs =
       let confs = enumerateBenchSpace hd in
       [ c++r | c <- confs
              , r <- loop tl ]
+
+
+-- | Modify a config by `And`ing in an extra param setting to *every* `configs` field of *every*
+-- benchmark in the global `Config`.
+andAddParam :: ParamSetting -> Config -> Config
+andAddParam param cfg =
+  cfg { benchlist = map add (benchlist cfg) }
+ where
+   add bench@Benchmark{configs} =
+     bench { configs = And [Set NoMeaning param, configs] }
 
 -- TODO: We need to have a "filterBenchSpace" for filtration on the dynamic options. See issue #50 .
 
