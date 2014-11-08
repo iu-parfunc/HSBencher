@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.15.2
+version:             1.16
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -48,6 +48,7 @@ version:             1.15.2
 -- 1.15     : Add systemCleaner field to Config
 -- 1.15.1   : Switch off lspci unless we ask for it.
 -- 1.15.2   : populate TOPOLOGY based on WHICHCORES or taskset
+-- 1.16     : Add CPUSet/CPUAffinity ParamSetting
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 

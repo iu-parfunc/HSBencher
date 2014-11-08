@@ -219,22 +219,28 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
                        catch act $ \ (e::SomeException) -> 
                           printf $ "WARNING! user-specified cleanup action threw an exception:\n  "++show e++"\n"
     let envVars = toEnvVars  runconfig
+
+    let affinity = case [ aff | (_, CPUSet aff) <- runconfig ] of
+                     []  -> Nothing
+                     [x] -> Just x
+                     ls  -> error$"hsbencher: got more than one CPUAffinity setting: "++show ls
+    
     let doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
-            lift$ measureProcess Nothing harvesters cmddescr
+            lift$ measureProcess affinity harvesters cmddescr
           err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
           both <- lift$ Strm.concurrentMerge [process_out, err2]
           mv   <- echoStream (not shortrun) both
           x    <- lift wait
           lift$ A.wait mv
           logT$ " Subprocess finished and echo thread done.\n"
-          return x
+          return x    
 
     -- I'm having problems currently [2014.07.04], where after about
     -- 50 benchmarks (* 3 trials), all runs fail but there is NO
     -- echo'd output. So here we try something simpler as a test.
     let doMeasure2 cmddescr = do
-          (lines,result) <- lift$ measureProcessDBG Nothing harvesters cmddescr 
+          (lines,result) <- lift$ measureProcessDBG affinity harvesters cmddescr 
           mapM_ (logT . B.unpack) lines 
           logT $ "Subprocess completed with "++show(length lines)++" of output."
           return result
