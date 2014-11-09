@@ -52,6 +52,7 @@ data Flag = ParBench
           | DisablePlug String
           | AddLSPCI
           | ExtraParam ParamSetting
+          | SetAffinityPacked | SetAffinitySpreadOut
   deriving (Show)
 --  deriving (Eq,Ord,Show,Read)
 
@@ -105,6 +106,12 @@ core_cli_options =
 
       , Option [] ["param"] (ReqArg (ExtraParam . readParam) "STR")
         "Parse STR as a ParamSetting and AND it into the param config space."
+
+      , Option [] ["packed"] (NoArg SetAffinityPacked)
+        "Squeeze into fewer NUMA domains: adds CPUSet Packed to all ParamSetting's"
+
+      , Option [] ["spreadout"] (NoArg SetAffinitySpreadOut)
+        "Spread across all NUMA domains: adds CPUSet SpreadOut to all ParamSetting's"
 
       , Option [] ["retry"] (ReqArg (mkPosIntFlag RetryFailed) "NUM")
         "Counter nondeterminism while debugging.  Retry failed tests NUM times."
@@ -297,6 +304,8 @@ getConfig cmd_line_options benches = do
                                               | otherwise -> error$ "--skipto must be positive: "++s
                                       [] -> error$ "--skipto given bad argument: "++s }
       doFlag (ExtraParam p) r = r { extraParams = p : extraParams r }
+      doFlag SetAffinitySpreadOut r = r { extraParams = CPUSet SpreadOut : extraParams r }
+      doFlag SetAffinityPacked    r = r { extraParams = CPUSet Packed    : extraParams r }
   
       doFlag (RunOnly n) r = r { runOnly= Just n }
       doFlag (RetryFailed n) r = r { retryFailed= Just n }
