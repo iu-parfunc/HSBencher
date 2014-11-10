@@ -87,15 +87,22 @@ doupload confs file = do
     Right [] -> error $ "Bad CSV file, not even a header line: "++file
     Right (hdr:rst) -> do
       checkHeader hdr
-      mapM_ (uprow confs) (map (zip hdr) rst)
+      let len = length rst
+      putStrLn$ " ["++this_progname++"] Beginning upload of "++show len++" rows of CSV data..."  
+      mapM_ (uprow len confs) (zip [1..] (map (zip hdr) rst))
 
 checkHeader :: Record -> IO ()
 checkHeader hdr
   | L.elem "PROGNAME" hdr = return ()
   | otherwise = error $ "Bad HEADER line on CSV file: "++show hdr
 
-uprow :: Config -> [(String,String)] -> IO ()
-uprow gconf tuple  = do
+-- TODO: Add checking to see if the rows are already there.  However
+-- that would be expensive if we do one query per row.  The ideal
+-- implementation would examine the structure of the rowset and make
+-- fewer queries.
+uprow :: Int -> Config -> (Int,[(String,String)]) -> IO ()
+uprow total gconf (ix,tuple)  = do
+  putStrLn $ "\n\n ["++this_progname++"] Begin upload of row "++show ix++" of "++show total
+  putStrLn "================================================================================"
   let br  = tupleToResult tuple
---  br' <- augmentResultWithConfig gconf br
   runReaderT (uploadBenchResult br) gconf
