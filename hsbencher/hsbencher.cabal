@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.17.1
+version:             1.17.2
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -51,6 +51,7 @@ version:             1.17.1
 -- 1.16     : Add CPUSet/CPUAffinity ParamSetting
 -- 1.17     : Add --param command line arg
 -- 1.17.1   : And --packed and --spreadout
+-- 1.17.2   : Add tupleToResult
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 

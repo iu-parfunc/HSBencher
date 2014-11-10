@@ -43,7 +43,7 @@ module HSBencher.Types
          SubProcess(..), LineHarvester(..), orHarvest,
 
          -- * Benchmark outputs for upload
-         BenchmarkResult(..), emptyBenchmarkResult, resultToTuple,
+         BenchmarkResult(..), emptyBenchmarkResult, resultToTuple, tupleToResult,
 --         Uploader(..), Plugin(..),
          SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
 
@@ -65,6 +65,7 @@ import Data.Maybe (fromMaybe)
 import Data.Dynamic
 import Data.Default (Default(..))
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.Maybe (catMaybes)
 import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.FilePath
@@ -677,6 +678,103 @@ resultToTuple r =
   , ("RETRIES", show (_RETRIES r))
   ] ++ map (\ (t,s) -> (t, show s)) (_CUSTOM r)
 
+-- | Perform some validation and then convert raw CSV data to a BenchmarkResult.
+tupleToResult :: [(String,String)] -> BenchmarkResult
+tupleToResult tuple = BenchmarkResult
+  { _PROGNAME = get "PROGNAME"
+  , _VARIANT  = get "VARIANT" 
+  , _ARGS     = words (get "ARGS")
+  , _HOSTNAME = get "HOSTNAME"
+  , _RUNID    = get "RUNID"
+  , _CI_BUILD_ID = get "CI_BUILD_ID"
+  , _THREADS  = s2i "THREADS" (try "THREADS" "0")
+  , _DATETIME = get "DATETIME"
+  , _MINTIME    =  s2d "MINTIME"    (try "MINTIME" "0.0")
+  , _MEDIANTIME =  s2d "MEDIANTIME" (try "MEDIANTIME" "0.0")
+  , _MAXTIME    =  s2d "MAXTIME"    (try "MAXTIME" "0.0")
+  , _MINTIME_PRODUCTIVITY    = (tryMaybDbl "MINTIME_PRODUCTIVITY")
+  , _MEDIANTIME_PRODUCTIVITY = (tryMaybDbl "MEDIANTIME_PRODUCTIVITY")
+  , _MAXTIME_PRODUCTIVITY    = (tryMaybDbl "MAXTIME_PRODUCTIVITY")
+  , _TRIALS        = s2i "TRIALS" (get "TRIALS")
+
+  , _ALLTIMES      = get "ALLTIMES"
+  , _COMPILER      = get "COMPILER"
+  , _COMPILE_FLAGS = get "COMPILE_FLAGS"
+  , _RUNTIME_FLAGS = get "RUNTIME_FLAGS"
+  , _ENV_VARS      = get "ENV_VARS"
+  , _BENCH_VERSION = get "BENCH_VERSION"
+  , _BENCH_FILE = get "BENCH_FILE"
+  , _UNAME      = get "UNAME"
+  , _PROCESSOR  = get "PROCESSOR"
+  , _TOPOLOGY   = get "TOPOLOGY"
+  , _GIT_BRANCH = get "GIT_BRANCH"
+  , _GIT_HASH   = get "GIT_HASH"
+  , _GIT_DEPTH  = s2i "GIT_DEPTH" (get "GIT_DEPTH")
+  , _WHO        = get "WHO"
+  , _ETC_ISSUE  = get "ETC_ISSUE"
+  , _LSPCI      = get "LSPCI"
+  , _FULL_LOG   = get "FULL_LOG"
+  , _ALLJITTIMES = get "ALLJITTIMES"
+  , _RETRIES     = s2i "RETRIES" (get "RETRIES")
+                     
+  -- , _ALLTIMES      = try "ALLTIMES" ""
+  -- , _COMPILER      = try "COMPILER" ""
+  -- , _COMPILE_FLAGS = try "COMPILE_FLAGS" ""
+  -- , _RUNTIME_FLAGS = try "RUNTIME_FLAGS" ""
+  -- , _ENV_VARS      = try "ENV_VARS" ""
+  -- , _BENCH_VERSION = try "BENCH_VERSION" ""
+  -- , _BENCH_FILE = try "BENCH_FILE" ""
+  -- , _UNAME      = try "UNAME" ""
+  -- , _PROCESSOR  = try "PROCESSOR" ""
+  -- , _TOPOLOGY   = try "TOPOLOGY" ""
+  -- , _GIT_BRANCH = try "GIT_BRANCH" ""
+  -- , _GIT_HASH   = try "GIT_HASH" ""
+  -- , _GIT_DEPTH  = s2i (try "GIT_DEPTH" "-1")
+  -- , _WHO        = try "WHO" ""
+  -- , _ETC_ISSUE  = try "ETC_ISSUE" ""
+  -- , _LSPCI      = try "LSPCI" ""
+  -- , _FULL_LOG   = try "FULL_LOG" ""
+  -- , _ALLJITTIMES = try "ALLJITTIMES" ""
+  -- , _RETRIES = s2i (try "RETRIES" "0")
+               
+  , _MEDIANTIME_ALLOCRATE    = Nothing
+  , _MEDIANTIME_MEMFOOTPRINT = Nothing
+  , _CUSTOM = map parsecustom custom
+  }
+  where
+    -- This is a hack where we simply see if it looks like a double or int:
+    parsecustom (k,s) =
+      case reads s of
+        ((x,_):_)        -> (k, IntResult x)
+        [] -> case reads s of
+               ((x,_):_) -> (k, DoubleResult x)
+               []        -> (k,StringResult s)
+    
+    custom = filter (\(k,_) -> not (S.member k schema)) tuple 
+    
+    schema = S.fromList (map fst (resultToTuple emptyBenchmarkResult))
+    
+    s2i :: String -> String -> Int
+    s2i who s = case reads s of
+                  [] -> error$ "tupleToResult: expected "++who++" field to contain a parsable Int, got: "++show s
+                  ((x,_):_) -> x
+    s2d :: String -> String -> Double
+    s2d who s = case reads s of
+                  [] -> error$ "tupleToResult: expected "++who++" field to contain a parsable Double, got: "++show s
+                  ((x,_):_) -> x
+    tupleM = M.fromList tuple
+    tryMaybDbl key = case M.lookup key tupleM of
+                       Nothing -> Nothing
+                       Just "" -> Nothing
+                       Just x  -> Just (s2d key x)
+    
+    try key df = case M.lookup key tupleM of
+                   Nothing -> df
+                   Just "" -> df
+                   Just x  -> x
+    get key = case M.lookup key tupleM of
+                Nothing -> error$"tupleToResult: mandatory key missing from tuple: "++key
+                Just x  -> x
 
 --------------------------------------------------------------------------------
 -- Generic uploader interface
