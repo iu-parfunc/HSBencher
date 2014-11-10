@@ -175,6 +175,11 @@ getTableId auth tablename = do
 
 
 
+-- | Upload the raw data, which had better be in the right format.
+-- uploadRawTuple :: [(String,String)] -> BenchM ()
+-- uploadRawTuple tuple = do
+  
+
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult  br@BenchmarkResult{..} = do
