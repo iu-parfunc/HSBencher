@@ -222,7 +222,11 @@ getConfig cmd_line_options benches = do
     s  -> error$ "GENERIC env variable not handled yet.  Set to: " ++ show s
 
   defTopology <- case get "WHICHCORES" "" of
-                   "" -> runSL "taskset -pc $$"
+                   -- Taskset is not cross platform so it's ok if this fails:
+                   "" -> do l <- runLines "taskset -pc $$"
+                            case l of
+                              []    -> return ""
+                              (h:_) -> return h
                    s  -> return s
 
   maxthreads <- getNumProcessors
