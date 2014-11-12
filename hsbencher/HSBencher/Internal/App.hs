@@ -245,8 +245,8 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
           logT $ "Subprocess completed with "++show(length lines)++" of output."
           return result
 
-        -- doMeasure = doMeasure2  -- TEMP / Toggle me back later.
-        doMeasure = doMeasure1  -- TEMP / Toggle me back later.
+        doMeasure = doMeasure2  -- TEMP / Toggle me back later.
+        --doMeasure = doMeasure1  -- TEMP / Toggle me back later.
 
     this <- case bldres of
       StandAloneBinary binpath -> do
