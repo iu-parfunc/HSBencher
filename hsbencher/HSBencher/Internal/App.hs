@@ -804,6 +804,8 @@ defaultMainModifyConfig modConfig = do
 
               zippedruns = (concat$ zipWith (\ b cfs -> map (b,) cfs) benchlist allruns)
 
+          log$ " Begining execution of "++show totalcomps++" compiles and "++show totalruns++" run configs..."
+
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
           let startBoard = initBoard 1 zippedruns M.empty
           Config{skipTo, runOnly} <- ask
