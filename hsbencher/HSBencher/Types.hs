@@ -341,7 +341,7 @@ isCompileTime RuntimeArg{}   = False
 isCompileTime RuntimeEnv  {} = False
 isCompileTime CPUSet      {} = False
 
--- | Extract the parameters that affect the compile-time arguments.
+-- | Extract ALL the parameters that affect the compile-time arguments.
 toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
 toCompileFlags [] = []
 toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl

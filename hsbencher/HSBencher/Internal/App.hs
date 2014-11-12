@@ -145,6 +145,9 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
+--
+-- runconfig contains both compile time and runtime parameters.  All
+-- the params that affect this run.
 runOne :: (Int,Int) -> BuildID -> BuildResult 
        -> Benchmark DefaultParamMeaning 
        -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
@@ -375,6 +378,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
             , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
             , _RUNTIME_FLAGS =  unwords [ s | (_,RuntimeParam s) <- runconfig ]
+            , _COMPILE_FLAGS =  show (toCompileFlags runconfig)
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
             , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials
