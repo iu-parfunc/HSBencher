@@ -29,7 +29,7 @@ module HSBencher.Types
          -- | Describe how many different ways you want to run your
          -- benchmarks.           
          BenchSpace(..), ParamSetting(..), CPUAffinity(..),
-         enumerateBenchSpace, andAddParam, 
+         andAddParam, 
          compileOptsOnly, isCompileTime,
          toCompileFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
@@ -304,21 +304,6 @@ data DefaultParamMeaning
   | Variant String -- ^ Which scheduler/implementation/etc.
   | NoMeaning
  deriving (Show,Eq,Ord,Read, Generic)
-
--- | Exhaustively compute all configurations described by a benchmark configuration space.
-enumerateBenchSpace :: BenchSpace a -> [ [(a,ParamSetting)] ] 
-enumerateBenchSpace bs =
-  case bs of
-    Set m p -> [ [(m,p)] ]
-    Or ls -> concatMap enumerateBenchSpace ls
-    And ls -> loop ls
-  where
-    loop [] = [ [] ]  -- And [] => one config
-    loop [lst] = enumerateBenchSpace lst
-    loop (hd:tl) =
-      let confs = enumerateBenchSpace hd in
-      [ c++r | c <- confs
-             , r <- loop tl ]
 
 
 -- | Modify a config by `And`ing in an extra param setting to *every* `configs` field of *every*

@@ -179,6 +179,7 @@ Library
                    HSBencher.Internal.Config
                    HSBencher.Internal.Logging
                    HSBencher.Internal.Utils
+                   HSBencher.Internal.BenchSpace
                    HSBencher.Internal.MeasureProcess
   other-modules: Paths_hsbencher
   build-depends:   
