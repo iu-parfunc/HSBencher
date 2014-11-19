@@ -54,6 +54,7 @@ version:             1.18
 -- 1.17.2   : Add tupleToResult
 -- 1.18     : fix COMPILE_FLAGS upload and use 'unwords'
 -- 1.19     : Change the semantics of naked runtime args to conjunction, not disjunction.
+-- 1.19.1   : Additional change to allow filtering of benchmarks by BenchSpace as well.
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 
