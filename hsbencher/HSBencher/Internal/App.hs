@@ -624,9 +624,11 @@ defaultMainModifyConfig modConfig = do
   let cutlist = case plainargs of
                  [] -> benchlist conf3
                  patterns -> filter (\ Benchmark{target,cmdargs,progname} ->
-                                      any (\pat ->
+                                      -- [2014.11.19] Changed 'any' to all here as part of fixing issue #50:
+                                      all (\pat ->
                                             isInfixOf pat target ||
                                             isInfixOf pat (fromMaybe "" progname) ||
+                                            -- FIXME: this isn't all of the args, could be RuntimeArg:
                                             any (isInfixOf pat) cmdargs
                                           )
                                           patterns)

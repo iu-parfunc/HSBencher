@@ -345,8 +345,11 @@ isCompileTime CPUSet      {} = False
 toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
 toCompileFlags [] = []
 toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl
-toCompileFlags (_ : tl)                   =      toCompileFlags tl
-
+toCompileFlags ((_,(RuntimeParam _)) : tl)      =  toCompileFlags tl
+toCompileFlags ((_,(RuntimeArg _)) : tl)        =  toCompileFlags tl
+toCompileFlags ((_,(RuntimeEnv _1 _2)) : tl)    =  toCompileFlags tl
+toCompileFlags ((_,(CmdPath _1 _2))    : tl)    =  toCompileFlags tl
+toCompileFlags ((_,(CPUSet _)) : tl)            =  toCompileFlags tl
 
 toCmdPaths :: [(a,ParamSetting)] -> [(String,String)]
 toCmdPaths = catMaybes . map fn
@@ -418,7 +421,8 @@ data ParamSetting
   | CmdPath      String String -- ^ Takes CMD PATH, and establishes a benchmark-private setting to use PATH for CMD.
                                --   For example `CmdPath "ghc" "ghc-7.6.3"`.
   | CPUSet  CPUAffinity -- ^ Set the cpu affinity in a particular way before launching the benchmark process.
-    
+
+
 -- | Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
 -- | TimeOut      Double        -- ^ Set the timeout for this benchmark.
