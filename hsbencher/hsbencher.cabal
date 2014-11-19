@@ -52,7 +52,8 @@ version:             1.18
 -- 1.17     : Add --param command line arg
 -- 1.17.1   : And --packed and --spreadout
 -- 1.17.2   : Add tupleToResult
--- 1.18     : Change the semantics of naked runtime args to conjunction, not disjunction.
+-- 1.18     : fix COMPILE_FLAGS upload and use 'unwords'
+-- 1.19     : Change the semantics of naked runtime args to conjunction, not disjunction.
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 

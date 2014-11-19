@@ -305,7 +305,8 @@ getConfig cmd_line_options benches = do
       doFlag (SkipTo s) r = r { skipTo=
                                     case reads s of
                                       (n,_):_ | n >= 1    -> Just n
-                                              | otherwise -> error$ "--skipto must be positive: "++s
+                                              | n == 0    -> Nothing
+                                              | otherwise -> error$ "--skipto must be non-negative: "++s
                                       [] -> error$ "--skipto given bad argument: "++s }
       doFlag (ExtraParam p) r = r { extraParams = p : extraParams r }
       doFlag SetAffinitySpreadOut r = r { extraParams = CPUSet SpreadOut : extraParams r }

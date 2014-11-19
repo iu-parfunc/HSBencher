@@ -145,6 +145,9 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
 
 -- If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
+--
+-- runconfig contains both compile time and runtime parameters.  All
+-- the params that affect this run.
 runOne :: (Int,Int) -> BuildID -> BuildResult 
        -> Benchmark DefaultParamMeaning 
        -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
@@ -242,8 +245,8 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
           logT $ "Subprocess completed with "++show(length lines)++" of output."
           return result
 
-        -- doMeasure = doMeasure2  -- TEMP / Toggle me back later.
-        doMeasure = doMeasure1  -- TEMP / Toggle me back later.
+        doMeasure = doMeasure2  -- TEMP / Toggle me back later.
+        --doMeasure = doMeasure1  -- TEMP / Toggle me back later.
 
     this <- case bldres of
       StandAloneBinary binpath -> do
@@ -375,6 +378,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
             , _MEDIANTIME_MEMFOOTPRINT = getmemfootprint medianR
             , _MAXTIME_PRODUCTIVITY    = getprod maxR
             , _RUNTIME_FLAGS =  unwords [ s | (_,RuntimeParam s) <- runconfig ]
+            , _COMPILE_FLAGS =  unwords (toCompileFlags runconfig)
             , _ALLTIMES      =  unwords$ map (show . gettime)    goodruns
             , _ALLJITTIMES   =  jittimes
             , _TRIALS        =  trials
@@ -801,6 +805,8 @@ defaultMainModifyConfig modConfig = do
                     initBoard (iter+1) rest (M.insert bid elm acc)
 
               zippedruns = (concat$ zipWith (\ b cfs -> map (b,) cfs) benchlist allruns)
+
+          log$ " Begining execution of "++show totalcomps++" compiles and "++show totalruns++" run configs..."
 
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
           let startBoard = initBoard 1 zippedruns M.empty
