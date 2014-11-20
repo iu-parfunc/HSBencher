@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.19.1.1
+version:             1.20
 -- CHANGELOG:
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
@@ -55,6 +55,7 @@ version:             1.19.1.1
 -- 1.18     : fix COMPILE_FLAGS upload and use 'unwords'
 -- 1.19     : Change the semantics of naked runtime args to conjunction, not disjunction.
 -- 1.19.1   : Additional change to allow filtering of benchmarks by BenchSpace as well.
+-- 1.20     : add --bindir
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 
