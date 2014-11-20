@@ -1,22 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-} 
 
 module Main where
-
--- import Control.Monad.Reader
--- import qualified Data.Map as M
--- import Data.Time.Clock (getCurrentTime, diffUTCTime)
--- import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
--- import Data.Monoid
--- import Data.Dynamic
--- import GHC.Conc (getNumProcessors)
 import System.Environment (getArgs, getEnv, getEnvironment)
 import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
--- import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
---                   IOMode(..), BufferMode(..), hSetBuffering)
--- import qualified System.IO.Streams as Strm
--- import qualified System.IO.Streams.Concurrent as Strm
--- import qualified System.IO.Streams.Process as Strm
--- import qualified System.IO.Streams.Combinators as Strm
 
 import Data.List (isInfixOf, isPrefixOf, isSuffixOf, transpose, intersperse)
 import Data.List.Split (splitOn)
@@ -25,11 +11,6 @@ import Data.String.Utils (strip)
 import Control.Monad (unless,when)
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn)
-
--- import HSBencher.Types
--- import HSBencher.Internal.Utils
--- import HSBencher.Methods.Builtin
--- import HSBencher.Internal.MeasureProcess
 
 import HSBencher.Internal.Fusion (init,getSomething,getWithSQLQuery,ColData(..),FTValue(..))
 
@@ -44,11 +25,10 @@ import qualified Language.SQL.SimpleSQL.Syntax as SQL
 
 
 import qualified Prelude as P
-import Prelude hiding (init) 
+import Prelude hiding (init)
+import Data.List (elemIndex) 
 ---------------------------------------------------------------------------
 --
-
-
 
 {- DEVLOG
 
@@ -96,6 +76,7 @@ import Prelude hiding (init)
      hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT VARIANT, AVERAGE('MEDIANTIME') FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3' AND HOSTNAME = 'xmen' GROUP BY VARIANT" --raw --floc="Column 0" --fby="Prefix" --fstr="resampling" --sloc="Column 0" --sby="_"
 
 
+     hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT VARIANT, AVERAGE('MEDIANTIME') FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3' AND HOSTNAME = 'xmen' GROUP BY VARIANT" --raw  --sloc="Args" --sby=" "
 
 
      The FROM field allows the text "FT" which is translated into the fusiontable id
@@ -126,11 +107,11 @@ data Flag = ShowHelp | ShowVersion
 
 -- All this needs to be cleaned up when there is time to really understand this Flag stuff 
 -- Simple filters that are applied after the pulldown (refinement over the limited SQL FT capabilites)
-          | FilterLoc String      -- Readable as LocationSpec
-          | FilterBy  String      -- Readable as FilterSpec 
-          | FilterStr String      -- Just a string 
+          -- | FilterLoc String      -- Readable as LocationSpec
+          -- | FilterBy  String      -- Readable as FilterSpec 
+          -- | FilterStr String      -- Just a string 
 -- Split up
-          | SplitLoc String       -- Readable as LocationSpec
+          | SplitLoc String       -- a column identity
           | SplitBy  String       -- a character to split by
 -- GroupBy
 -- GroupBy  String       -- Readable as LocationSpec
@@ -151,8 +132,8 @@ data Error
 instance Exception Error 
 
 
-data LocationSpec = Row Int | Column Int 
-                  deriving (Eq, Ord, Show, Read )
+data LocationSpec = Row Int | Column String
+     deriving (Eq, Ord, Show, Read )
 
 data FilterSpec = Prefix | Infix | Suffix
                 deriving (Eq, Ord, Show, Read )
@@ -178,9 +159,9 @@ core_cli_options =
      , Option []     ["raw"]    (NoArg RawCSV)                 "Effortless CSV" 
 
 -- refined filtering, splitting and grouping that is applied to the resulting CSV
-     , Option []     ["floc"] (ReqArg FilterLoc "String")      "Row <N> or Column <N>"
-     , Option []     ["fby"]  (ReqArg FilterBy  "String")      "Prefix or Infix or Suffix"
-     , Option []     ["fstr"] (ReqArg FilterStr "String")      "String to match against"
+     -- , Option []     ["floc"] (ReqArg FilterLoc "String")      "Row <N> or Column <N>"
+     -- , Option []     ["fby"]  (ReqArg FilterBy  "String")      "Prefix or Infix or Suffix"
+     -- , Option []     ["fstr"] (ReqArg FilterStr "String")      "String to match against"
 
      , Option []     ["sloc"] (ReqArg SplitLoc "String")       "Row <N> or Column <N>"
      , Option []     ["sby"]  (ReqArg SplitBy  "String")       "for example _ or -"
@@ -302,10 +283,10 @@ download flags = do
   
   ---------------------------------------------------------------------------
   -- Apply refining filters
-  let csv_filtered = applyFilters flags csv_initial 
+--   let csv_filtered = applyFilters flags csv_initial 
 
-  let csv_split = applySplit flags csv_filtered 
-  
+  let csv_split = applySplit flags csv_initial 
+
   putStrLn $ printCSV $ csv_split
   where
     -- are flags valid for download ? 
@@ -464,56 +445,80 @@ inJuxHurYlem = error "The wizard is not available"
 ---------------------------------------------------------------------------
 -- FILTERING FILTERING
 
-applyFilters :: [Flag] -> [[String]] -> [[String]]
-applyFilters flags csv =
-  if filtersActive
-  then 
-    case filterLoc of
-      Row x -> applyFilterByRow x csv
-      Column x -> applyFilterByColumn x csv                  
-  else csv 
+-- applyFilters :: [Flag] -> [[String]] -> [[String]]
+-- applyFilters flags csv =
+--   if filtersActive
+--   then 
+--     case filterLoc of
+--       Row x -> applyFilterByRow x csv
+--       Column x -> applyFilterByColumn x csv                  
+--   else csv 
     
-  where
-    filtersActive = (not . null) [() | FilterLoc _ <- flags] &&
-                    (not . null) [() | FilterBy _ <- flags]  &&
-                    (not . null) [() | FilterStr _ <- flags]
-    filterLoc = head [ read x :: LocationSpec | FilterLoc x <- flags]
-    filterBy  = head [ read x :: FilterSpec   | FilterBy x <- flags]
-    filterStr = head [ str | FilterStr str <- flags] 
+--   where
+--     filtersActive = (not . null) [() | FilterLoc _ <- flags] &&
+--                     (not . null) [() | FilterBy _ <- flags]  &&
+--                     (not . null) [() | FilterStr _ <- flags]
+--     filterLoc = head [ read x :: LocationSpec | FilterLoc x <- flags]
+--     filterBy  = head [ read x :: FilterSpec   | FilterBy x <- flags]
+--     filterStr = head [ str | FilterStr str <- flags] 
 
-    applyFilterByRow x csv = transpose $ applyFilterByColumn  x $ transpose csv
-    applyFilterByColumn x csv = 
-      case filterBy of
-        Prefix   -> filter (\l -> filterStr `isPrefixOf` (l !! x))  csv
-        Infix    -> filter (\l -> filterStr `isInfixOf` (l !! x))  csv
-        Suffix  -> filter (\l -> filterStr `isSuffixOf` (l !! x))  csv
+--     applyFilterByRow x csv = transpose $ applyFilterByColumn  x $ transpose csv
+--     applyFilterByColumn x csv = 
+--       case filterBy of
+--         Prefix   -> filter (\l -> filterStr `isPrefixOf` (l !! x))  csv
+--         Infix    -> filter (\l -> filterStr `isInfixOf` (l !! x))  csv
+--         Suffix  -> filter (\l -> filterStr `isSuffixOf` (l !! x))  csv
 
 
 
 ---------------------------------------------------------------------------
 -- Splitting. one column into many
+-- What about splitting on many different columns ?
 
-applySplit :: [Flag] -> [[String]] -> [[String]]
+applySplit :: [Flag] -> [[String]] -> ([[String]])
 applySplit flags csv =
   if splitActive
   then
-    case splitLoc of
-      Row r -> error "Splitting a row is not implemented"
-      Column c -> map (applySplitByColumn c) csv
-  else csv
- where
-    splitActive = (not . null) [() | SplitLoc _ <- flags] &&
-                  (not . null) [() | SplitBy _ <- flags] 
+    case elemIndex splitLoc colNames of
+      Nothing -> error $ "There is no Column named: " ++ show splitLoc ++ " in table." 
+      Just c ->
+        let esp = extractSplitPoint c csvdata
+            esps = applySplit esp
+            (num,sane) = splitSane esps
+            splitCol = [splitLoc ++ show i | i <- [0..num-1]]
+            splitCols = take c colNames ++ splitCol ++ drop (c+1) colNames 
+            
+        in (splitCols : map (applySplitByColumn c) csvdata)
+                
     
-    splitLoc = head [ read x :: LocationSpec | SplitLoc x <- flags]
-    splitBy  = head [ x  | SplitBy x <- flags]
-
---     applyFilterByRow x csv = transpose $ applyFilterByColumn  x $ transpose csv
-    applySplitByColumn c csv =
-      let before = take c csv
-          after  = drop (c+1) csv
-          atx    = csv !! c
-      in before ++ (splitOn splitBy atx) ++ after 
-
+  else csv
        
-        
+ where
+   --error checking needed 
+   colNames = head csv
+   csvdata  = tail csv
+
+   
+   splitActive = (not . null) [() | SplitLoc _ <- flags] &&
+                 (not . null) [() | SplitBy _ <- flags] 
+    
+   splitLoc = head [ x  | SplitLoc x <- flags]
+   splitBy  = head [ x  | SplitBy x <- flags]
+
+   applySplitByColumn c csv =
+     let before = take c csv
+         after  = drop (c+1) csv
+         atx    = csv !! c
+     in before ++ (splitOn splitBy atx) ++ after 
+
+    -- extract the column to be split 
+   extractSplitPoint c csv = map (\csv_row -> csv_row !! c) csv 
+   applySplit csv = map (splitOn splitBy) csv
+
+   splitSane scsv  =
+     let lengths = map length scsv
+         hd      = head lengths
+     in (hd, all (==hd) lengths)
+    
+    
+    
