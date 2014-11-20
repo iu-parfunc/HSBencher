@@ -218,6 +218,8 @@ data Config = Config
 
  , buildMethods   :: [BuildMethod] -- ^ Known methods for building benchmark targets.
                                    -- Starts with cabal/make/ghc, can be extended by user.
+ , binDir         :: FilePath -- ^ The path for build products that is managed (and cleared)
+                              -- by HSBencher.  Usually a relative path.
  , systemCleaner  :: CleanupAction
                     -- ^ An optional action to run between benchmark runs to make sure the system is clean.
                     -- For example, this could kill off zombie processes if any were left by previous

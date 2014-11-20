@@ -99,6 +99,9 @@ core_cli_options =
       , Option [] ["hostname"] (ReqArg ForceHostName "STR")
         "Force the hostname to be set to STR rather than read from the system."
 
+      , Option [] ["bindir"] (ReqArg BinDir "DIR")
+        "Override the default directory (./hsbencher_bin/) for build outputs."
+
       , Option [] ["skipto"] (ReqArg (SkipTo ) "NUM")
         "Skip ahead to a specific point in the configuration space."
       , Option [] ["runonly"] (ReqArg (mkPosIntFlag RunOnly) "NUM")
@@ -279,6 +282,7 @@ getConfig cmd_line_options benches = do
            , gitInfo        = (trim branch, trim revision, length hashes)
            -- This is in priority order:                   
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
+           , binDir         = "./hsbencher_bin/"
            , systemCleaner  = NoCleanup
            , argsBeforeFlags = True
            , harvesters = selftimedHarvester       `mappend`
@@ -314,7 +318,8 @@ getConfig cmd_line_options benches = do
   
       doFlag (RunOnly n) r = r { runOnly= Just n }
       doFlag (RetryFailed n) r = r { retryFailed= Just n }
-      doFlag (RunID s) r = r { runID= Just s }
+      doFlag (RunID s)  r = r { runID= Just s }
+      doFlag (BinDir s) r = r { binDir = s } 
       doFlag (ForceHostName s) r = r { hostname= s }
       doFlag (CIBuildID s) r = r { ciBuildID= Just s }
 

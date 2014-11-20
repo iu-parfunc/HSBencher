@@ -659,17 +659,12 @@ defaultMainModifyConfig modConfig = do
                    fullBenchList
         
         logT$"Beginning benchmarking, root directory: "++rootDir
-        let globalBinDir = rootDir </> "bin"
+        Config{binDir} <- ask
+        let globalBinDir = rootDir </> binDir
         when recomp $ do
-          logT$"Clearing any preexisting files in ./bin/"
-          lift$ do
-            -- runSimple "rm -f ./bin/*"
-            -- Yes... it's posix dependent.  But right now I don't see a good way to
-            -- delete the contents a dir without (1) following symlinks or (2) assuming
-            -- either the unix package or unix shell support (rm).
-            --- Ok, what the heck, deleting recursively:
-            dde <- doesDirectoryExist globalBinDir
-            when dde $ removeDirectoryRecursive globalBinDir
+          logT$"Clearing any preexisting files in build output dir: "++ binDir
+          lift$ do dde <- doesDirectoryExist globalBinDir -- Data race...
+                   when dde $ removeDirectoryRecursive globalBinDir
         lift$ createDirectoryIfMissing True globalBinDir 
      
 	logT "Writing header for result data file:"
