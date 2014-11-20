@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hsbencher-tool
-version:             0.1
+version:             0.1.0.1
 synopsis:            Command line tool for various hsbencher related tasks.
 -- description:         
 license:             MIT
