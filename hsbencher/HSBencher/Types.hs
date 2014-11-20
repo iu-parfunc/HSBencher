@@ -14,7 +14,7 @@ module HSBencher.Types
        (
          -- * Benchmark building
          -- | The basic types for describing a single benchmark.
-         mkBenchmark, 
+         mkBenchmark, canonicalBenchName, prettyBenchName,
          Benchmark(..),          
          RunFlags, CompileFlags,
 
@@ -277,6 +277,23 @@ data Benchmark a = Benchmark
 --   = PathTarget FilePath 
 --   | ShellCmd String -- ^ A shell script to run the benchmark.  
 
+-- | The canonical name of a benchmark that is entered in results
+-- tables and used in messages printed to the user.
+--
+-- This takes the full benchmark LIST which this benchmark is part of.
+-- That may be used in the future to ensure this canonical name is
+-- unique.
+canonicalBenchName :: [Benchmark a] -> Benchmark a -> String
+canonicalBenchName _benchList Benchmark{progname,target} = 
+  case progname of 
+    Nothing -> target
+    Just s  -> s
+
+-- | This may return something prettier than `canonicalBenchName`, but
+-- should only be used for printing informative messages to the user,
+-- not for entering data in any results table.
+prettyBenchName :: [Benchmark a] -> Benchmark a -> String
+prettyBenchName = canonicalBenchName
 
 -- | Make a Benchmark data structure given the core, required set of fields, and uses
 -- defaults to fill in the rest.  Takes target, cmdargs, configs.
@@ -299,6 +316,7 @@ data BenchSpace meaning = And [BenchSpace meaning]
                         | Set meaning ParamSetting 
  deriving (Show,Eq,Ord,Read, Generic)
 
+-- | A default notion of what extra benchmark arguments actually *mean*.
 data DefaultParamMeaning
   = Threads Int    -- ^ Set the number of threads.
   | Variant String -- ^ Which scheduler/implementation/etc.
@@ -314,8 +332,6 @@ andAddParam param cfg =
  where
    add bench@Benchmark{configs} =
      bench { configs = And [Set NoMeaning param, configs] }
-
--- TODO: We need to have a "filterBenchSpace" for filtration on the dynamic options. See issue #50 .
 
 -- | Is it a setting that affects compile time?
 isCompileTime :: ParamSetting -> Bool

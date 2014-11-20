@@ -60,7 +60,7 @@ import HSBencher.Internal.Utils
 import HSBencher.Internal.Logging
 import HSBencher.Internal.Config
 import HSBencher.Internal.MeasureProcess  (measureProcess,measureProcessDBG)
-import HSBencher.Internal.BenchSpace (enumerateBenchSpace, filterBenchmarks)
+import HSBencher.Internal.BenchSpace (enumerateBenchSpace, filterBenchmark, benchSpaceSize)
 import Paths_hsbencher (version) -- Thanks, cabal!
 
 ----------------------------------------------------------------------------------------------------
@@ -155,7 +155,7 @@ runOne :: (Int,Int) -> BuildID -> BuildResult
        -> Benchmark DefaultParamMeaning 
        -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
 runOne (iterNum, totalIters) _bldid bldres
-       Benchmark{target=testPath, cmdargs, progname, benchTimeOut}
+       thebench@Benchmark{target=testPath, cmdargs, progname, benchTimeOut}
        runconfig = do       
 
   log$ "\n--------------------------------------------------------------------------------"
@@ -175,7 +175,9 @@ runOne (iterNum, totalIters) _bldid bldres
 
   -- (3) Produce output to the right places:
   ------------------------------------------
-  runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig
+  Config{benchlist} <- ask
+  let thename = canonicalBenchName benchlist thebench 
+  runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig
 
 
 ------------------------------------------------------------
@@ -294,9 +296,9 @@ getNumThreads = foldl (\ acc (x,_) ->
                    0 
 
 ------------------------------------------------------------
-runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> Maybe String 
+runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> String 
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
-runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig = do
+runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig = do
   let numthreads = getNumThreads runconfig 
       sched      = foldl (\ acc (x,_) ->
                            case x of
@@ -307,15 +309,14 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
   let pads n s = take (max 1 (n - length s)) $ repeat ' '
       padl n x = pads n x ++ x 
       padr n x = x ++ pads n x
-  let thename = case progname of
-                  Just s  -> s
-                  Nothing -> testRoot
+
   Config{ keepgoing } <- ask 
   let exitCheck = when (any isError nruns && not keepgoing) $ do 
                     log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
                     liftIO exitFailure
                     
   -- FIXME: this old output format can be factored out into a plugin or discarded:
+  --------------------------------------------------------------------------------
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
@@ -349,7 +350,8 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
       logOn [ResultsFile]$ 
         printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
                                 (padr 8$ sched) (padr 3$ show numthreads) formatted
-
+  --------------------------------------------------------------------------------
+      
       -- These should be either all Nothing or all Just:
       let jittimes0 = map getjittime goodruns
           misses = length (filter (==Nothing) jittimes0)
@@ -366,9 +368,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot progname runconfig =
       Config{ trials } <- ask 
       let result =
             emptyBenchmarkResult
-            { _PROGNAME = case progname of
-                           Just s  -> s
-                           Nothing -> testRoot
+            { _PROGNAME = thename 
             , _VARIANT  = sched
             , _ARGS     = args
             , _THREADS  = numthreads
@@ -627,7 +627,9 @@ defaultMainModifyConfig modConfig = do
 
   -------------------------------------------------------------------
   -- Next prune the list of benchmarks to those selected by the user:
-  let cutlist = filterBenchmarks plainargs (benchlist conf3)
+  let filtlist = map (filterBenchmark plainargs) (benchlist conf3) 
+--      cutlist  = filterBenchmarks plainargs (benchlist conf3)
+      cutlist  = [ b | b@Benchmark{configs} <- filtlist, configs /= Or[] ]
   let conf4@Config{extraParams} = conf3{benchlist=cutlist}
 
   -- Finally, put the extra Params right into the benchmark config
@@ -640,7 +642,18 @@ defaultMainModifyConfig modConfig = do
     (do
         unless (null plainargs) $ do
           let len = (length cutlist)
-          logT$"There were "++show len++" benchmarks matching patterns: "++show plainargs
+          case plainargs of
+            [] -> logT$"There are "++show len++" total benchmarks; not filtered by any patterns..."
+            _  -> do let Config{benchlist=fullList} = conf3
+                     logT$"There were "++show (length fullList)++" total listed."
+                     logT$"Filtered with patterns "++show plainargs++" down to "++show len++" benchmark(s), with these configs:"
+                     forM_ (zip fullList filtlist) $ \(orig,filt) -> 
+                       when (configs filt /= Or[]) $ do
+                         let name = prettyBenchName fullList orig
+                         logT$ "  "++name++": "++ show(benchSpaceSize (configs filt))
+                               ++ " of "       ++ show(benchSpaceSize (configs orig))++" configs."
+                         return ()
+                     
           when (len == 0) $ do 
             error$ "Expected at least one pattern to match!.  All benchmarks: \n"++
                    fullBenchList

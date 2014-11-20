@@ -4,13 +4,23 @@
 
 module HSBencher.Internal.BenchSpace
        (BenchSpace(..), enumerateBenchSpace,
-        filterBenchmarks, disjunctiveNF)
+        benchSpaceSize, 
+        filterBenchmarks, filterBenchmark,
+        disjunctiveNF)
        where
 
 import Data.Maybe
 import qualified Data.Set as S
 import Data.List
 import HSBencher.Types
+
+-- | The size of a configuration space. This is equal to the length of
+-- the result returned by `enumerateBenchSpace`, but is quicker to
+-- compute.
+benchSpaceSize :: BenchSpace a -> Int
+benchSpaceSize Set{} = 1
+benchSpaceSize (And x) = product $ map benchSpaceSize x 
+benchSpaceSize (Or x)  = sum $ map benchSpaceSize x
 
 -- | Exhaustively compute all configurations described by a benchmark configuration space.
 enumerateBenchSpace :: BenchSpace a -> [ [(a,ParamSetting)] ] 
@@ -30,28 +40,44 @@ enumerateBenchSpace bs =
 
 -- | Filter down a list of benchmarks (and their configuration spaces)
 -- to only those that have ALL of the pattern arguments occurring
--- somewhere inside them.
--- 
--- A note on semantics:
---   A benchmark (+configs) is treated really a STREAM of concrete benchmark instances.
--- 
---   Each pattern filters out a subset of these instances (either by
---   matching a varying or a static field).  This function returns a
---   benchmark that iterates over the INTERSECTION of those subsets.
--- 
+-- somewhere in their printed representation.
+--
+-- This completely removes any benchmark with an empty configuration
+-- space (`Or []`).
 filterBenchmarks :: [String]  -- ^ Patterns which must all be matched.
                  -> [Benchmark DefaultParamMeaning] -> [Benchmark DefaultParamMeaning]
 filterBenchmarks [] = id -- Don't convert to disjunctive normal form!
 filterBenchmarks patterns = mapMaybe fn
   where
-   fn orig@Benchmark{target,cmdargs,progname,configs} = 
+   fn b = case filterBenchmark patterns b of
+            Benchmark{configs} | configs == Or[] -> Nothing
+                               | otherwise       -> Just b
+
+-- | Filter down the config space of a benchmark, to only those
+--  configurations that have a match for ALL of the pattern arguments
+--  occurring somewhere inside them.
+-- 
+-- A note on semantics:
+--
+--   A benchmark (with its config space) implies a STREAM of concrete
+--   benchmark instances.
+-- 
+--   Each pattern filters out a subset of these instances (either by
+--   matching a varying field like `RuntimeEnv` or a static field like
+--   `progname`).  This function conjoins all the patterns and thus
+--   returns a benchmark that iterates over the INTERSECTION of those
+--   subsets implied by each pattern, respectively.
+-- 
+filterBenchmark :: [String]  -- ^ Patterns which must all be matched.
+                 -> Benchmark DefaultParamMeaning -> Benchmark DefaultParamMeaning
+filterBenchmark patterns orig@Benchmark{target,cmdargs,progname,configs} = 
      let unmet = [ pat | pat <- patterns
                        , not (isInfixOf pat target ||
                               isInfixOf pat (fromMaybe "" progname) ||
                               any (isInfixOf pat) cmdargs) ]
-     in case filtConfigs unmet configs of
-          Or [] -> Nothing
-          newcfgs -> Just (orig { configs = newcfgs } )
+         newcfgs = filtConfigs unmet configs
+     in orig { configs = newcfgs }
+
                
 -- Returns Or [] for an empty config space.
 filtConfigs :: Show a => [String] -> BenchSpace a -> BenchSpace a
