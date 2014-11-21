@@ -77,7 +77,6 @@ data Flag = ShowHelp | ShowVersion
           | XLabel String
           | YLabel String
   -- BarCluster rendering related
-          | GroupBy String -- Readable as LocationSpec
 
 -- identify part of a key 
           | Key String -- --key="Arg1" --key?"Arg2" means Arg1_Arg2 is the name of data series
@@ -103,11 +102,6 @@ convToFileFormat MyPDF = PDF
 convToFileFormat MyPNG = PNG
 convToFileFormat MyPS = PS
 
-
-
-data Orientation = Rows | Columns
-                 deriving (Eq, Ord, Show, Read )
-
 data LocationSpec = Row Int | Column Int 
                   deriving (Eq, Ord, Show, Read )
                            
@@ -115,7 +109,7 @@ data GraphMode = Bars | BarClusters | Lines
                deriving (Eq, Ord, Show, Read )
 
 -- | Type of values stored in a series
-data ValueType = Int | Double | String  -- Maybe just Double | String ! 
+data ValueType = Int | Double | String 
                deriving (Eq, Ord, Show, Read )
 
 -- | Exceptions that may occur
@@ -140,7 +134,6 @@ core_cli_options =
      , Option []    ["xlabel"] (ReqArg XLabel "String")      "X-axis label"
      , Option []    ["ylabel"] (ReqArg YLabel "String")      "Y-axis label"
      , Option []    ["key"]    (ReqArg Key "String")         "Columns that make part of the key"
---      , Option []    ["group"]  (ReqArg GroupBy "String")     "Column to use as group identifier"
      , Option ['x'] ["xvalue"] (ReqArg XValues "String")      "Column containing x values"
      , Option ['y'] ["yvalue"] (ReqArg YValues "String")      "Column containing y values"
 
@@ -452,180 +445,26 @@ getCSV keys (xcol,ycol)= do
         Double -> NumData (read x) 
         String -> StringData x
         
-  -- let types = map recogValueType (map tail csv)
 
-  -- hPutStrLn stderr $ show types
-
-
-  ---------------------------------------------------------------------------
-  -- Perform the task specified by the command line args
-
-  -- apply key
-  -- These transformations should check is a specified transformation
-  -- is sane given the plot style.
-  -- List the rules for this. For example, a bar graph is not sane with more than one datapoint per "name"
- --  let csv_rekeyed = applyKey options csv
---       csv_grouped = applyGroup options csv_rekeyed 
-      
---   putStrLn $ show csv_grouped 
-  
---   renderableToFile def (toRenderable (renderPlot options (take 10 csv_grouped))) outfile 
---   return ()
-
-    
-
--- ---------------------------------------------------------------------------
--- -- Render a plot based on the options and the csv
-
--- --renderPlot :: [Flag] -> [[String]] -> FilePath -> IO ()
--- renderPlot flags csv = 
---    case plotKind of
---      [] -> error "No graph mode specified"
---      (Bars:_) -> doBars series title xLabel yLabel
---      (BarClusters:_) -> doBarClusters series cates title xLabel yLabel 
---      (Lines:_) -> doLines series title xLabel yLabel 
-     
-                       
---   where
---     plotKind = [k | RenderMode k <- flags] 
---     ---------------------------------------------------------------------------
---     -- Set up defaults if none exist
---     xLabel =
---       case [lab | XLabel lab <- flags] of
---         [] -> "x-axis"
---         (l:_) -> l
---     yLabel =
---       case [lab | YLabel lab <- flags] of
---         [] -> "y-axis"
---         (l:_) -> l
---     title = 
---       case [x | Title x <- flags] of
---         [] -> "Table title"
---         (t:_) -> t
-
---     series = mkSeries flags csv
---     cates = barClusterCategories csv 
--- ------------------------------------------------------------------------------
--- -- data serie  (all this need some work) 
--- data Serie = Serie {serieName :: String,
---                     serieData :: [Double]  }
+---------------------------------------------------------------------------
+-- Recognize data
 
 
--- -- First row is supposed to be "informative", not data 
--- mkSeries :: [Flag] -> [[String]] -> [Serie]
--- mkSeries flags csv =
---   case dataIn of
---     Rows -> map rowsToSeries (tail csv)
---     Columns -> map rowsToSeries $ transpose (tail csv)
-  
---   where
---     dataIn =
---       case [read x :: Orientation | DataIn x <- flags] of
---         [] -> Rows
---         (x:_) -> x
+-- The rules.
+-- The string contains only numerals -> Int
+-- The string contains only numerals and exactly one . -> Double
+-- the string contains exactly one . and an e -> Double 
+-- The string contains any non-number char -> String
 
--- rowsToSeries :: [String] -> Serie 
--- rowsToSeries (name:rest) = Serie name (map read rest) 
+-- there is an ordering to the rules.
+-- # 1 If any element of the
+--     input contains something that implies String. They are all interpreted as Strings
+-- # 2 If not #1 and any element contains . or . and e All values are doubles
+-- # 3 If not #1 and #2 treat as Int
 
--- -- make more solid !
--- barClusterCategories :: [[String]] -> [String]
--- barClusterCategories input =
---   case  (all isInt cates || all isDouble cates) of
---     -- Hey, these dont look like category names! it looks like data
---     True -> cates -- ["category" ++ show n | n <- [0..length cates]]
---     False -> cates
---   where cates = tail $ head input 
+-- May be useless. just treat all values as "Double" 
 
--- -- Just a test.. (Now why is there a transpose in there !!!)
--- -- The transpose is related to not near groupBy. 
--- seriesToBarClusters :: [Serie] -> [[Double]]
--- seriesToBarClusters ss = transpose the_data 
---   where
---     the_data = map (\(Serie _ d) -> d) ss
-
--- -- Assumes one data point 
--- seriesToBars :: [Serie] -> [[Double]]
--- seriesToBars ss = map (\(Serie _ d) -> d) ss 
-
--- ------------------------------------------------------------------------------
--- -- Plot bars
--- -- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> IO ()
--- -- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> Layout PlotIndex Double
--- doBarClusters series categories title xlabel ylabel = layout
---  where
---   layout = 
---         layout_title .~ title
---       $ layout_title_style . font_size .~ 10
---       $ layout_x_axis . laxis_generate .~ autoIndexAxis alabels
---       $ layout_y_axis . laxis_override .~ axisGridHide
---       $ layout_left_axis_visibility . axis_show_ticks .~ False
---       $ layout_plots .~ [ plotBars bars2 ]
---       $ def :: Layout PlotIndex Double
-
---   bars2 = plot_bars_titles .~ map serieName series -- ["Cash","Equity"]
---       $ plot_bars_values .~ addIndexes (seriesToBarClusters series) -- [[20,45],[45,30],[30,20],[70,25]]
---       $ plot_bars_style .~ BarsClustered
---       $ plot_bars_spacing .~ BarsFixGap 30 5
---       $ plot_bars_item_styles .~ map mkstyle (cycle defaultColorSeq)
---       $ def
-
---   alabels = categories -- [ "test" ]
-
---   bstyle = Just (solidLine 1.0 $ opaque black)
---   mkstyle c = (solidFillStyle c, bstyle)
-
-
--- --doBars :: [Serie] -> String -> String -> String -> SOMETHING!!!
--- doBars series title xlabel ylabel = layout
---   where
---     layout =
---         layout_title .~ title
---       $ layout_title_style . font_size .~ 10
---       $ layout_x_axis . laxis_generate .~ autoIndexAxis (map serieName series)
---       $ layout_y_axis . laxis_override .~ axisGridHide
---       $ layout_left_axis_visibility . axis_show_ticks .~ False
---       $ layout_plots .~ [ plotBars bars ]
---       $ def :: Layout PlotIndex Double
-
-    
---     bars =
---         plot_bars_titles .~ []
---       $ plot_bars_values .~ addIndexes (seriesToBars series) -- [[20,45],[45,30],[30,20],[70,25]]
---       $ plot_bars_style .~ C.BarsClustered
---       $ plot_bars_spacing .~ BarsFixGap 30 5
---       $ plot_bars_item_styles .~ map mkstyle (repeat (head (cycle defaultColorSeq)))
---       $ def
-
---     bstyle = Just (solidLine 1.0 $ opaque black)
---     mkstyle c = (solidFillStyle c, bstyle)
-
-
--- ------------------------------------------------------------------------------
--- -- Plot lines
--- -- doLines :: [Serie] -> String -> String -> String -> IO ()
--- doLines = undefined
-
-
-
--- ---------------------------------------------------------------------------
--- -- Recognize data
-
-
--- -- The rules.
--- -- The string contains only numerals -> Int
--- -- The string contains only numerals and exactly one . -> Double
--- -- the string contains exactly one . and an e -> Double 
--- -- The string contains any non-number char -> String
-
--- -- there is an ordering to the rules.
--- -- # 1 If any element of the
--- --     input contains something that implies String. They are all interpreted as Strings
--- -- # 2 If not #1 and any element contains . or . and e All values are doubles
--- -- # 3 If not #1 and #2 treat as Int
-
--- -- May be useless. just treat all values as "Double" 
-
--- -- | Figure out what type of value is stored in this data series.     
+-- | Figure out what type of value is stored in this data series.     
 recogValueType :: String -> ValueType
 recogValueType str =
   case (isString str, isInt str, isDouble str) of
