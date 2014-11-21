@@ -58,9 +58,12 @@ import Prelude hiding (init)
 
 -} 
 
+{- Random junk
+cabal install HSBencher/hsbencher-tool/ HSBencher/hsbencher-graph/ --bindir=/home/joels/Current/ObsidianWriting/Winter2014/bin/ --force-reinstalls
+cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0" --key="ARGS1" -x ARGS2 -y runtime
 
+-} 
 
----------------------------------------------------------------------------
 -- 
 ---------------------------------------------------------------------------
 
@@ -79,10 +82,28 @@ data Flag = ShowHelp | ShowVersion
 -- identify part of a key 
           | Key String -- --key="Arg1" --key?"Arg2" means Arg1_Arg2 is the name of data series
           | XValues String -- column containing x-values
-          | YValues String -- column containing y-values 
-            
+          | YValues String -- column containing y-values
+
+          -- output resolution  
+          | XRes String
+          | YRes String
+
+          -- output format
+          | OutFormat MyFileFormat
+             
             
   deriving (Eq,Ord,Show,Read)
+
+data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
+                  deriving (Eq, Ord, Show, Read) 
+
+convToFileFormat :: MyFileFormat -> FileFormat
+convToFileFormat MySVG = SVG
+convToFileFormat MyPDF = PDF
+convToFileFormat MyPNG = PNG
+convToFileFormat MyPS = PS
+
+
 
 data Orientation = Rows | Columns
                  deriving (Eq, Ord, Show, Read )
@@ -116,12 +137,19 @@ core_cli_options =
      , Option []    ["barclusters"] (NoArg (RenderMode BarClusters)) "Plot data as bar clusters" 
      , Option []    ["lines"] (NoArg (RenderMode Lines))     "Plot data as lines"
      , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
-     , Option []    ["xlabel"] (ReqArg XLabel "String")      "x-axis label"
-     , Option []    ["ylabel"] (ReqArg YLabel "String")      "y-axis label"
-     , Option []    ["key"]    (ReqArg Key "String")         "columns that make part of the key"
-     , Option []    ["group"]  (ReqArg GroupBy "String")     "column to use as group identifier"
+     , Option []    ["xlabel"] (ReqArg XLabel "String")      "X-axis label"
+     , Option []    ["ylabel"] (ReqArg YLabel "String")      "Y-axis label"
+     , Option []    ["key"]    (ReqArg Key "String")         "Columns that make part of the key"
+--      , Option []    ["group"]  (ReqArg GroupBy "String")     "Column to use as group identifier"
      , Option ['x'] ["xvalue"] (ReqArg XValues "String")      "Column containing x values"
-     , Option ['y'] ["yvalue"] (ReqArg YValues "String")      "Column containing y values"  
+     , Option ['y'] ["yvalue"] (ReqArg YValues "String")      "Column containing y values"
+
+     , Option []    ["xres"]   (ReqArg XRes "String") "X-resolution of output graphics"
+     , Option []    ["yres"]   (ReqArg XRes "String") "Y-resolution of output graphics"
+     , Option []    ["SVG"]    (NoArg (OutFormat MySVG)) "Output in SVG format"
+     , Option []    ["PDF"]    (NoArg (OutFormat MyPDF)) "Output in PDF format"
+     , Option []    ["PS"]     (NoArg (OutFormat MyPS))  "Output in PS format"
+     , Option []    ["PNG"]    (NoArg (OutFormat MyPNG)) "Output in PNG format"
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -181,8 +209,6 @@ insertVal m key val@(x,y) =
     Just vals -> M.insert key (val:vals) m
 
     
-
-
 ---------------------------------------------------------------------------
 -- MAIN                                                                  --
 ---------------------------------------------------------------------------
@@ -193,6 +219,9 @@ main = do
   let (options,plainargs,_unrec,errs) = getOpt' Permute core_cli_options args
 
   let outputSpecified = (not . null) [() | OutFile _ <- options]
+      outputFormatSpecified = (not . null) [() | OutFormat _ <- options]
+      xDimensionSpecified   = (not . null) [() | XRes _ <- options]
+      yDimensionSpecified   = (not . null) [() | YRes _ <- options]
       outfile = head [nom | OutFile nom <- options] 
 
       
@@ -208,6 +237,20 @@ main = do
   when (not outputSpecified) $ do
     putStrLn$ "Error: an output file has to be specified"
     exitFailure
+
+  ---------------------------------------------------------------------------
+  -- Get target
+  let outFile = head [file | OutFile file <- options]  
+      outFormat =
+        case outputFormatSpecified of
+          False -> PNG
+          True  -> convToFileFormat
+                   $ head [format | OutFormat format <- options]
+      outResolution =
+        case (xDimensionSpecified && yDimensionSpecified) of
+          False -> (800,600)
+          True -> ( read $ head [xres | XRes xres <- options]
+                  , read $ head [yres | YRes yres <- options])
 
   ---------------------------------------------------------------------------
   -- Get keys
@@ -245,45 +288,60 @@ main = do
       series_type = typecheck series' 
       
   case series_type of
-    Just (Int,Int) -> plotIntInt series'
-    Just (Int,Double) -> plotIntDouble series'
-    Just (Double,Double) -> plotDoubleDouble series'
+    Just (Int,Int) -> plotIntInt outFile outFormat outResolution series'
+    Just (Int,Double) -> plotIntDouble outFile outFormat outResolution series'
+    Just (Double,Double) -> plotDoubleDouble outFile outFormat outResolution series'
     Just (_,_) -> error $ "no support for plotting of this series type: " ++ show series_type
     Nothing -> error $ "Series failed to typecheck" 
   
 ---------------------------------------------------------------------------
 -- Plotting
     
-plotIntInt series' = undefined
+plotIntInt outfile series = undefined
 
 
-plotIntDouble series =
-  toFile def "test.png" $ do
-
+plotIntDouble outfile outFormat outResolution series = do 
+  let fopts = FileOptions outResolution outFormat 
+  toFile fopts outfile $ do
+    
     layout_title .= "testplot from grapher"
     layout_background .= solidFillStyle (opaque white)
     layout_foreground .= (opaque black)
     layout_left_axis_visibility . axis_show_ticks .= True
     layout_title_style . font_size .= 24
+    
 
     mapM_ plotIt series 
     
     -- plot (myline "g" [[(1,8.3),(2,7.6),(3,6.4)]::[(Int,Double)]])
   where
-    plotIt (name,xys) =
-      plot (myline name [(sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)])
+    plotIt (name,xys) = do
+      color <- takeColor
+      shape <- takeShape
+
+      plot (myline color name [(sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)])
+      plot (mypoints color shape (sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd))
       where 
         (xs,ys)  =  unzip xys
         xsi = map fromData xs :: [Int]
         ysd = map fromData ys :: [Double]
 
-    myline :: String -> [[(x,y)]]  -> EC l (PlotLines x y)
-    myline title values = liftEC $ do
-      color <- takeColor
+    myline :: AlphaColour Double -> String -> [[(x,y)]]  -> EC l (PlotLines x y)
+    myline color title values = liftEC $ do
       plot_lines_title .= title
       plot_lines_values .= values
       plot_lines_style . line_color .= color
-      plot_lines_style . line_width .= 5 
+      plot_lines_style . line_width .= 5
+
+
+    mypoints :: AlphaColour Double -> PointShape -> [(x,y)] -> EC l (PlotPoints x y)
+    mypoints color shape values = liftEC $ do
+      plot_points_values .= values
+      plot_points_style . point_color .= transparent 
+      plot_points_style . point_shape .= shape
+      plot_points_style . point_border_width .= 4
+      plot_points_style . point_border_color .= color
+      plot_points_style . point_radius .= 8
 
 plotDoubleDouble = undefined 
 
