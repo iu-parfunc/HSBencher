@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable #-} 
+{-# LANGUAGE FlexibleInstances #-}
 
 module Main where
 
@@ -8,11 +9,6 @@ import System.IO (Handle, hPutStrLn, stderr,stdin, openFile, hClose, hGetContent
                   hIsEOF, hGetLine, IOMode(..), BufferMode(..), hSetBuffering)
 
 import GHC.IO.Exception (IOException(..))
-
--- import qualified System.IO.Streams as Strm
--- import qualified System.IO.Streams.Concurrent as Strm
--- import qualified System.IO.Streams.Process as Strm
--- import qualified System.IO.Streams.Combinators as Strm
 
 import Data.List (isInfixOf, intersperse, delete, transpose, sort,nub, deleteBy)
 import Data.List.Split (splitOn)
@@ -24,6 +20,14 @@ import System.IO (hPutStrLn)
 
 import Data.Char (isNumber)
 
+import qualified Data.Map as M 
+
+-- list tweaking
+import Data.List (elemIndex, intersperse, sortBy)
+
+
+import Data.Maybe (catMaybes)
+
 -- Exceptions
 import Control.Exception
 import Data.Typeable
@@ -32,6 +36,7 @@ import Data.Typeable
 import Graphics.Rendering.Chart as C
 import Graphics.Rendering.Chart as C 
 import Graphics.Rendering.Chart.Backend.Cairo as C
+import Graphics.Rendering.Chart.Easy as C
 import Data.Colour
 import Data.Colour.Names
 import Data.Default.Class
@@ -45,14 +50,18 @@ import Prelude hiding (init)
 ---------------------------------------------------------------------------
 --
 
+
 {- DEVLOG
+
+  - 20 Nov 2014: Starting some simplifications and cleanups
+
+
 -} 
 
 
 
-
 ---------------------------------------------------------------------------
--- //                                                                 \\ --
+-- 
 ---------------------------------------------------------------------------
 
 -- | Command line flags to the benchmarking executable.
@@ -67,9 +76,10 @@ data Flag = ShowHelp | ShowVersion
   -- BarCluster rendering related
           | GroupBy String -- Readable as LocationSpec
 
-  -- Create a key from some number of columns
-  -- This becomes the "name"
-          | Key String --Readable as [Int]
+-- identify part of a key 
+          | Key String -- --key="Arg1" --key?"Arg2" means Arg1_Arg2 is the name of data series
+          | XValues String -- column containing x-values
+          | YValues String -- column containing y-values 
             
             
   deriving (Eq,Ord,Show,Read)
@@ -108,8 +118,10 @@ core_cli_options =
      , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
      , Option []    ["xlabel"] (ReqArg XLabel "String")      "x-axis label"
      , Option []    ["ylabel"] (ReqArg YLabel "String")      "y-axis label"
-     , Option []    ["key"]    (ReqArg Key "String")         "columns that make out the key [0,1,2]"
-     , Option []    ["group"]  (ReqArg GroupBy "String")     "column to use as group identifier" 
+     , Option []    ["key"]    (ReqArg Key "String")         "columns that make part of the key"
+     , Option []    ["group"]  (ReqArg GroupBy "String")     "column to use as group identifier"
+     , Option ['x'] ["xvalue"] (ReqArg XValues "String")      "Column containing x values"
+     , Option ['y'] ["yvalue"] (ReqArg YValues "String")      "Column containing y values"  
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -119,6 +131,57 @@ fullUsageInfo = usageInfo docs core_cli_options
   docs = "USAGE: grapher <flags> ...\n"++
          "\n\nhsbencher-graph general options: \n"
 --   ++ generalUsageStr
+
+---------------------------------------------------------------------------
+-- All series in a map.
+---------------------------------------------------------------------------
+data SeriesData = IntData Int 
+                | NumData Double
+                | StringData String
+                  deriving Show 
+
+isString :: SeriesData -> Bool
+isString (StringData _) = True
+isString _ = False
+
+isNum :: SeriesData -> Bool
+isNum (NumData _) = True
+isNum _ = False
+
+isInt :: SeriesData -> Bool
+isInt (IntData _) = True
+isInt _ = False 
+
+seriesType :: SeriesData -> ValueType
+seriesType (IntData _) = Int
+seriesType (NumData _) = Double
+seriesType (StringData _) = String 
+
+class FromData a where
+  fromData :: SeriesData -> a
+
+instance FromData Double where
+  fromData (NumData a) = a
+  fromData _ = error "FromData Double"
+
+instance FromData Int where
+  fromData (IntData a) = a
+  fromData _ = error "FromData Int"
+
+instance FromData String where
+  fromData (StringData a) = a
+  fromData _ = error "FromData String" 
+
+type DataSeries = M.Map String [(SeriesData,SeriesData)] 
+
+insertVal :: DataSeries -> String -> (SeriesData,SeriesData) -> DataSeries
+insertVal m key val@(x,y) =
+  case M.lookup key m of
+    Nothing -> M.insert key [val] m 
+    Just vals -> M.insert key (val:vals) m
+
+    
+
 
 ---------------------------------------------------------------------------
 -- MAIN                                                                  --
@@ -147,12 +210,190 @@ main = do
     exitFailure
 
   ---------------------------------------------------------------------------
+  -- Get keys
+  let hasKey  = (not . null) [ () | Key _ <- options]  
+      key =
+        case hasKey of
+          False -> error "No key specified" 
+          True  -> [ q | Key q <- options] 
+
+  let hasX    = (not . null) [ () | XValues _ <- options]  
+      hasY    = (not . null) [ () | YValues _ <- options]  
+
+      xy =
+        case hasX && hasY of
+          False -> error "Both -x and -y arguments are needed"
+          True  -> (head [x | XValues x <- options],
+                    head [y | YValues y <- options])
+      
+  ---------------------------------------------------------------------------
   -- read csv from stdin. 
 
-  csv <- getCSV 
+  csv <- getCSV key xy
+  
+         
+  hPutStrLn stderr $ "printing csv" 
+  hPutStrLn stderr $ show csv
 
-  -- hPutStrLn stderr $ show csv
+  ---------------------------------------------------------------------------
+  -- Create a lineplot 
 
+  let series :: [(String,[(SeriesData,SeriesData)])]
+      series = M.assocs csv
+
+      series' = map unifyTypes series
+      series_type = typecheck series' 
+      
+  case series_type of
+    Just (Int,Int) -> plotIntInt series'
+    Just (Int,Double) -> plotIntDouble series'
+    Just (Double,Double) -> plotDoubleDouble series'
+    Just (_,_) -> error $ "no support for plotting of this series type: " ++ show series_type
+    Nothing -> error $ "Series failed to typecheck" 
+  
+---------------------------------------------------------------------------
+-- Plotting
+    
+plotIntInt series' = undefined
+
+
+plotIntDouble series =
+  toFile def "test.png" $ do
+
+    layout_title .= "testplot from grapher"
+    layout_background .= solidFillStyle (opaque white)
+    layout_foreground .= (opaque black)
+    layout_left_axis_visibility . axis_show_ticks .= True
+    layout_title_style . font_size .= 24
+
+    mapM_ plotIt series 
+    
+    -- plot (myline "g" [[(1,8.3),(2,7.6),(3,6.4)]::[(Int,Double)]])
+  where
+    plotIt (name,xys) =
+      plot (myline name [(sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)])
+      where 
+        (xs,ys)  =  unzip xys
+        xsi = map fromData xs :: [Int]
+        ysd = map fromData ys :: [Double]
+
+    myline :: String -> [[(x,y)]]  -> EC l (PlotLines x y)
+    myline title values = liftEC $ do
+      color <- takeColor
+      plot_lines_title .= title
+      plot_lines_values .= values
+      plot_lines_style . line_color .= color
+      plot_lines_style . line_width .= 5 
+
+plotDoubleDouble = undefined 
+
+
+---------------------------------------------------------------------------
+-- Types in the data 
+
+unifyTypes :: (String,[(SeriesData,SeriesData)])
+              -> (String,[(SeriesData,SeriesData)])
+unifyTypes (name,series) =
+  let (xs,ys) = unzip series
+      xs' = unify xs
+      ys' = unify ys
+  in (name,(zip xs' ys'))
+  where
+    unify xs =
+      case (any isString xs, any isInt xs, any isNum xs) of
+        (True, _, _) -> map convertToString xs
+        (False,_,True) -> map convertToNum xs
+        (False,True,False) -> xs
+    convertToString (IntData x) = StringData (show x)
+    convertToString (NumData x) = StringData (show x)
+    convertToString a = a
+    convertToNum (IntData x) = NumData (fromIntegral x)
+    convertToNum (NumData x) = NumData x
+    convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
+
+typecheck :: [(String,[(SeriesData,SeriesData)])] -> Maybe (ValueType, ValueType) 
+typecheck dat =
+  let series = concatMap snd dat
+      (xs,ys) = unzip series
+  in
+   case length xs >= 1 && length ys >= 1 of 
+     True ->
+       let x = seriesType $ head xs
+           y = seriesType $ head ys
+
+           xb = all (==x) $ map seriesType xs
+           yb = all (==y) $ map seriesType ys
+       in Just (x,y)
+     False -> Nothing 
+
+---------------------------------------------------------------------------
+-- Get the CSV from stdin
+
+getCSV :: [String] -> (String,String) -> IO DataSeries --[[String]]
+getCSV keys (xcol,ycol)= do
+  -- Read of the headers 
+  res <- catch
+             (do
+                 s <- hGetLine stdin
+                 return $ Just s
+             )
+             (\(IOError _ _ _ _ _ _ ) -> return Nothing)
+  case res of
+    Nothing -> error "Error trying to get csv header line"
+    Just str -> do 
+      let csv = map strip $ splitOn "," str
+          keyStr = concat keys 
+          keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
+
+          -- dangerous! 
+          Just xcolIx = elemIndex xcol csv
+          Just ycolIx = elemIndex ycol csv
+          
+  --    putStrLn $ "Specified key: " ++ keyStr    
+  --    putStrLn $ "Key Indices:   " ++ show keyIxs
+  --    putStrLn $ "Read the headers line: " ++ str
+      
+        
+      case (length keyIxs) == (length keys) of
+        False -> error "Key is not part of table"
+        True -> do
+          m <- loop keyIxs (xcolIx,ycolIx) M.empty
+  --        putStrLn $ show m
+          return m 
+  where
+    loop keyIxs xy m = do
+      res <- catch
+             (do
+                 s <- hGetLine stdin
+                 return $ Just s
+             )
+             (\(IOError _ _ _ _ _ _ )-> return Nothing)
+      case res of
+        -- In the odd event that an empty line occurs 
+        Just []  -> loop keyIxs xy m 
+        Just str -> do 
+          let csv = map strip $ splitOn "," str
+          
+              key = collectKey keyIxs csv      
+
+              val  = collectXY xy csv
+              m' = insertVal m key val
+   --       putStrLn $ show csv
+          loop keyIxs xy m'
+        Nothing -> return m
+        
+    collectKey ixs csv = concat $ intersperse "_" $ map (\i -> csv !! i) ixs
+    
+    collectXY (x,y) csv =  ( toSeriesData $ collectVal x csv
+                           , toSeriesData $ collectVal y csv)
+    collectVal ix csv = csv !! ix 
+
+    toSeriesData x =
+      case recogValueType x of
+        Int -> IntData (read x) 
+        Double -> NumData (read x) 
+        String -> StringData x
+        
   -- let types = map recogValueType (map tail csv)
 
   -- hPutStrLn stderr $ show types
@@ -165,306 +406,291 @@ main = do
   -- These transformations should check is a specified transformation
   -- is sane given the plot style.
   -- List the rules for this. For example, a bar graph is not sane with more than one datapoint per "name"
-  let csv_rekeyed = applyKey options csv
-      csv_grouped = applyGroup options csv_rekeyed 
+ --  let csv_rekeyed = applyKey options csv
+--       csv_grouped = applyGroup options csv_rekeyed 
       
-  putStrLn $ show csv_grouped 
+--   putStrLn $ show csv_grouped 
   
-  renderableToFile def (toRenderable (renderPlot options (take 10 csv_grouped))) outfile 
-  return ()
+--   renderableToFile def (toRenderable (renderPlot options (take 10 csv_grouped))) outfile 
+--   return ()
 
     
 
----------------------------------------------------------------------------
--- Render a plot based on the options and the csv
+-- ---------------------------------------------------------------------------
+-- -- Render a plot based on the options and the csv
 
---renderPlot :: [Flag] -> [[String]] -> FilePath -> IO ()
-renderPlot flags csv = 
-   case plotKind of
-     [] -> error "No graph mode specified"
-     (Bars:_) -> doBars series title xLabel yLabel
-     (BarClusters:_) -> doBarClusters series cates title xLabel yLabel 
-     (Lines:_) -> doLines series title xLabel yLabel 
+-- --renderPlot :: [Flag] -> [[String]] -> FilePath -> IO ()
+-- renderPlot flags csv = 
+--    case plotKind of
+--      [] -> error "No graph mode specified"
+--      (Bars:_) -> doBars series title xLabel yLabel
+--      (BarClusters:_) -> doBarClusters series cates title xLabel yLabel 
+--      (Lines:_) -> doLines series title xLabel yLabel 
      
                        
-  where
-    plotKind = [k | RenderMode k <- flags] 
-    ---------------------------------------------------------------------------
-    -- Set up defaults if none exist
-    xLabel =
-      case [lab | XLabel lab <- flags] of
-        [] -> "x-axis"
-        (l:_) -> l
-    yLabel =
-      case [lab | YLabel lab <- flags] of
-        [] -> "y-axis"
-        (l:_) -> l
-    title = 
-      case [x | Title x <- flags] of
-        [] -> "Table title"
-        (t:_) -> t
+--   where
+--     plotKind = [k | RenderMode k <- flags] 
+--     ---------------------------------------------------------------------------
+--     -- Set up defaults if none exist
+--     xLabel =
+--       case [lab | XLabel lab <- flags] of
+--         [] -> "x-axis"
+--         (l:_) -> l
+--     yLabel =
+--       case [lab | YLabel lab <- flags] of
+--         [] -> "y-axis"
+--         (l:_) -> l
+--     title = 
+--       case [x | Title x <- flags] of
+--         [] -> "Table title"
+--         (t:_) -> t
 
-    series = mkSeries flags csv
-    cates = barClusterCategories csv 
-------------------------------------------------------------------------------
--- data serie  (all this need some work) 
-data Serie = Serie {serieName :: String,
-                    serieData :: [Double]  }
+--     series = mkSeries flags csv
+--     cates = barClusterCategories csv 
+-- ------------------------------------------------------------------------------
+-- -- data serie  (all this need some work) 
+-- data Serie = Serie {serieName :: String,
+--                     serieData :: [Double]  }
 
 
--- First row is supposed to be "informative", not data 
-mkSeries :: [Flag] -> [[String]] -> [Serie]
-mkSeries flags csv =
-  case dataIn of
-    Rows -> map rowsToSeries (tail csv)
-    Columns -> map rowsToSeries $ transpose (tail csv)
+-- -- First row is supposed to be "informative", not data 
+-- mkSeries :: [Flag] -> [[String]] -> [Serie]
+-- mkSeries flags csv =
+--   case dataIn of
+--     Rows -> map rowsToSeries (tail csv)
+--     Columns -> map rowsToSeries $ transpose (tail csv)
   
-  where
-    dataIn =
-      case [read x :: Orientation | DataIn x <- flags] of
-        [] -> Rows
-        (x:_) -> x
+--   where
+--     dataIn =
+--       case [read x :: Orientation | DataIn x <- flags] of
+--         [] -> Rows
+--         (x:_) -> x
 
-rowsToSeries :: [String] -> Serie 
-rowsToSeries (name:rest) = Serie name (map read rest) 
+-- rowsToSeries :: [String] -> Serie 
+-- rowsToSeries (name:rest) = Serie name (map read rest) 
 
--- make more solid !
-barClusterCategories :: [[String]] -> [String]
-barClusterCategories input =
-  case  (all isInt cates || all isDouble cates) of
-    -- Hey, these dont look like category names! it looks like data
-    True -> cates -- ["category" ++ show n | n <- [0..length cates]]
-    False -> cates
-  where cates = tail $ head input 
+-- -- make more solid !
+-- barClusterCategories :: [[String]] -> [String]
+-- barClusterCategories input =
+--   case  (all isInt cates || all isDouble cates) of
+--     -- Hey, these dont look like category names! it looks like data
+--     True -> cates -- ["category" ++ show n | n <- [0..length cates]]
+--     False -> cates
+--   where cates = tail $ head input 
 
--- Just a test.. (Now why is there a transpose in there !!!)
--- The transpose is related to not near groupBy. 
-seriesToBarClusters :: [Serie] -> [[Double]]
-seriesToBarClusters ss = transpose the_data 
-  where
-    the_data = map (\(Serie _ d) -> d) ss
+-- -- Just a test.. (Now why is there a transpose in there !!!)
+-- -- The transpose is related to not near groupBy. 
+-- seriesToBarClusters :: [Serie] -> [[Double]]
+-- seriesToBarClusters ss = transpose the_data 
+--   where
+--     the_data = map (\(Serie _ d) -> d) ss
 
--- Assumes one data point 
-seriesToBars :: [Serie] -> [[Double]]
-seriesToBars ss = map (\(Serie _ d) -> d) ss 
+-- -- Assumes one data point 
+-- seriesToBars :: [Serie] -> [[Double]]
+-- seriesToBars ss = map (\(Serie _ d) -> d) ss 
 
-------------------------------------------------------------------------------
--- Plot bars
--- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> IO ()
--- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> Layout PlotIndex Double
-doBarClusters series categories title xlabel ylabel = layout
- where
-  layout = 
-        layout_title .~ title
-      $ layout_title_style . font_size .~ 10
-      $ layout_x_axis . laxis_generate .~ autoIndexAxis alabels
-      $ layout_y_axis . laxis_override .~ axisGridHide
-      $ layout_left_axis_visibility . axis_show_ticks .~ False
-      $ layout_plots .~ [ plotBars bars2 ]
-      $ def :: Layout PlotIndex Double
+-- ------------------------------------------------------------------------------
+-- -- Plot bars
+-- -- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> IO ()
+-- -- doBarClusters :: [Serie] -> [String] -> String -> String -> String -> Layout PlotIndex Double
+-- doBarClusters series categories title xlabel ylabel = layout
+--  where
+--   layout = 
+--         layout_title .~ title
+--       $ layout_title_style . font_size .~ 10
+--       $ layout_x_axis . laxis_generate .~ autoIndexAxis alabels
+--       $ layout_y_axis . laxis_override .~ axisGridHide
+--       $ layout_left_axis_visibility . axis_show_ticks .~ False
+--       $ layout_plots .~ [ plotBars bars2 ]
+--       $ def :: Layout PlotIndex Double
 
-  bars2 = plot_bars_titles .~ map serieName series -- ["Cash","Equity"]
-      $ plot_bars_values .~ addIndexes (seriesToBarClusters series) -- [[20,45],[45,30],[30,20],[70,25]]
-      $ plot_bars_style .~ BarsClustered
-      $ plot_bars_spacing .~ BarsFixGap 30 5
-      $ plot_bars_item_styles .~ map mkstyle (cycle defaultColorSeq)
-      $ def
+--   bars2 = plot_bars_titles .~ map serieName series -- ["Cash","Equity"]
+--       $ plot_bars_values .~ addIndexes (seriesToBarClusters series) -- [[20,45],[45,30],[30,20],[70,25]]
+--       $ plot_bars_style .~ BarsClustered
+--       $ plot_bars_spacing .~ BarsFixGap 30 5
+--       $ plot_bars_item_styles .~ map mkstyle (cycle defaultColorSeq)
+--       $ def
 
-  alabels = categories -- [ "test" ]
+--   alabels = categories -- [ "test" ]
 
-  bstyle = Just (solidLine 1.0 $ opaque black)
-  mkstyle c = (solidFillStyle c, bstyle)
+--   bstyle = Just (solidLine 1.0 $ opaque black)
+--   mkstyle c = (solidFillStyle c, bstyle)
 
 
---doBars :: [Serie] -> String -> String -> String -> SOMETHING!!!
-doBars series title xlabel ylabel = layout
-  where
-    layout =
-        layout_title .~ title
-      $ layout_title_style . font_size .~ 10
-      $ layout_x_axis . laxis_generate .~ autoIndexAxis (map serieName series)
-      $ layout_y_axis . laxis_override .~ axisGridHide
-      $ layout_left_axis_visibility . axis_show_ticks .~ False
-      $ layout_plots .~ [ plotBars bars ]
-      $ def :: Layout PlotIndex Double
+-- --doBars :: [Serie] -> String -> String -> String -> SOMETHING!!!
+-- doBars series title xlabel ylabel = layout
+--   where
+--     layout =
+--         layout_title .~ title
+--       $ layout_title_style . font_size .~ 10
+--       $ layout_x_axis . laxis_generate .~ autoIndexAxis (map serieName series)
+--       $ layout_y_axis . laxis_override .~ axisGridHide
+--       $ layout_left_axis_visibility . axis_show_ticks .~ False
+--       $ layout_plots .~ [ plotBars bars ]
+--       $ def :: Layout PlotIndex Double
 
     
-    bars =
-        plot_bars_titles .~ []
-      $ plot_bars_values .~ addIndexes (seriesToBars series) -- [[20,45],[45,30],[30,20],[70,25]]
-      $ plot_bars_style .~ C.BarsClustered
-      $ plot_bars_spacing .~ BarsFixGap 30 5
-      $ plot_bars_item_styles .~ map mkstyle (repeat (head (cycle defaultColorSeq)))
-      $ def
+--     bars =
+--         plot_bars_titles .~ []
+--       $ plot_bars_values .~ addIndexes (seriesToBars series) -- [[20,45],[45,30],[30,20],[70,25]]
+--       $ plot_bars_style .~ C.BarsClustered
+--       $ plot_bars_spacing .~ BarsFixGap 30 5
+--       $ plot_bars_item_styles .~ map mkstyle (repeat (head (cycle defaultColorSeq)))
+--       $ def
 
-    bstyle = Just (solidLine 1.0 $ opaque black)
-    mkstyle c = (solidFillStyle c, bstyle)
+--     bstyle = Just (solidLine 1.0 $ opaque black)
+--     mkstyle c = (solidFillStyle c, bstyle)
 
 
-------------------------------------------------------------------------------
--- Plot lines
--- doLines :: [Serie] -> String -> String -> String -> IO ()
-doLines = undefined
-
----------------------------------------------------------------------------
--- Get the CSV from stdin
-
-getCSV :: IO [[String]]
-getCSV = do
-  res <- catch (do
-                   s <- hGetLine stdin
-                   return $ Just s)
-               (\(IOError _ _ _ _ _ _ )-> return Nothing)
-  case res of
-    Just str -> do rest <- getCSV
-                   let str' = map strip $ splitOn "," str
-                   return $ str' : rest
-    Nothing -> return [] 
+-- ------------------------------------------------------------------------------
+-- -- Plot lines
+-- -- doLines :: [Serie] -> String -> String -> String -> IO ()
+-- doLines = undefined
 
 
 
----------------------------------------------------------------------------
--- Recognize data
+-- ---------------------------------------------------------------------------
+-- -- Recognize data
 
 
--- The rules.
--- The string contains only numerals -> Int
--- The string contains only numerals and exactly one . -> Double
--- the string contains exactly one . and an e -> Double 
--- The string contains any non-number char -> String
+-- -- The rules.
+-- -- The string contains only numerals -> Int
+-- -- The string contains only numerals and exactly one . -> Double
+-- -- the string contains exactly one . and an e -> Double 
+-- -- The string contains any non-number char -> String
 
--- there is an ordering to the rules.
--- # 1 If any element of the
---     input contains something that implies String. They are all interpreted as Strings
--- # 2 If not #1 and any element contains . or . and e All values are doubles
--- # 3 If not #1 and #2 treat as Int
+-- -- there is an ordering to the rules.
+-- -- # 1 If any element of the
+-- --     input contains something that implies String. They are all interpreted as Strings
+-- -- # 2 If not #1 and any element contains . or . and e All values are doubles
+-- -- # 3 If not #1 and #2 treat as Int
 
--- May be useless. just treat all values as "Double" 
+-- -- May be useless. just treat all values as "Double" 
 
--- | Figure out what type of value is stored in this data series.     
-recogValueType :: [String] -> ValueType
-recogValueType strs =
-  case (any isString strs, any isInt strs, any isDouble strs) of
+-- -- | Figure out what type of value is stored in this data series.     
+recogValueType :: String -> ValueType
+recogValueType str =
+  case (isString str, isInt str, isDouble str) of
     (True,_,_)     -> String
     (False,True, False)  -> Int
     (False,_, True)  -> Double
     (_, _, _) -> String
-  
-
-isInt str = all isNumber str
-    -- Not a very proper check. 
-isDouble str = ((all isNumber $ delete '.' str)
-                || (all isNumber $ delete '.' $ delete 'e' str)
-                || (all isNumber $ delete '.' $ delete 'e' $ delete '-' str))
-               && '.' `elem` str
-isString str = not (isInt str) && not (isDouble str)
-
-
----------------------------------------------------------------------------
--- Try Sorting as numbers
-
-trySortAsNum :: [String] -> Maybe [String]
-trySortAsNum str =
-  case valueType of
-    -- If they are Integers I dont see how this can fail
-    Int ->  Just $ map show $ sort $ (map read str :: [Int])
-    -- If they are doubles, mae sure read/show invariant holds
-    Double ->
-      let sorted = map show $ sort $ (map read str :: [Double])
-      in if (all (\x -> elem x sorted) str) then Just sorted else Nothing
-
-    -- If they are words. Well, could sort, but doing nothing. 
-    String -> Nothing 
-      
   where 
-    valueType = recogValueType str 
+    isInt str = all isNumber str
+    -- Not a very proper check. 
+    isDouble str = ((all isNumber $ delete '.' str)
+                    || (all isNumber $ delete '.' $ delete 'e' str)
+                    || (all isNumber $ delete '.' $ delete 'e' $ delete '-' str))
+                   && '.' `elem` str
+    isString str = not (isInt str) && not (isDouble str)
+
+
+-- ---------------------------------------------------------------------------
+-- -- Try Sorting as numbers
+
+-- trySortAsNum :: [String] -> Maybe [String]
+-- trySortAsNum str =
+--   case valueType of
+--     -- If they are Integers I dont see how this can fail
+--     Int ->  Just $ map show $ sort $ (map read str :: [Int])
+--     -- If they are doubles, mae sure read/show invariant holds
+--     Double ->
+--       let sorted = map show $ sort $ (map read str :: [Double])
+--       in if (all (\x -> elem x sorted) str) then Just sorted else Nothing
+
+--     -- If they are words. Well, could sort, but doing nothing. 
+--     String -> Nothing 
+      
+--   where 
+--     valueType = recogValueType str 
 
 
 
 
 
----------------------------------------------------------------------------
--- apply the key. that is move some columns to the "front" and concatenate
--- their contents
+-- ---------------------------------------------------------------------------
+-- -- apply the key. that is move some columns to the "front" and concatenate
+-- -- their contents
 
-applyKey :: [Flag] -> [[String]] -> [[String]]
-applyKey flags csv =
-  if keyActive
-  then map doIt csv
+-- applyKey :: [Flag] -> [[String]] -> [[String]]
+-- applyKey flags csv =
+--   if keyActive
+--   then map doIt csv
        
        
-  else csv 
-  where
-    keyActive = (not . null) [() | Key _ <- flags]
-    key = head [read x :: [Int] |  Key x <- flags]
+--   else csv 
+--   where
+--     keyActive = (not . null) [() | Key _ <- flags]
+--     key = head [read x :: [Int] |  Key x <- flags]
 
-    key_sorted_reverse = reverse $ sort key 
+--     key_sorted_reverse = reverse $ sort key 
 
-    fix_row_head r = concatMap (\i -> r !! i) key
-    fix_row_tail r = dropCols key_sorted_reverse r
+--     fix_row_head r = concatMap (\i -> r !! i) key
+--     fix_row_tail r = dropCols key_sorted_reverse r
 
-    doIt r = fix_row_head r : fix_row_tail r 
+--     doIt r = fix_row_head r : fix_row_tail r 
 
-    dropCol x r = take x r ++ drop (x+1) r
-    dropCols [] r = r 
-    dropCols (x:xs) r = dropCols xs (dropCol x r)
+--     dropCol x r = take x r ++ drop (x+1) r
+--     dropCols [] r = r 
+--     dropCols (x:xs) r = dropCols xs (dropCol x r)
     
        
         
--- Probably not very flexible. More thinking needed 
-applyGroup :: [Flag] -> [[String]] -> [[String]]
-applyGroup flags csv = 
-  if groupActive
-  then
-    --error $ "\n\n" ++ show csv ++ "\n\n" ++ show theGroups ++
-    --        "\n\n" ++ show theNames ++ "\n\n" ++ show allGroups ++
-    --        "\n\n" ++ show doIt 
+-- Probably not very flexible. More thinking needed
+    
+-- applyGroup :: [Flag] -> [[String]] -> [[String]]
+-- applyGroup flags csv = 
+--   if groupActive
+--   then
+--     --error $ "\n\n" ++ show csv ++ "\n\n" ++ show theGroups ++
+--     --        "\n\n" ++ show theNames ++ "\n\n" ++ show allGroups ++
+--     --        "\n\n" ++ show doIt 
             
-    case groupingIsValid of
-      True -> doIt -- groupBy csv
-      False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
-  else csv
+--     case groupingIsValid of
+--       True -> doIt -- groupBy csv
+--       False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
+--   else csv
 
-  where
-    groupActive = (not . null) [() | GroupBy _ <- flags]
-    groupBy = head [read x :: Int |  GroupBy x <- flags]
+--   where
+--     groupActive = (not . null) [() | GroupBy _ <- flags]
+--     groupBy = head [read x :: Int |  GroupBy x <- flags]
 
-    getKey r = head r
+--     getKey r = head r
 
-    groupingIsValid = all (\r -> length r == 3) csv
+--     groupingIsValid = all (\r -> length r == 3) csv
 
-    theGroups' = nub $ sort $  map (\r -> r !! groupBy) csv 
-    theGroups  =
-      case trySortAsNum theGroups' of
-        Nothing -> theGroups
-        Just sorted -> sorted 
+--     theGroups' = nub $ sort $  map (\r -> r !! groupBy) csv 
+--     theGroups  =
+--       case trySortAsNum theGroups' of
+--         Nothing -> theGroups
+--         Just sorted -> sorted 
 
-    --- Ooh dangerous!!! 
-    valueIx = head $ delete groupBy [1,2]
+--     --- Ooh dangerous!!! 
+--     valueIx = head $ delete groupBy [1,2]
     
-    -- makes unreasonable assumptions! (ordering) 
-    -- some sorting needs to be built in for the general case. 
-    theNames = nub $ map head csv 
+--     -- makes unreasonable assumptions! (ordering) 
+--     -- some sorting needs to be built in for the general case. 
+--     theNames = nub $ map head csv 
 
-    --extractValues g rows = [r !! valueIx | r <- rows
-     --                                    , g == (r !! groupBy)]
+--     --extractValues g rows = [r !! valueIx | r <- rows
+--      --                                    , g == (r !! groupBy)]
 
-    allGroups = map (\n -> extractValues n csv) theNames --theGroups
+--     allGroups = map (\n -> extractValues n csv) theNames --theGroups
 
 
-    -- for each NAME. Pull out all values 
-    extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
+--     -- for each NAME. Pull out all values 
+--     extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
 
-    --organize the values in the order specified by "theGroups"
-    organize [] [] = []
-    organize [] xs  = error $ show xs
-    organize (x:xs) ys = 
-      case lookup x ys of
-        Nothing -> error "applyGroup: Bug alert!"
-        Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
+--     --organize the values in the order specified by "theGroups"
+--     organize [] [] = []
+--     organize [] xs  = error $ show xs
+--     organize (x:xs) ys = 
+--       case lookup x ys of
+--         Nothing -> error "applyGroup: Bug alert!"
+--         Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
     
     
-    doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
+--     doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
 
 -- This is what you get. 
 -- groupBy "THREADS" 
@@ -482,66 +708,66 @@ applyGroup flags csv =
 
 -- New applyGroup that uses a different result layout.
 -- I think this is the layout more often requested by plotting tools. 
-applyGroup :: [Flag] -> [[String]] -> [[String]]
-applyGroup flags csv = 
-  if groupActive
-  then
+-- applyGroup :: [Flag] -> [[String]] -> [[String]]
+-- applyGroup flags csv = 
+--   if groupActive
+--   then
             
-    case groupingIsValid of
-      True -> doIt -- groupBy csv
-      False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
-  else csv
+--     case groupingIsValid of
+--       True -> doIt -- groupBy csv
+--       False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
+--   else csv
 
-  where
-    groupActive = (not . null) [() | GroupBy _ <- flags]
-    -- This could also potentially be a name, right ? 
-    groupSpecifierColumn = head [read x :: Int |  GroupBy x <- flags]
+--   where
+--     groupActive = (not . null) [() | GroupBy _ <- flags]
+--     -- This could also potentially be a name, right ? 
+--     groupSpecifierColumn = head [read x :: Int |  GroupBy x <- flags]
 
-    -- After rearrangement the key will be at the head of the list
-    -- (Thats why grouping requires keying) 
-    getKey r = head r
+--     -- After rearrangement the key will be at the head of the list
+--     -- (Thats why grouping requires keying) 
+--     getKey r = head r
 
-    -- I have no idea what to do if the table has too many column,
-    -- Could require that the user specify Key, Group and Value column,
-    -- and filter out those in the process of grouping. 
-    groupingIsValid = all (\r -> length r == 3) csv
+--     -- I have no idea what to do if the table has too many column,
+--     -- Could require that the user specify Key, Group and Value column,
+--     -- and filter out those in the process of grouping. 
+--     groupingIsValid = all (\r -> length r == 3) csv
 
-    -- Read out all different values in the groupSpecifierColumn.
-    theGroups' = nub $ sort $  map (\r -> r !! groupSpecifierColumn) csv 
-    theGroups  =
-      case trySortAsNum theGroups' of
-        Nothing -> theGroups
-        Just sorted -> sorted 
+--     -- Read out all different values in the groupSpecifierColumn.
+--     theGroups' = nub $ sort $  map (\r -> r !! groupSpecifierColumn) csv 
+--     theGroups  =
+--       case trySortAsNum theGroups' of
+--         Nothing -> theGroups
+--         Just sorted -> sorted 
 
-    --- Ooh dangerous!!!
-    --  But should work if key is in column 0 (user has rekeyed) 
-    --  and if number of columns is 3. 
-    valueIx = head $ delete groupSpecifyerColumn [1,2]
+--     --- Ooh dangerous!!!
+--     --  But should work if key is in column 0 (user has rekeyed) 
+--     --  and if number of columns is 3. 
+--     valueIx = head $ delete groupSpecifyerColumn [1,2]
     
 
-    -- extract all the different keys.
-    -- Could try to sort these as numbers as well.. 
-    allKeys = nub $ sort $ map head csv 
+--     -- extract all the different keys.
+--     -- Could try to sort these as numbers as well.. 
+--     allKeys = nub $ sort $ map head csv 
 
-    allGroups = map (\n -> extractValues n csv) theNames --theGroups
+--     allGroups = map (\n -> extractValues n csv) theNames --theGroups
 
 
-    -- for each NAME. Pull out all values 
-    extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
+--     -- for each NAME. Pull out all values 
+--     extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
 
-    --organize the values in the order specified by "theGroups"
-    organize [] [] = []
-    organize [] xs  = error $ show xs
-    organize (x:xs) ys = 
-      case lookup x ys of
-        Nothing -> error "applyGroup: Bug alert!"
-        Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
+--     --organize the values in the order specified by "theGroups"
+--     organize [] [] = []
+--     organize [] xs  = error $ show xs
+--     organize (x:xs) ys = 
+--       case lookup x ys of
+--         Nothing -> error "applyGroup: Bug alert!"
+--         Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
     
     
-    doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
+--     doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
 
 
-    -- Can potentially find a whole list of values at a given key
-    -- and a given groupID
-    extractGroup :: (String,Int) -> (String,Int) -> [[String]] -> (String,(String, [String]))
-    extractGroup (key,keyix) (groupElem,gix) table = undefined 
+--     -- Can potentially find a whole list of values at a given key
+--     -- and a given groupID
+--     extractGroup :: (String,Int) -> (String,Int) -> [[String]] -> (String,(String, [String]))
+--     extractGroup (key,keyix) (groupElem,gix) table = undefined 
