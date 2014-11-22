@@ -425,10 +425,9 @@ data ParamSetting
                                --   For example `CmdPath "ghc" "ghc-7.6.3"`.
   | CPUSet  CPUAffinity -- ^ Set the cpu affinity in a particular way before launching the benchmark process.
 
-
--- | Threads Int -- ^ Shorthand: builtin support for changing the number of
+--  Threads Int -- ^ Shorthand: builtin support for changing the number of
     -- threads across a number of separate build methods.
--- | TimeOut      Double        -- ^ Set the timeout for this benchmark.
+--  TimeOut      Double        -- ^ Set the timeout for this benchmark.
  deriving (Show, Eq, Read, Ord, Generic)
 
 data CPUAffinity = Packed    -- ^ Picks cores packed into as few

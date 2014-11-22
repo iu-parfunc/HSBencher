@@ -1,7 +1,12 @@
 
 name:                hsbencher
-version:             1.20
--- CHANGELOG:
+version:             1.20.0.1
+----------------------------------------
+-- Detailed CHANGELOG:
+----------------------------------------
+-- For less-detailed changelog that shows up in the user-visible docs,
+-- see below.
+----------------------------------------------------------------------
 -- 1.0   : Initial release, new flexible benchmark format.
 -- 1.1   : Change interface to RunInPlace
 -- 1.1.1 : add defaultMainModifyConfig
@@ -56,6 +61,8 @@ version:             1.20
 -- 1.19     : Change the semantics of naked runtime args to conjunction, not disjunction.
 -- 1.19.1   : Additional change to allow filtering of benchmarks by BenchSpace as well.
 -- 1.20     : add --bindir
+
+-----------------------------------------------------------------------------------------
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
 
@@ -118,22 +125,28 @@ description: Benchmark frameworks are usually very specific to the
  .
  * (1.8) Backend plugins, hsbencher-fusion package factored out.
  .
- * (1.9) 
- .
- * (1.10) 
- .
- * (1.11) 
- . 
- * (1.12) 
- . 
- * (1.13) 
- . 
- * (1.14) 
- .
  * (1.15) Add systemCleaner field to Config
  .
  * (1.17) Add cpu affinity control; lspci off by default
+ .
+ * (1.18) Fix COMPILE_FLAGS upload; upload "unwords" of COMPILE_FLAGS to avoid quotes in output.
+ .
+ * (1.19.1) Change the semantics of naked runtime args to conjunction, not disjunction.
+            Also allow filtering of benchmarks by BenchSpace as well.
+ .
+ * (1.20)   Add "--bindir" command line argument.
 
+ -- * (1.9) 
+ -- .
+ -- * (1.10) 
+ -- .
+ -- * (1.11) 
+ -- . 
+ -- * (1.12) 
+ -- . 
+ -- * (1.13) 
+ -- . 
+ -- * (1.14) 
 
 
 
