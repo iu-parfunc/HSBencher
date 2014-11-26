@@ -143,12 +143,15 @@ runLines cmd = do
 
 -- | Runs a command through the OS shell and returns the first line of
 -- output. (Ignore exit code and stderr.)
+--
+-- If the command does not return any output, this function returns the empty string.
 runSL :: String -> IO String
 runSL cmd = do
   lns <- runLines cmd
   case lns of
     h:_ -> return h
-    []  -> error$ "runSL: expected at least one line of output for command "++cmd
+    []  -> return ""
+--    []  -> error$ "runSL: expected at least one line of output for command "++cmd
 
 
 

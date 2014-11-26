@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.20.0.2
+version:             1.20.0.3
 ----------------------------------------
 -- Detailed CHANGELOG:
 ----------------------------------------
@@ -61,6 +61,7 @@ version:             1.20.0.2
 -- 1.19     : Change the semantics of naked runtime args to conjunction, not disjunction.
 -- 1.19.1   : Additional change to allow filtering of benchmarks by BenchSpace as well.
 -- 1.20     : add --bindir
+-- 1.20.0.3 : bugfix, #71, runSL change
 
 -----------------------------------------------------------------------------------------
 
