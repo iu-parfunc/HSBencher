@@ -201,7 +201,10 @@ addPlugin plug pconf conf =
 -- subsequently be tinkered with.  This procedure should be idempotent.
 getConfig :: [Flag] -> [Benchmark DefaultParamMeaning] -> IO Config
 getConfig cmd_line_options benches = do
-  hostname <- runSL$ "hostname -s"
+  hostname0 <- runLines$ "hostname -s"
+  let hostname = case hostname0 of
+                   l:_ -> l
+                   []  -> "unknown"
   t0 <- getCurrentTime
   let startTime = round (utcTimeToPOSIXSeconds t0)
   env      <- getEnvironment
