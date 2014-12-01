@@ -480,11 +480,11 @@ applySplit flags csv =
       Just c ->
         let esp = extractSplitPoint c csvdata
             esps = applySplit esp
-            (num,sane) = splitSane esps
+            num = maxLengthAfterSplit esps
             splitCol = [splitLoc ++ show i | i <- [0..num-1]]
             splitCols = take c colNames ++ splitCol ++ drop (c+1) colNames 
             
-        in (splitCols : map (applySplitByColumn c) csvdata)
+        in (splitCols : map (applySplitByColumn num c) csvdata)
                 
     
   else csv
@@ -501,20 +501,23 @@ applySplit flags csv =
    splitLoc = head [ x  | SplitLoc x <- flags]
    splitBy  = head [ x  | SplitBy x <- flags]
 
-   applySplitByColumn c csv =
+   applySplitByColumn num {- for padding -}  c csv =
      let before = take c csv
          after  = drop (c+1) csv
          atx    = csv !! c
-     in before ++ (splitOn splitBy atx) ++ after 
+         splitatx = splitOn splitBy atx
+         padded   = splitatx ++ [""|_ <- [0..num - length splitatx - 1]] 
+     in before ++ padded ++ after 
 
     -- extract the column to be split 
    extractSplitPoint c csv = map (\csv_row -> csv_row !! c) csv 
    applySplit csv = map (splitOn splitBy) csv
 
-   splitSane scsv  =
-     let lengths = map length scsv
-         hd      = head lengths
-     in (hd, all (==hd) lengths)
+   maxLengthAfterSplit scsv = maximum $ map length scsv 
+   -- splitSane scsv  =
+   --   let lengths = map length scsv
+   --       hd      = head lengths
+   --   in (hd, all (==hd) lengths)
     
     
     

@@ -67,10 +67,10 @@ cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0"
 -- 
 ---------------------------------------------------------------------------
 
--- | Command line flags to the benchmarking executable.
+-- | Command line flags to the executable.
 data Flag = ShowHelp | ShowVersion
-          | File String       -- files must have same format
-                              -- and same format as any csv arriving in pipe
+          | File String       -- files must have same CSV layout
+                              -- and same format as any CSV arriving in pipe
           | OutFile String
           | RenderMode GraphMode
           | Title String
@@ -92,21 +92,21 @@ data Flag = ShowHelp | ShowVersion
           -- The standard use case is as a pipe "|"
           | NoPipe
 
- -- This is getting messy 
+-- This is getting messy 
             -- Normalize against this column
-          | NormalizeKey String
-          | NormalizeVal String 
+          | NormaliseKey String
+          | NormaliseVal String 
 
-          -- Aux values are not plotted!
-          | AuxFile String -- a single auxfile that need not have same format as other CSV
-          | AuxKey  String -- part of key into auxfile
-          | AuxX    String -- column with aux x value 
-          | AuxY    String -- column with aux y value 
-
-       
+          
             
+          --   -- Aux values are not plotted!
+          -- | AuxFile String -- a single auxfile that need not have same format as other CSV
+          -- | AuxKey  String -- part of key into auxfile
+          -- | AuxX    String -- column with aux x value 
+          -- | AuxY    String -- column with aux y value 
   deriving (Eq,Ord,Show,Read)
 
+-- This is all a bit unfortunate. 
 data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
                   deriving (Eq, Ord, Show, Read) 
 
@@ -123,6 +123,8 @@ data GraphMode = Bars | BarClusters | Lines
 data ValueType = Int | Double | String 
                deriving (Eq, Ord, Show, Read )
 
+
+-- Once things start to work more properly, exception handling should be made proper. 
 -- | Exceptions that may occur
 data Error
   = FlagsNotValidE String
@@ -155,7 +157,8 @@ core_cli_options =
      , Option []    ["PNG"]    (NoArg (OutFormat MyPNG)) "Output in PNG format"
 
      , Option []    ["nopipe"] (NoArg NoPipe)            "Tool is not used in a pipe"
-
+       
+     , Option []    ["normalise"] (ReqArg NormaliseKey "String") "What value to normalise against" 
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -218,7 +221,18 @@ insertVal m key val@(x,y) =
     Nothing -> M.insert key [val] m 
     Just vals -> M.insert key (val:vals) m
 
-    
+
+---------------------------------------------------------------------------
+-- Plot configuration
+---------------------------------------------------------------------------
+data PlotConfig = PlotConfig { plotOutFile    :: FilePath
+                             , plotOutFormat  :: FileFormat
+                             , plotResolution :: (Int,Int)                                
+                             , plotTitle      :: String                              
+                             , plotXLabel     :: String
+                             , plotYLabel     :: String
+                             }
+
 ---------------------------------------------------------------------------
 -- MAIN
 ---------------------------------------------------------------------------
@@ -231,6 +245,8 @@ main = do
       outputSpecified = (not . null) [() | OutFile _ <- options]
       outputFormatSpecified = (not . null) [() | OutFormat _ <- options]
 
+      normaliseSpecified = (not . null) [ () | NormaliseKey _ <- options] 
+  
       outFormat = head $ [convToFileFormat format | OutFormat format <- options] ++ [PNG] 
 
       inFiles = [nom | File nom <- options]   
@@ -261,11 +277,11 @@ main = do
     putStrLn$ "Error: an output file has to be specified"
     exitFailure
 
-  ---------------------------------------------------------------------------
+  --------------------------------------------------
   -- Get target
   let outFile = head [file | OutFile file <- options]  
 
-  ---------------------------------------------------------------------------
+  --------------------------------------------------
   -- Get keys
   let hasKey  = (not . null) [ () | Key _ <- options]  
       key =
@@ -282,24 +298,28 @@ main = do
           True  -> (head [x | XValues x <- options],
                     head [y | YValues y <- options])
       
-  ---------------------------------------------------------------------------
+  --------------------------------------------------
   -- read csv from stdin. 
   
-  csv' <- case nopipe of 
-            False -> getCSV key xy
-            True  -> return $ M.empty 
+  (csv',aux') <- case nopipe of 
+    False -> getCSV key xy
+    True  -> return $ (M.empty, M.empty)
   
-  ---------------------------------------------------------------------------
+  --------------------------------------------------
   -- read aux csv from files
   putStrLn $ show inFiles 
 
-  csv <- readCSVFiles csv' inFiles key xy 
+  (csv,aux) <- readCSVFiles (csv',aux') inFiles key xy 
   
          
   hPutStrLn stderr $ "printing csv" 
   hPutStrLn stderr $ show csv
 
-  ---------------------------------------------------------------------------
+
+  hPutStrLn stderr $ "printing aux" 
+  hPutStrLn stderr $ show aux
+
+  --------------------------------------------------
   -- Create a lineplot 
 
   let series :: [(String,[(SeriesData,SeriesData)])]
@@ -307,32 +327,52 @@ main = do
 
       series' = map unifyTypes series
       series_type = typecheck series' 
-      outResolution = (xRes,yRes) 
+
+      -- normalise values against this datapoint
+      normKey = head [nom | NormaliseKey nom <- options]   
+      base = getBaseVal normKey csv aux 
+      
+      
+      plot_series = if normaliseSpecified       
+                    then normalise base series'
+                    else series'
+  --------------------------------------------------
+  -- All the collected parameters for the plotting. 
+  let plotConf = PlotConfig outFile
+                            outFormat
+                            (xRes,yRes)
+                            plotTitle
+                            "X-Axis"
+                            "Y-Axis" 
   
+  
+  --------------------------------------------------
+  -- do it 
   case series_type of
-    Just (Int,Int) -> plotIntInt outFile outFormat outResolution series'
-    Just (Int,Double) -> plotIntDouble outFile outFormat outResolution series'
-    Just (Double,Double) -> plotDoubleDouble outFile outFormat outResolution series'
+    Just (Int,Int) -> plotIntInt plotConf plot_series
+    Just (Int,Double) -> plotIntDouble plotConf plot_series
+    Just (Double,Double) -> plotDoubleDouble plotConf plot_series
     Just (_,_) -> error $ "no support for plotting of this series type: " ++ show series_type
     Nothing -> error $ "Series failed to typecheck" 
   
 ---------------------------------------------------------------------------
 -- Plotting
     
-plotIntInt outfile series = undefined
+plotIntInt conf series = undefined
 
 
-plotIntDouble outfile outFormat outResolution series = do 
-  let fopts = FileOptions outResolution outFormat 
-  toFile fopts outfile $ do
+--plotIntDouble outfile plotTitle outFormat outResolution series = do
+plotIntDouble conf  series = do 
+  let fopts = FileOptions (plotResolution conf)
+                          (plotOutFormat conf)
+  toFile fopts (plotOutFile conf) $ do
     
-    layout_title .= "testplot from grapher"
+    layout_title .= plotTitle conf
     layout_background .= solidFillStyle (opaque white)
     layout_foreground .= opaque black
     layout_left_axis_visibility . axis_show_ticks .= True
     layout_title_style . font_size .= 24
     
-
     mapM_ plotIt series 
   
   where
@@ -340,20 +380,20 @@ plotIntDouble outfile outFormat outResolution series = do
       color <- takeColor
       shape <- takeShape
 
-      let sorted = (sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)
+      let (xs,ys) = unzip xys
+          xsi     = map fromData xs :: [Int]
+          ysd     = map fromData ys :: [Double]
+          sorted  = (sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)
+          
       plot $ myline color name [sorted]
       plot $ mypoints color shape name sorted
-      where 
-        (xs,ys)  =  unzip xys
-        xsi = map fromData xs :: [Int]
-        ysd = map fromData ys :: [Double]
-
+        
     myline :: AlphaColour Double -> String -> [[(x,y)]]  -> EC l (PlotLines x y)
     myline color title values = liftEC $ do
       plot_lines_title .= title
       plot_lines_values .= values
       plot_lines_style . line_color .= color
-      plot_lines_style . line_width .= 5
+      plot_lines_style . line_width .= 1
 
 
     mypoints :: AlphaColour Double -> PointShape -> String -> [(x,y)] -> EC l (PlotPoints x y)
@@ -362,9 +402,9 @@ plotIntDouble outfile outFormat outResolution series = do
       plot_points_title .= name
       plot_points_style . point_color .= transparent 
       plot_points_style . point_shape .= shape
-      plot_points_style . point_border_width .= 4
+      plot_points_style . point_border_width .= 1
       plot_points_style . point_border_color .= color
-      plot_points_style . point_radius .= 8
+      plot_points_style . point_radius .= 2
 
 plotDoubleDouble = undefined 
 
@@ -410,11 +450,11 @@ typecheck dat =
 ---------------------------------------------------------------------------
 -- Get the CSV from stdin
 
-getCSV :: [String] -> (String,String) -> IO DataSeries
-getCSV = getCSVHandle M.empty stdin
+getCSV :: [String] -> (String,String) -> IO (DataSeries,DataSeries)
+getCSV = getCSVHandle (M.empty,M.empty) stdin
 
 
-readCSVFiles :: DataSeries -> [FilePath] -> [String] -> (String,String) -> IO DataSeries 
+readCSVFiles :: (DataSeries,DataSeries) -> [FilePath] -> [String] -> (String,String) -> IO (DataSeries,DataSeries)
 readCSVFiles m [] _ _ = return m
 readCSVFiles m (f:fs) keys xy =
   do m' <-
@@ -422,9 +462,10 @@ readCSVFiles m (f:fs) keys xy =
             getCSVHandle m h keys xy
      readCSVFiles m' fs keys xy 
 
-     
-getCSVHandle :: DataSeries -> Handle -> [String] -> (String,String) -> IO DataSeries --[[String]]
-getCSVHandle m handle keys (xcol,ycol)= do
+
+-- This function needs a few comments..     
+getCSVHandle :: (DataSeries,DataSeries) -> Handle -> [String] -> (String,String) -> IO (DataSeries,DataSeries)
+getCSVHandle (m,aux) handle keys (xcol,ycol)= do
   -- Read of the headers 
   res <- catch
              (do
@@ -438,8 +479,7 @@ getCSVHandle m handle keys (xcol,ycol)= do
       let csv = map strip $ splitOn "," str
           keyStr = concat keys 
           keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
-
-          -- dangerous! 
+          
           xcolIx =
             case elemIndex xcol csv of
               Just ix -> ix
@@ -448,22 +488,14 @@ getCSVHandle m handle keys (xcol,ycol)= do
             case elemIndex ycol csv of
               Just ix -> ix
               Nothing -> error $ show ycol ++ " is not present in csv."
-          
-
-          
-  --    putStrLn $ "Specified key: " ++ keyStr    
-  --    putStrLn $ "Key Indices:   " ++ show keyIxs
-  --    putStrLn $ "Read the headers line: " ++ str
-      
         
       case (length keyIxs) == (length keys) of
         False -> error "Key is not part of table"
         True -> do
-          m' <- loop keyIxs (xcolIx,ycolIx) m
-  --        putStrLn $ show m
-          return m'
+          (m',aux') <- loop keyIxs (xcolIx,ycolIx) (m,aux)
+          return (m',aux')
   where
-    loop keyIxs xy m = do
+    loop keyIxs xy (m,aux) = do
       res <- catch
              (do
                  s <- hGetLine handle
@@ -472,22 +504,38 @@ getCSVHandle m handle keys (xcol,ycol)= do
              (\(IOError _ _ _ _ _ _ )-> return Nothing)
       case res of
         -- In the odd event that an empty line occurs 
-        Just []  -> loop keyIxs xy m 
-        Just str -> do 
+        Just []  -> loop keyIxs xy (m,aux)
+        -- A real string, lets see if it contains anything useful. 
+        Just str -> do
+          -- split out the csv fields 
           let csv = map strip $ splitOn "," str
-          
+
+              -- Construct a key
               key = collectKey keyIxs csv      
 
-              val  = collectXY xy csv
-              m' = insertVal m key val
-   --       putStrLn $ show csv
-          loop keyIxs xy m'
-        Nothing -> return m
+              -- Find x,y pairs
+              (xStr,yStr)  = collectXY xy csv
+          -- empty string at key position. 
+          -- May be of importance! 
+          case (xStr,yStr) of
+            ("","") -> do putStrLn $ "has no x/y values: " ++ show key ++ " discarding."
+                          loop keyIxs xy (m,aux)
+            ("",a)  -> do putStrLn $ "has no x value: " ++ show key ++ " Goes into aux data."
+                          let aux' = insertVal aux key (StringData "NO_X_VALUE",
+                                                        toSeriesData a)
+                          loop keyIxs xy (m,aux')
+            (a,"")  -> do putStrLn $ "has no y value: " ++ show key ++ " discarding."
+                          loop keyIxs xy (m,aux)
+            (x,y)   -> let m' = insertVal m key (toSeriesData x,
+                                                 toSeriesData y)
+                       in  loop keyIxs xy (m',aux)
+        -- DONE! (EOF)                   
+        Nothing -> return (m,aux)
         
-    collectKey ixs csv = concat $ intersperse "_" $ map (\i -> csv !! i) ixs
+    collectKey ixs csv = concat $ intersperse "_" $ filter (/="") $ map (\i -> csv !! i) ixs
     
-    collectXY (x,y) csv =  ( toSeriesData $ collectVal x csv
-                           , toSeriesData $ collectVal y csv)
+    collectXY (x,y) csv =  ( collectVal x csv
+                           , collectVal y csv)
     collectVal ix csv = csv !! ix 
 
     toSeriesData x =
@@ -530,4 +578,32 @@ recogValueType str =
                     || (all isNumber $ delete '.' $ delete 'e' $ delete '-' str))
                    && '.' `elem` str
     isString str = not (isInt str) && not (isDouble str)
+
+
+
+
+---------------------------------------------------------------------------
+-- get a value to normalise against 
+---------------------------------------------------------------------------
+
+getBaseVal normKey csv aux =
+  case (M.lookup normKey csv, M.lookup normKey aux) of
+    (Nothing, Nothing) -> error "Value to normalise against not found"
+    (Just v,_) -> v
+    (_,Just v) -> v
+      
+
+
+normalise :: [(SeriesData,SeriesData)] -> [(String,[(SeriesData,SeriesData)])] -> [(String,[(SeriesData,SeriesData)])]
+normalise []   _  = error "No Value to normalise against"
+normalise base [] = []
+normalise base ((nom,serie):rest) 
+  = (nom,normalise' base serie):normalise base rest
+  where
+    normalise' ::  [(SeriesData,SeriesData)] ->  [(SeriesData,SeriesData)] ->  [(SeriesData,SeriesData)] 
+    normalise' base [] = []
+    normalise' base ((sx,sy):rest) =
+      doIt base (sx,sy) : normalise' base rest
+    doIt ((x,NumData y):_) (sx,NumData sy) = (sx,NumData ((sy-y)/y))  
+  
 
