@@ -6,7 +6,7 @@ module Main where
 import System.Environment (getArgs, getEnv, getEnvironment)
 import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.IO (Handle, hPutStrLn, stderr,stdin, openFile, hClose, hGetContents,
-                  hIsEOF, hGetLine, IOMode(..), BufferMode(..), hSetBuffering)
+                  hIsEOF, hGetLine, IOMode(..), BufferMode(..), hSetBuffering, withFile)
 
 import GHC.IO.Exception (IOException(..))
 
@@ -69,16 +69,15 @@ cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0"
 
 -- | Command line flags to the benchmarking executable.
 data Flag = ShowHelp | ShowVersion
-          | File String
-          | DataIn String  -- Readable as "Orientation"
+          | File String       -- files must have same format
+                              -- and same format as any csv arriving in pipe
           | OutFile String
           | RenderMode GraphMode
           | Title String
           | XLabel String
           | YLabel String
-  -- BarCluster rendering related
 
--- identify part of a key 
+          -- identify part of a key 
           | Key String -- --key="Arg1" --key?"Arg2" means Arg1_Arg2 is the name of data series
           | XValues String -- column containing x-values
           | YValues String -- column containing y-values
@@ -89,7 +88,22 @@ data Flag = ShowHelp | ShowVersion
 
           -- output format
           | OutFormat MyFileFormat
-             
+
+          -- The standard use case is as a pipe "|"
+          | NoPipe
+
+ -- This is getting messy 
+            -- Normalize against this column
+          | NormalizeKey String
+          | NormalizeVal String 
+
+          -- Aux values are not plotted!
+          | AuxFile String -- a single auxfile that need not have same format as other CSV
+          | AuxKey  String -- part of key into auxfile
+          | AuxX    String -- column with aux x value 
+          | AuxY    String -- column with aux y value 
+
+       
             
   deriving (Eq,Ord,Show,Read)
 
@@ -102,9 +116,6 @@ convToFileFormat MyPDF = PDF
 convToFileFormat MyPNG = PNG
 convToFileFormat MyPS = PS
 
-data LocationSpec = Row Int | Column Int 
-                  deriving (Eq, Ord, Show, Read )
-                           
 data GraphMode = Bars | BarClusters | Lines 
                deriving (Eq, Ord, Show, Read )
 
@@ -124,8 +135,7 @@ core_cli_options :: [OptDescr Flag]
 core_cli_options = 
      [ Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
-     , Option ['f'] ["file"] (ReqArg File "FileName.csv")    "Use a CSV file as input"
-     , Option ['d'] ["data"] (ReqArg DataIn "Rows/Columns")  "Data series are along a row/column"
+     , Option ['f'] ["file"] (ReqArg File "FileName.csv")    "Use CSV file as input"
      , Option ['o'] ["out"]  (ReqArg OutFile "FileName.png") "Chart result file"
      , Option []    ["bars"] (NoArg (RenderMode Bars))       "Plot data as bars"
      , Option []    ["barclusters"] (NoArg (RenderMode BarClusters)) "Plot data as bar clusters" 
@@ -137,12 +147,14 @@ core_cli_options =
      , Option ['x'] ["xvalue"] (ReqArg XValues "String")      "Column containing x values"
      , Option ['y'] ["yvalue"] (ReqArg YValues "String")      "Column containing y values"
 
-     , Option []    ["xres"]   (ReqArg XRes "String") "X-resolution of output graphics"
-     , Option []    ["yres"]   (ReqArg XRes "String") "Y-resolution of output graphics"
+     , Option []    ["xres"]   (ReqArg XRes "String")    "X-resolution of output graphics"
+     , Option []    ["yres"]   (ReqArg XRes "String")    "Y-resolution of output graphics"
      , Option []    ["SVG"]    (NoArg (OutFormat MySVG)) "Output in SVG format"
      , Option []    ["PDF"]    (NoArg (OutFormat MyPDF)) "Output in PDF format"
      , Option []    ["PS"]     (NoArg (OutFormat MyPS))  "Output in PS format"
      , Option []    ["PNG"]    (NoArg (OutFormat MyPNG)) "Output in PNG format"
+
+     , Option []    ["nopipe"] (NoArg NoPipe)            "Tool is not used in a pipe"
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -154,7 +166,7 @@ fullUsageInfo = usageInfo docs core_cli_options
 --   ++ generalUsageStr
 
 ---------------------------------------------------------------------------
--- All series in a map.
+-- Data representations
 ---------------------------------------------------------------------------
 data SeriesData = IntData Int 
                 | NumData Double
@@ -193,6 +205,10 @@ instance FromData String where
   fromData (StringData a) = a
   fromData _ = error "FromData String" 
 
+---------------------------------------------------------------------------
+-- Data series
+---------------------------------------------------------------------------
+  
 type DataSeries = M.Map String [(SeriesData,SeriesData)] 
 
 insertVal :: DataSeries -> String -> (SeriesData,SeriesData) -> DataSeries
@@ -203,7 +219,7 @@ insertVal m key val@(x,y) =
 
     
 ---------------------------------------------------------------------------
--- MAIN                                                                  --
+-- MAIN
 ---------------------------------------------------------------------------
 main :: IO ()
 main = do
@@ -211,12 +227,25 @@ main = do
 
   let (options,plainargs,_unrec,errs) = getOpt' Permute core_cli_options args
 
-  let outputSpecified = (not . null) [() | OutFile _ <- options]
+      outputSpecified = (not . null) [() | OutFile _ <- options]
       outputFormatSpecified = (not . null) [() | OutFormat _ <- options]
-      xDimensionSpecified   = (not . null) [() | XRes _ <- options]
-      yDimensionSpecified   = (not . null) [() | YRes _ <- options]
-      outfile = head [nom | OutFile nom <- options] 
 
+      outFormat = head $ [convToFileFormat format | OutFormat format <- options] ++ [PNG] 
+
+      inFiles = [nom | File nom <- options]   
+  
+      xRes = head $ [read x | XRes x <- options] ++ [800]
+      yRes = head $ [read y | YRes y <- options] ++ [600]
+  
+      plotTitle = head $ [t | Title t <- options] ++ ["NO_TITLE"]
+      xLabel    = head $ [l | XLabel l <- options] ++ ["X-Axis"] 
+      yLabel    = head $ [l | YLabel l <- options] ++ ["Y-Axis"]
+      
+      outfile = head [nom | OutFile nom <- options]
+  
+      -- The user specified not to pipe ?
+      nopipe = (not . null) [() | NoPipe <- options]
+      
       
   unless (null errs) $ do
     putStrLn$ "Errors parsing command line options:"
@@ -234,16 +263,6 @@ main = do
   ---------------------------------------------------------------------------
   -- Get target
   let outFile = head [file | OutFile file <- options]  
-      outFormat =
-        case outputFormatSpecified of
-          False -> PNG
-          True  -> convToFileFormat
-                   $ head [format | OutFormat format <- options]
-      outResolution =
-        case (xDimensionSpecified && yDimensionSpecified) of
-          False -> (800,600)
-          True -> ( read $ head [xres | XRes xres <- options]
-                  , read $ head [yres | YRes yres <- options])
 
   ---------------------------------------------------------------------------
   -- Get keys
@@ -264,8 +283,16 @@ main = do
       
   ---------------------------------------------------------------------------
   -- read csv from stdin. 
+  
+  csv' <- case nopipe of 
+            False -> getCSV key xy
+            True  -> return $ M.empty 
+  
+  ---------------------------------------------------------------------------
+  -- read aux csv from files
+  putStrLn $ show inFiles 
 
-  csv <- getCSV key xy
+  csv <- readCSVFiles csv' inFiles key xy 
   
          
   hPutStrLn stderr $ "printing csv" 
@@ -279,7 +306,8 @@ main = do
 
       series' = map unifyTypes series
       series_type = typecheck series' 
-      
+      outResolution = (xRes,yRes) 
+  
   case series_type of
     Just (Int,Int) -> plotIntInt outFile outFormat outResolution series'
     Just (Int,Double) -> plotIntDouble outFile outFormat outResolution series'
@@ -305,15 +333,15 @@ plotIntDouble outfile outFormat outResolution series = do
     
 
     mapM_ plotIt series 
-    
-    -- plot (myline "g" [[(1,8.3),(2,7.6),(3,6.4)]::[(Int,Double)]])
+  
   where
     plotIt (name,xys) = do
       color <- takeColor
       shape <- takeShape
 
-      plot (myline color name [(sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)])
-      plot (mypoints color shape (sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd))
+      let sorted = (sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)
+      plot $ myline color name [sorted]
+      plot $ mypoints color shape name sorted
       where 
         (xs,ys)  =  unzip xys
         xsi = map fromData xs :: [Int]
@@ -327,9 +355,10 @@ plotIntDouble outfile outFormat outResolution series = do
       plot_lines_style . line_width .= 5
 
 
-    mypoints :: AlphaColour Double -> PointShape -> [(x,y)] -> EC l (PlotPoints x y)
-    mypoints color shape values = liftEC $ do
+    mypoints :: AlphaColour Double -> PointShape -> String -> [(x,y)] -> EC l (PlotPoints x y)
+    mypoints color shape name values = liftEC $ do
       plot_points_values .= values
+      plot_points_title .= name
       plot_points_style . point_color .= transparent 
       plot_points_style . point_shape .= shape
       plot_points_style . point_border_width .= 4
@@ -380,12 +409,25 @@ typecheck dat =
 ---------------------------------------------------------------------------
 -- Get the CSV from stdin
 
-getCSV :: [String] -> (String,String) -> IO DataSeries --[[String]]
-getCSV keys (xcol,ycol)= do
+getCSV :: [String] -> (String,String) -> IO DataSeries
+getCSV = getCSVHandle M.empty stdin
+
+
+readCSVFiles :: DataSeries -> [FilePath] -> [String] -> (String,String) -> IO DataSeries 
+readCSVFiles m [] _ _ = return m
+readCSVFiles m (f:fs) keys xy =
+  do m' <-
+       withFile f ReadMode $ \h ->
+            getCSVHandle m h keys xy
+     readCSVFiles m' fs keys xy 
+
+     
+getCSVHandle :: DataSeries -> Handle -> [String] -> (String,String) -> IO DataSeries --[[String]]
+getCSVHandle m handle keys (xcol,ycol)= do
   -- Read of the headers 
   res <- catch
              (do
-                 s <- hGetLine stdin
+                 s <- hGetLine handle
                  return $ Just s
              )
              (\(IOError _ _ _ _ _ _ ) -> return Nothing)
@@ -397,8 +439,16 @@ getCSV keys (xcol,ycol)= do
           keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
 
           -- dangerous! 
-          Just xcolIx = elemIndex xcol csv
-          Just ycolIx = elemIndex ycol csv
+          xcolIx =
+            case elemIndex xcol csv of
+              Just ix -> ix
+              Nothing -> error $ show xcol ++ " is not present in csv." 
+          ycolIx =
+            case elemIndex ycol csv of
+              Just ix -> ix
+              Nothing -> error $ show ycol ++ " is not present in csv."
+          
+
           
   --    putStrLn $ "Specified key: " ++ keyStr    
   --    putStrLn $ "Key Indices:   " ++ show keyIxs
@@ -408,14 +458,14 @@ getCSV keys (xcol,ycol)= do
       case (length keyIxs) == (length keys) of
         False -> error "Key is not part of table"
         True -> do
-          m <- loop keyIxs (xcolIx,ycolIx) M.empty
+          m' <- loop keyIxs (xcolIx,ycolIx) m
   --        putStrLn $ show m
-          return m 
+          return m'
   where
     loop keyIxs xy m = do
       res <- catch
              (do
-                 s <- hGetLine stdin
+                 s <- hGetLine handle
                  return $ Just s
              )
              (\(IOError _ _ _ _ _ _ )-> return Nothing)
@@ -443,8 +493,7 @@ getCSV keys (xcol,ycol)= do
       case recogValueType x of
         Int -> IntData (read x) 
         Double -> NumData (read x) 
-        String -> StringData x
-        
+        String -> StringData x        
 
 ---------------------------------------------------------------------------
 -- Recognize data
@@ -481,190 +530,3 @@ recogValueType str =
                    && '.' `elem` str
     isString str = not (isInt str) && not (isDouble str)
 
-
--- ---------------------------------------------------------------------------
--- -- Try Sorting as numbers
-
--- trySortAsNum :: [String] -> Maybe [String]
--- trySortAsNum str =
---   case valueType of
---     -- If they are Integers I dont see how this can fail
---     Int ->  Just $ map show $ sort $ (map read str :: [Int])
---     -- If they are doubles, mae sure read/show invariant holds
---     Double ->
---       let sorted = map show $ sort $ (map read str :: [Double])
---       in if (all (\x -> elem x sorted) str) then Just sorted else Nothing
-
---     -- If they are words. Well, could sort, but doing nothing. 
---     String -> Nothing 
-      
---   where 
---     valueType = recogValueType str 
-
-
-
-
-
--- ---------------------------------------------------------------------------
--- -- apply the key. that is move some columns to the "front" and concatenate
--- -- their contents
-
--- applyKey :: [Flag] -> [[String]] -> [[String]]
--- applyKey flags csv =
---   if keyActive
---   then map doIt csv
-       
-       
---   else csv 
---   where
---     keyActive = (not . null) [() | Key _ <- flags]
---     key = head [read x :: [Int] |  Key x <- flags]
-
---     key_sorted_reverse = reverse $ sort key 
-
---     fix_row_head r = concatMap (\i -> r !! i) key
---     fix_row_tail r = dropCols key_sorted_reverse r
-
---     doIt r = fix_row_head r : fix_row_tail r 
-
---     dropCol x r = take x r ++ drop (x+1) r
---     dropCols [] r = r 
---     dropCols (x:xs) r = dropCols xs (dropCol x r)
-    
-       
-        
--- Probably not very flexible. More thinking needed
-    
--- applyGroup :: [Flag] -> [[String]] -> [[String]]
--- applyGroup flags csv = 
---   if groupActive
---   then
---     --error $ "\n\n" ++ show csv ++ "\n\n" ++ show theGroups ++
---     --        "\n\n" ++ show theNames ++ "\n\n" ++ show allGroups ++
---     --        "\n\n" ++ show doIt 
-            
---     case groupingIsValid of
---       True -> doIt -- groupBy csv
---       False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
---   else csv
-
---   where
---     groupActive = (not . null) [() | GroupBy _ <- flags]
---     groupBy = head [read x :: Int |  GroupBy x <- flags]
-
---     getKey r = head r
-
---     groupingIsValid = all (\r -> length r == 3) csv
-
---     theGroups' = nub $ sort $  map (\r -> r !! groupBy) csv 
---     theGroups  =
---       case trySortAsNum theGroups' of
---         Nothing -> theGroups
---         Just sorted -> sorted 
-
---     --- Ooh dangerous!!! 
---     valueIx = head $ delete groupBy [1,2]
-    
---     -- makes unreasonable assumptions! (ordering) 
---     -- some sorting needs to be built in for the general case. 
---     theNames = nub $ map head csv 
-
---     --extractValues g rows = [r !! valueIx | r <- rows
---      --                                    , g == (r !! groupBy)]
-
---     allGroups = map (\n -> extractValues n csv) theNames --theGroups
-
-
---     -- for each NAME. Pull out all values 
---     extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
-
---     --organize the values in the order specified by "theGroups"
---     organize [] [] = []
---     organize [] xs  = error $ show xs
---     organize (x:xs) ys = 
---       case lookup x ys of
---         Nothing -> error "applyGroup: Bug alert!"
---         Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
-    
-    
---     doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
-
--- This is what you get. 
--- groupBy "THREADS" 
--- Key     1   2   4   8   16
--- key1    v1  v2  v3  v4  v5
-
--- But it seems having data series in columns is the standard approach.
--- So this would be desireable.
--- groupBy "THREADS"
-
---  Threads key1 key2 key3 key4 
---  1       v1   w1   u1   ü1    
---  2       v2   w2   u2   ü2
---  4       v3   w3   u3   ü3
-
--- New applyGroup that uses a different result layout.
--- I think this is the layout more often requested by plotting tools. 
--- applyGroup :: [Flag] -> [[String]] -> [[String]]
--- applyGroup flags csv = 
---   if groupActive
---   then
-            
---     case groupingIsValid of
---       True -> doIt -- groupBy csv
---       False -> error "Current limitation is that a table needs exactly three fields to apply grouping"
---   else csv
-
---   where
---     groupActive = (not . null) [() | GroupBy _ <- flags]
---     -- This could also potentially be a name, right ? 
---     groupSpecifierColumn = head [read x :: Int |  GroupBy x <- flags]
-
---     -- After rearrangement the key will be at the head of the list
---     -- (Thats why grouping requires keying) 
---     getKey r = head r
-
---     -- I have no idea what to do if the table has too many column,
---     -- Could require that the user specify Key, Group and Value column,
---     -- and filter out those in the process of grouping. 
---     groupingIsValid = all (\r -> length r == 3) csv
-
---     -- Read out all different values in the groupSpecifierColumn.
---     theGroups' = nub $ sort $  map (\r -> r !! groupSpecifierColumn) csv 
---     theGroups  =
---       case trySortAsNum theGroups' of
---         Nothing -> theGroups
---         Just sorted -> sorted 
-
---     --- Ooh dangerous!!!
---     --  But should work if key is in column 0 (user has rekeyed) 
---     --  and if number of columns is 3. 
---     valueIx = head $ delete groupSpecifyerColumn [1,2]
-    
-
---     -- extract all the different keys.
---     -- Could try to sort these as numbers as well.. 
---     allKeys = nub $ sort $ map head csv 
-
---     allGroups = map (\n -> extractValues n csv) theNames --theGroups
-
-
---     -- for each NAME. Pull out all values 
---     extractValues name rows = organize theGroups $ [(r !! groupBy, r !! valueIx) | r <- rows ,getKey r == name] 
-
---     --organize the values in the order specified by "theGroups"
---     organize [] [] = []
---     organize [] xs  = error $ show xs
---     organize (x:xs) ys = 
---       case lookup x ys of
---         Nothing -> error "applyGroup: Bug alert!"
---         Just y  -> y: (organize xs (deleteBy (\(a,_) (b,_) -> a == b) (x,"") ys) )
-    
-    
---     doIt = ("KEY" : theGroups) : zipWith (\a b -> a : b) theNames allGroups 
-
-
---     -- Can potentially find a whole list of values at a given key
---     -- and a given groupID
---     extractGroup :: (String,Int) -> (String,Int) -> [[String]] -> (String,(String, [String]))
---     extractGroup (key,keyix) (groupElem,gix) table = undefined 
