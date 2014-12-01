@@ -90,7 +90,7 @@ executable plot
                        filepath, 
                        directory,
                        bytestring,
-                       handa-gdata >= 0.6.9.2 && <0.7
+                       handa-gdata >= 0.6.9.2 && <0.7.1
 		  
   
   -- Directories containing source files.
