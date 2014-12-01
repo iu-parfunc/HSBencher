@@ -155,6 +155,7 @@ core_cli_options =
      , Option []    ["PNG"]    (NoArg (OutFormat MyPNG)) "Output in PNG format"
 
      , Option []    ["nopipe"] (NoArg NoPipe)            "Tool is not used in a pipe"
+
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -327,7 +328,7 @@ plotIntDouble outfile outFormat outResolution series = do
     
     layout_title .= "testplot from grapher"
     layout_background .= solidFillStyle (opaque white)
-    layout_foreground .= (opaque black)
+    layout_foreground .= opaque black
     layout_left_axis_visibility . axis_show_ticks .= True
     layout_title_style . font_size .= 24
     
