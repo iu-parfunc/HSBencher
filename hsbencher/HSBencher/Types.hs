@@ -7,6 +7,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
 
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 
 -- | All the core types used by the rest of the HSBencher codebase.
 
@@ -56,7 +58,7 @@ module HSBencher.Types
        )
        where
 
-import Control.Monad.Reader
+import Control.Monad.Reader hiding (lift)
 import Data.Char
 import Data.Word
 import Data.List
@@ -67,7 +69,7 @@ import Data.Default (Default(..))
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe (catMaybes)
-import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
+import System.Console.GetOpt (OptDescr() )
 import System.FilePath
 import System.Directory
 import System.Process (CmdSpec(..))
@@ -75,6 +77,8 @@ import qualified Data.ByteString.Char8 as B
 import qualified System.IO.Streams as Strm
 
 import Text.PrettyPrint.GenericPretty (Out(doc,docPrec), Generic)
+import Prelude hiding (pred)
+
 
 ----------------------------------------------------------------------------------------------------
 -- Benchmark Build Methods
@@ -149,7 +153,7 @@ data BuildResult =
 instance Show BuildResult where
   show (StandAloneBinary p) = "StandAloneBinary "++p
 --  show (RunInPlace fn)      = "RunInPlace "++show (fn [] [])
-  show (RunInPlace fn)      = "RunInPlace <fn>"
+  show (RunInPlace _fn)     = "RunInPlace <fn>"
 
 -- | A completely encapsulated method of building benchmarks.  Cabal and Makefiles
 -- are two examples of this.  The user may extend it with their own methods.
@@ -319,12 +323,69 @@ data BenchSpace meaning = And [BenchSpace meaning]
  deriving (Show,Eq,Ord,Read, Generic)
 
 -- | A default notion of what extra benchmark arguments actually *mean*.
+--
+-- Currently this consists of a "setter" for fields of
+-- `BenchmarkResult`.  If we used an record package such as fclabels it
+-- would be possible to derive this automatically.  (But at a glance,
+-- we wouldn't be able to do it as a closed sum with a Show/Read instance.)
+-- 
+-- Any option set by the parameter space OVERRIDES any global setting.
+-- For example, even `_PROGNAME` and `_HOSTNAME` can be overwritten
+-- here.  (Even though they almost never should be.)
+--
+-- Also, because this datatype is designed manually, rather than
+-- derived, it intentionally omits some fields that really should
+-- never ever be set based on static inforhmation only, such as "MEDIANTIME"
 data DefaultParamMeaning
+  -- TODO: REMOVE Threads/Variant and 
   = Threads Int    -- ^ Set the number of threads.
   | Variant String -- ^ Which scheduler/implementation/etc.
+  | PROGNAME String
+-- | ARGS [String] -- SUBSUMED BY RUNTIMEARG
+  | HOSTNAME String 
+  | RUNID    String  
+  | CI_BUILD_ID String 
+  | DATETIME    String 
+  | TRIALS      Int  
+  | COMPILER    String  
+  | COMPILE_FLAGS  String
+  | RUNTIME_FLAGS  String 
+  | ENV_VARS       String  
+  | BENCH_VERSION  String 
+  | BENCH_FILE  String    
+  | UNAME       String     
+  | PROCESSOR   String
+  | TOPOLOGY    String     
+  | GIT_BRANCH  String     
+  | GIT_HASH    String     
+  | GIT_DEPTH   Int        
+  | WHO         String     
+  | ETC_ISSUE   String     
+  | LSPCI       String     
+  | RETRIES Int
+  | CUSTOM Tag SomeResult
+     -- ^ Set a custom column in the output benchmarkResult.  This is
+     -- not as strongly typed as it might be; it us the user's
+     -- responsibility to make sure the type of the RHS matches the
+     -- type of the column selected by the LHS.
+
+-- These fields can only be set based on dynamic information:
+--  | AllTimes  String
+  -- | MINTIME  Double 
+  -- | MEDIANTIME Double
+  -- | MAXTIME Double
+  -- | MEDIANTIME_ALLOCRATE    ::  Maybe Word64  
+  -- | MEDIANTIME_MEMFOOTPRINT ::  Maybe Word64  
+  -- | ALLJITTIMES   ::  String 
+
+-- These fields are slated for deletion anyway:
+--  | MINTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the mintime run.
+--  | _MEDIANTIME_PRODUCTIVITY ::  Maybe Double  -- ^ GC productivity (if recorded) for the mediantime run.
+--  | _MAXTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the maxtime run.
+--  | FULL_LOG   :: String
+    
   | NoMeaning
  deriving (Show,Eq,Ord,Read, Generic)
-
 
 -- | Modify a config by `And`ing in an extra param setting to *every* `configs` field of *every*
 -- benchmark in the global `Config`.
@@ -387,8 +448,8 @@ makeBuildID target strs =
 -- | Strip all runtime options, leaving only compile-time options.  This is useful
 --   for figuring out how many separate compiles need to happen.
 compileOptsOnly :: BenchSpace a -> BenchSpace a 
-compileOptsOnly x =
-  case loop x of
+compileOptsOnly xx =
+  case loop xx of
     Nothing -> And []
     Just b  -> b
  where
@@ -396,21 +457,13 @@ compileOptsOnly x =
      case bs of
        And ls -> mayb$ And$ catMaybes$ map loop ls
        Or  ls -> mayb$ Or $ catMaybes$ map loop ls
-       Set m (CompileParam {}) -> Just bs
-       Set m (CmdPath      {}) -> Just bs -- These affect compilation also...
+       Set _ (CompileParam {}) -> Just bs
+       Set _ (CmdPath      {}) -> Just bs -- These affect compilation also...
        Set _ _                 -> Nothing
    mayb (And []) = Nothing
    mayb (Or  []) = Nothing
    mayb x        = Just x
 
-test1 :: BenchSpace ()
-test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32])
-
-test2 :: BenchSpace ()
-test2 = Or$ map (Set () . RuntimeParam . ("-A"++)) ["1M", "2M"]
-
-test3 :: BenchSpace ()
-test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
 data ParamSetting 
@@ -494,6 +547,7 @@ data SubProcess =
   , process_err  :: Strm.InputStream B.ByteString -- ^ A stream of lines.
   }
 
+instance Out SomeResult
 instance Out CPUAffinity
 instance Out ParamSetting
 instance Out FilePredicate
@@ -538,11 +592,16 @@ instance Show LineHarvester where
 -- Benchmark Results Upload
 ----------------------------------------------------------------------------------------------------
 type Tag = String
+
+-- | The value associated with with a custom column in the benchmark results.
 data SomeResult = IntResult Int
                 | DoubleResult Double 
                 | StringResult String
                   -- expand here 
-                deriving (Eq, Read, Ord)
+                deriving (Eq, Read, Ord, Generic)
+
+-- Oops.. this isn't show/read invariant.  This should really be the
+-- pretty-print instance... -RRN
 instance Show SomeResult where
   show (IntResult i) = show i
   show (DoubleResult d) = show d
@@ -565,9 +624,11 @@ data BenchmarkResult =
   , _MINTIME    ::  Double -- ^ Time of the fastest run
   , _MEDIANTIME ::  Double -- ^ Time of the median run
   , _MAXTIME    ::  Double -- ^ Time of the slowest run
+-------------------Deprecated----------------------    
   , _MINTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the mintime run.
   , _MEDIANTIME_PRODUCTIVITY ::  Maybe Double  -- ^ GC productivity (if recorded) for the mediantime run.
   , _MAXTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the maxtime run.
+-----------------EndDeprecated---------------------        
   , _ALLTIMES      ::  String -- ^ Space separated list of numbers, should be one number for each TRIAL
   , _TRIALS        ::  Int    -- ^ How many times to [re]run each benchmark.
   , _COMPILER      :: String  
@@ -595,7 +656,7 @@ data BenchmarkResult =
   , _RETRIES :: Int -- ^ The number of times any trial of the benchmark was reexecuted because of failure.
                         
   , _CUSTOM :: [(Tag, SomeResult)]
-               -- ^ A List of custom results
+               -- ^ A List of custom results.
                -- The tag corresponds to column "title"
   }
   deriving (Show,Read,Ord,Eq)
@@ -867,10 +928,10 @@ instance Ord SomePlugin where
     compare (plugName p1) (plugName p2)
 
 instance Show SomePluginConf where
-  show (SomePluginConf p pc) = show pc
+  show (SomePluginConf _p pc) = show pc
 
 instance Show SomePluginFlag where
-  show (SomePluginFlag p f) = show f
+  show (SomePluginFlag _p f) = show f
 
 ------------------------------------------------------------
 
@@ -903,7 +964,4 @@ getMyConf p Config{plugInConfs} =
 setMyConf :: forall p . Plugin p => p -> PlugConf p -> Config -> Config 
 setMyConf p new cfg@Config{plugInConfs} = 
   cfg { plugInConfs= (M.insert (plugName p) (SomePluginConf p new) plugInConfs) }
-
-----------------------------------------
--- Small convenience functions
 

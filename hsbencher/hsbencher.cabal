@@ -213,6 +213,7 @@ Library
   }
 
   default-language:    Haskell2010
+  ghc-options: -Wall -fno-warn-orphans
 
 -- [2013.05.28] This will come back later when the new ASCII benchmark file format is finished:
 -----------------------------------------------------------------------------------------------
