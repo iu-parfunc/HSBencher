@@ -37,12 +37,12 @@ taggedLineHarvesterStr :: B.ByteString
                           -> (String -> RunResult -> RunResult)
                           -> LineHarvester
 taggedLineHarvesterStr tag stickit = LineHarvester $ \ ln ->
-  let fail = (id, False) in 
+  let failit = (id, False) in 
   case B.words ln of
-    [] -> fail
+    [] -> failit
     hd:tl | hd == tag || hd == (tag `B.append` (pack ":")) ->
       (stickit (unpack (B.unwords tl)), True)
-    _ -> fail
+    _ -> failit
 
 
 -- Move other harvesters here? 

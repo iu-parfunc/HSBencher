@@ -14,20 +14,17 @@ module HSBencher.Backend.Dribble
    where
 
 import HSBencher.Types
-import HSBencher.Internal.Logging (log, chatter)
+import HSBencher.Internal.Logging (log)
 
 import Control.Concurrent.MVar
 import Control.Monad.Reader
-import qualified Data.List as L
-import qualified Data.Map as M
-import Data.Maybe (fromMaybe)
-import Data.Typeable
 import Data.Default (Default(def))
-import System.IO.Unsafe (unsafePerformIO)
-import System.Directory 
-import System.FilePath ((</>),(<.>), splitExtension)
-
+import qualified Data.List as L
+import Data.Typeable
 import Prelude hiding (log)
+import System.Directory 
+import System.FilePath ((</>),(<.>))
+import System.IO.Unsafe (unsafePerformIO)
 
 --------------------------------------------------------------------------------
 
@@ -70,7 +67,7 @@ instance Plugin DribblePlugin where
                    "  No additional flags, but uses --name for the base filename.\n"
                    ,[])
 
-  plugUploadRow p cfg row = runReaderT (uploadBenchResult row) cfg
+  plugUploadRow _p cfg row = runReaderT (uploadBenchResult row) cfg
 
   plugInitialize p gconf = do 
    putStrLn " [dribble] Dribble-to-file plugin initializing..."
@@ -92,7 +89,8 @@ instance Plugin DribblePlugin where
       putStrLn $ " [dribble] Defaulting to dribble location "++show path++", done initializing."
       return $! setMyConf p (DribbleConf{csvfile=Just path}) gconf
 
-  foldFlags p flgs cnf0 = cnf0
+  -- Flags can only be unit here:
+  foldFlags _p _flgs cnf0 = cnf0
 
 --------------------------------------------------------------------------------
 

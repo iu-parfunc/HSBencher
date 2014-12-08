@@ -10,9 +10,9 @@ module HSBencher.Internal.BenchSpace
        where
 
 import Data.Maybe
-import qualified Data.Set as S
 import Data.List
 import HSBencher.Types
+
 
 -- | The size of a configuration space. This is equal to the length of
 -- the result returned by `enumerateBenchSpace`, but is quicker to
@@ -40,7 +40,7 @@ enumerateBenchSpace bs =
 
 -- | Filter down a list of benchmarks (and their configuration spaces)
 -- to only those that have ALL of the pattern arguments occurring
--- somewhere in their printed representation.
+-- *somewhere* in their printed representation.
 --
 -- This completely removes any benchmark with an empty configuration
 -- space (`Or []`).
@@ -93,11 +93,16 @@ andMatch pats0 ls = null (f pats0 ls)
   f pats [] = pats
   f pats (x@Set{} : rst) = let pats' = g pats x
                            in f pats' rst
+  f _ (And{} : _) = error "BenchSpace.hs/andMatch: internal invariant broken."
+  f _ (Or{}  : _) = error "BenchSpace.hs/andMatch: internal invariant broken."
+
   g [] Set{} = []
   g (hd:pats) (Set ls1 ls2) =
     if isInfixOf hd (show ls1) || isInfixOf hd (show ls2)
     then      g pats (Set ls1 ls2)
     else hd : g pats (Set ls1 ls2)
+  g _ (And{}) = error "BenchSpace.hs/andMatch: internal invariant broken."
+  g _ (Or{} ) = error "BenchSpace.hs/andMatch: internal invariant broken."
 
 -- | Convert to disjunctive normal form.  This can be an exponential
 -- increase in the size of the value.
@@ -112,30 +117,13 @@ disjunctiveNF = Or . map And . loop
                         , y <- loop (And t) ]
     Or ls -> concatMap loop ls
 
-addAnd :: BenchSpace meaning -> BenchSpace meaning -> BenchSpace meaning
-addAnd (Or []) _  = Or []
-addAnd x (And ls) = And (x:ls)
-addAnd x y        = And [x,y]
-
-addOr :: BenchSpace t -> BenchSpace t -> BenchSpace t
-addOr (Or []) rst = rst
-addOr x (Or ls)   = Or (x:ls)
-addOr x rst       = Or [x,rst]
-
-mkOr :: [BenchSpace meaning] -> BenchSpace meaning
-mkOr [] = Or []
-mkOr (x : tl) = addOr x (mkOr tl)
-
-intersections :: Ord a => [S.Set a] -> S.Set a
-intersections [] = error "No set intersection of the empty list"
-intersections [s] = s
-intersections (s1:sets) = S.intersection s1 (intersections sets)
-
-bp1 :: BenchSpace DefaultParamMeaning
-bp1 = (And [Set (Variant "Reduce") (RuntimeArg "Reduce"),
+_bp1 :: BenchSpace DefaultParamMeaning
+_bp1 = (And [Set (Variant "Reduce") (RuntimeArg "Reduce"),
             Set NoMeaning (RuntimeArg "r6") ])
 
-t1 = filtConfigs ["Reduce", "r6"] bp1
+_t1 :: BenchSpace DefaultParamMeaning
+_t1 = filtConfigs ["Reduce", "r6"] _bp1
 
-t2 = filtConfigs ["Reduce", "r6"] (Or [ bp1, Set NoMeaning (RuntimeEnv "FOO" "r6") ])
+_t2 :: BenchSpace DefaultParamMeaning
+_t2 = filtConfigs ["Reduce", "r6"] (Or [ _bp1, Set NoMeaning (RuntimeEnv "FOO" "r6") ])
 

@@ -12,7 +12,6 @@ module HSBencher.Internal.Utils
 
 import Control.Concurrent
 import qualified Control.Concurrent.Async as A
-import Control.Exception (handle, SomeException, fromException, AsyncException(ThreadKilled))
 import Control.Monad.Reader -- (lift, runReaderT, ask)
 import qualified Data.ByteString.Char8 as B
 import Data.Char (isSpace)
@@ -20,12 +19,11 @@ import Data.IORef
 import Prelude hiding (log)
 import System.Directory
 import System.FilePath (dropTrailingPathSeparator, takeBaseName)
-import System.IO (hPutStrLn, stderr, hGetContents)
+import System.IO (hGetContents)
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (waitForProcess, getProcessExitCode, createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
-import Text.Printf
 
 import HSBencher.Types 
 import HSBencher.Internal.Logging (log,logOn, LogDest(StdOut, LogFile))
@@ -155,9 +153,11 @@ runSL cmd = do
 
 
 
--- Unused: an attempt to snapshot CPU load:
-getCPULoad :: IO (Maybe Double)
-getCPULoad = do
+-- | Unused: an attempt to snapshot CPU load:
+--    
+-- TODO: the "sar" command is another way to do this...
+_getCPULoad :: IO (Maybe Double)
+_getCPULoad = do
    cmd <- fmap trim $ runSL "which mpstat"
    fmap loop $ runLines cmd
  where

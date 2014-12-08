@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns, NamedFieldPuns, ScopedTypeVariables, RecordWildCards, FlexibleContexts #-}
 {-# LANGUAGE CPP, OverloadedStrings, TupleSections #-}
+{-# OPTIONS_GHC -Wall #-}
+
 --------------------------------------------------------------------------------
 -- NOTE: This is best when compiled with "ghc -threaded"
 -- However, ideally for real benchmarking runs we WANT the waitForProcess below block the whole process.
@@ -28,18 +30,17 @@ import Data.IORef
 import Data.List (intercalate, sortBy, intersperse, isInfixOf)
 import qualified Data.List as L
 import qualified Data.Map as M
-import qualified Data.Set as S
-import Data.Maybe (isJust, fromJust, fromMaybe, mapMaybe)
+import Data.Maybe (isJust, fromJust, fromMaybe)
 import Data.Version (versionBranch)
 import Data.Word (Word64)
 import Numeric (showFFloat)
-import Prelude hiding (log)
-import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr, usageInfo)
+import Prelude hiding (log, id)
+import System.Console.GetOpt (getOpt', ArgOrder(Permute), usageInfo)
 import System.Directory
 import System.Environment (getArgs, getEnv, getProgName)
 import System.Exit
 import System.FilePath (splitFileName, (</>))
-import System.Process (CmdSpec(..), readProcess)
+import System.Process (CmdSpec(..))
 import Text.Printf
 
 ----------------------------
@@ -116,7 +117,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
        logT$ "ERROR, no build method matches path: "++testPath
        logT$ "  Tried methods: "++show(map methodName buildMethods)
        logT$ "  With file preds: "
-       forM buildMethods $ \ meth ->
+       forM_ buildMethods $ \ meth ->
          logT$ "    "++ show (canBuild meth)
        lift exitFailure     
   logT$ printf "Found %d methods that can handle %s: %s" 
@@ -155,7 +156,7 @@ runOne :: (Int,Int) -> BuildID -> BuildResult
        -> Benchmark DefaultParamMeaning 
        -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
 runOne (iterNum, totalIters) _bldid bldres
-       thebench@Benchmark{target=testPath, cmdargs, progname, benchTimeOut}
+       thebench@Benchmark{target=testPath, cmdargs, benchTimeOut}
        runconfig = do       
 
   log$ "\n--------------------------------------------------------------------------------"
@@ -230,7 +231,7 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
     let envVars = toEnvVars  runconfig
     let affinity = getAffinity runconfig 
     
-    let doMeasure1 cmddescr = do
+    let _doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
             lift$ measureProcess affinity harvesters cmddescr
           err2 <- lift$ Strm.map (B.append " [stderr] ") process_err
@@ -245,9 +246,9 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
     -- 50 benchmarks (* 3 trials), all runs fail but there is NO
     -- echo'd output. So here we try something simpler as a test.
     let doMeasure2 cmddescr = do
-          (lines,result) <- lift$ measureProcessDBG affinity harvesters cmddescr 
-          mapM_ (logT . B.unpack) lines 
-          logT $ "Subprocess completed with "++show(length lines)++" of output."
+          (lnes,result) <- lift$ measureProcessDBG affinity harvesters cmddescr 
+          mapM_ (logT . B.unpack) lnes 
+          logT $ "Subprocess completed with "++show(length lnes)++" of output."
           return result
 
         doMeasure = doMeasure2  -- TEMP / Toggle me back later.
@@ -298,7 +299,7 @@ getNumThreads = foldl (\ acc (x,_) ->
 ------------------------------------------------------------
 runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> String 
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
-runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig = do
+runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig = do
   let numthreads = getNumThreads runconfig 
       sched      = foldl (\ acc (x,_) ->
                            case x of
@@ -427,7 +428,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig = 
 printBenchrunHeader :: BenchM ()
 printBenchrunHeader = do
   Config{trials, maxthreads, pathRegistry, defTopology,
-         logOut, resultsOut, stdOut, benchversion, shortrun, gitInfo=(branch,revision,depth) } <- ask
+         logOut, resultsOut, stdOut, gitInfo=(branch,revision,depth) } <- ask
   liftIO $ do   
 --    let (benchfile, ver) = benchversion
     let ls :: [IO String]
@@ -475,21 +476,22 @@ printBenchrunHeader = do
 
 
 ----------------------------------------------------------------------------------------------------
--- Main Script
+-- Main Entrypoints
 ----------------------------------------------------------------------------------------------------
 
-
 -- | TODO: Eventually this will make sense when all config can be read from the environment, args, files.
-defaultMain :: IO ()
-defaultMain = do
+_defaultMain :: IO ()
+_defaultMain = do
   --      benchF = get "BENCHLIST" "benchlist.txt"
 --  putStrLn$ hsbencher_tag ++ " Reading benchmark list from file: "
   error "FINISHME: defaultMain requires reading benchmark list from a file.  Implement it!"
 
 -- | In this version, user provides a list of benchmarks to run, explicitly.
-defaultMainWithBenchmarks :: [Benchmark DefaultParamMeaning] -> IO ()
-defaultMainWithBenchmarks benches = do
+_defaultMainWithBenchmarks :: [Benchmark DefaultParamMeaning] -> IO ()
+_defaultMainWithBenchmarks benches = do
   defaultMainModifyConfig (\ conf -> conf{ benchlist=benches })
+
+
 
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
@@ -511,10 +513,11 @@ removePlugin p cfg =
 
 doShowHelp :: [SomePlugin] -> IO ()
 doShowHelp allplugs = do
-    putStrLn$ "\nUSAGE: [set ENV VARS] "++my_name++" [CMDLN OPTS]"
+    this_prog_name  <- getProgName    
+    putStrLn$ "\nUSAGE: [set ENV VARS] "++this_prog_name++" [CMDLN OPTS]"
     putStrLn$ "\nNote: \"CMDLN OPTS\" includes patterns that select which benchmarks"
     putStrLn$ "     to run, based on name."
-    mapM putStr (map (uncurry usageInfo) all_cli_options)
+    mapM_ putStr (map (uncurry usageInfo) all_cli_options)
     putStrLn ""
     putStrLn $ show (length allplugs) ++ " plugins enabled: "++ 
                show [ plugName p | SomePlugin p <- allplugs ]
@@ -538,7 +541,7 @@ defaultMainModifyConfig :: (Config -> Config) -> IO ()
 defaultMainModifyConfig modConfig = do    
   id       <- myThreadId
   writeIORef main_threadid id
-  my_name  <- getProgName
+  this_prog_name  <- getProgName
   cli_args <- getArgs
 
   let (options,plainargs,_unrec,errs) = getOpt' Permute (concat$ map snd all_cli_options) cli_args
@@ -548,7 +551,7 @@ defaultMainModifyConfig modConfig = do
       showHelp     = not$ null [ () | ShowHelp <- options]
       gotVersion   = not$ null [ () | ShowVersion <- options]
       showBenchs   = not$ null [ () | ShowBenchmarks <- options]
-      cabalAllowed = not$ null [ () | NoCabal  <- options]
+--    cabalAllowed = not$ null [ () | NoCabal  <- options]
       parBench     = not$ null [ () | ParBench <- options]
       disabled     = [ s | DisablePlug s <- options ]
 
@@ -565,7 +568,6 @@ defaultMainModifyConfig modConfig = do
   -- The phasing here is rather funny.  We need to get the initial config to know
   -- WHICH plugins are active.  And then their individual per-plugin configs need to
   -- be computed and added to the global config.
-  let plugnames = [ plugName p | SomePlugin p <- plugIns conf1 ]
 
   let plugs = [ if (or [ isInfixOf d (plugName p)| d <- disabled ])
                 then Right (plugName p, SomePlugin p) -- Disabled
@@ -695,7 +697,7 @@ defaultMainModifyConfig modConfig = do
         log$ "--------------------------------------------------------------------------------"
 
         if parBench then do
-            unless rtsSupportsBoundThreads $ error (my_name++" was NOT compiled with -threaded.  Can't do --par.")
+            unless rtsSupportsBoundThreads $ error (this_prog_name++" was NOT compiled with -threaded.  Can't do --par.")
      {-            
         --------------------------------------------------------------------------------
         -- Parallel version:
@@ -838,10 +840,12 @@ defaultMainModifyConfig modConfig = do
     conf5
 
 
--- Several different options for how to display output in parallel:
-catParallelOutput :: [Strm.InputStream B.ByteString] -> Strm.OutputStream B.ByteString -> IO ()
-catParallelOutput strms stdOut = do 
- case 4 of
+-- Currently unused but needs to be revived with along with parallel builds:
+-- 
+-- | Several different options for how to display output in parallel.
+_catParallelOutput :: [Strm.InputStream B.ByteString] -> Strm.OutputStream B.ByteString -> IO ()
+_catParallelOutput strms stdOut = do 
+ case 4::Int of
 #ifdef USE_HYDRAPRINT   
    -- First option is to create N window panes immediately.
    1 -> do
@@ -861,17 +865,13 @@ catParallelOutput strms stdOut = do
            merged <- Strm.concatInputStreams strms2
            -- Strm.connect (head strms) stdOut
            Strm.connect merged stdOut
-
+   _ -> error "this is impossible"
 
 ----------------------------------------------------------------------------------------------------
 -- *                                 GENERIC HELPER ROUTINES                                      
 ----------------------------------------------------------------------------------------------------
 
 -- These should go in another module.......
-
-didComplete :: RunResult -> Bool
-didComplete RunCompleted{} = True
-didComplete _              = False
 
 isError :: RunResult -> Bool
 isError ExitError{} = True
@@ -928,7 +928,7 @@ nest n str = remlastNewline $ unlines $
              map (replicate n ' ' ++) $
              lines str
  where
-   remlastNewline str =
-     case reverse str of
+   remlastNewline strg =
+     case reverse strg of
        '\n':rest -> reverse rest
-       _         -> str
+       _         -> strg
