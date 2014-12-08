@@ -2,15 +2,15 @@
 
 -- | A simple backend that dribbles benchmark results (i.e. rows/tuples) into a
 -- series of files in an "hsbencher" subdir of the the users ".cabal/" directory.
--- 
+--
 -- This is often useful as a failsafe to reinforce other backends that depend on
 -- connecting to internet services for upload.  Even if the upload fails, you still
 -- have a local copy of the data.
 
-module HSBencher.Backend.Dribble 
-       ( defaultDribblePlugin, 
+module HSBencher.Backend.Dribble
+       ( defaultDribblePlugin,
          DribblePlugin(), DribbleConf(..)
-       ) 
+       )
    where
 
 import HSBencher.Types
@@ -22,7 +22,7 @@ import Data.Default (Default(def))
 import qualified Data.List as L
 import Data.Typeable
 import Prelude hiding (log)
-import System.Directory 
+import System.Directory
 import System.FilePath ((</>),(<.>))
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -61,7 +61,7 @@ instance Plugin DribblePlugin where
 
   -- | Going with simple names, but had better make them unique!
   plugName _ = "dribble"
-  -- plugName _ = "DribbleToFile_Backend"  
+  -- plugName _ = "DribbleToFile_Backend"
 
   plugCmdOpts _ = ("Dribble plugin loaded.\n"++
                    "  No additional flags, but uses --name for the base filename.\n"
@@ -69,20 +69,20 @@ instance Plugin DribblePlugin where
 
   plugUploadRow _p cfg row = runReaderT (writeBenchResult row) cfg
 
-  plugInitialize p gconf = do 
+  plugInitialize p gconf = do
    putStrLn " [dribble] Dribble-to-file plugin initializing..."
    let DribbleConf{csvfile} = getMyConf DribblePlugin gconf
-   case csvfile of 
+   case csvfile of
      Just x -> do putStrLn$ " [dribble] Using dribble file specified in configuration: "++show x
                   return gconf
-     Nothing -> do 
+     Nothing -> do
       cabalD <- getAppUserDataDirectory "cabal"
       chk1   <- doesDirectoryExist cabalD
-      unless chk1 $ error $ " [dribble] Plugin cannot initialize, cabal data directory does not exist: "++cabalD 
+      unless chk1 $ error $ " [dribble] Plugin cannot initialize, cabal data directory does not exist: "++cabalD
       let dribbleD = cabalD </> "hsbencher"
       createDirectoryIfMissing False dribbleD
-      base <- case benchsetName gconf of 
-                Nothing -> do putStrLn " [dribble] no --name set, chosing default.csv for dribble file.." 
+      base <- case benchsetName gconf of
+                Nothing -> do putStrLn " [dribble] no --name set, chosing default.csv for dribble file.."
                               return "dribble"
                 Just x  -> return x
       let path = dribbleD </> base <.> "csv"
@@ -108,9 +108,9 @@ writeBenchResult  br@BenchmarkResult{..} = do
     let DribbleConf{csvfile} = getMyConf DribblePlugin conf
     case csvfile of
       Nothing -> error "[dribble] internal plugin error, csvfile config should have been set during initialization."
-      Just path -> do 
+      Just path -> do
         log$ " [dribble] Adding a row of data to: "++path
-        lift $ withMVar fileLock $ \ () -> do 
+        lift $ withMVar fileLock $ \ () -> do
            b  <- doesFileExist path
            -- If we're the first to write the file... append the header:
            unless b$ writeFile path (concat (L.intersperse "," cols)++"\n")
