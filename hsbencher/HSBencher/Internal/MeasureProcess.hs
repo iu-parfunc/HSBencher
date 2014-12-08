@@ -19,24 +19,20 @@ import Control.Concurrent.Chan
 import qualified Control.Exception as E
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.IORef
-import Data.Monoid
 import System.Exit
 import System.Directory
-import System.IO (hClose, stderr, hGetContents, hPutStrLn)
-import System.Process (system, waitForProcess, getProcessExitCode, runInteractiveCommand, terminateProcess)
+import System.IO (hClose, stderr, hPutStrLn)
+import System.Process (system, waitForProcess, terminateProcess)
 import System.Process (createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
-import System.Posix.Process (getProcessStatus, getProcessID)
+import System.Posix.Process (getProcessID)
 import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
-import qualified System.IO.Streams.Process as Strm
-import qualified System.IO.Streams.Combinators as Strm
 import qualified Data.ByteString.Char8 as B
 import qualified Data.List as L
 import qualified Data.Set as S
 import System.Environment (getEnvironment)
 
 import HSBencher.Types
-import Debug.Trace
 import Prelude hiding (fail)
 
 --------------------------------------------------------------------------------  
@@ -78,7 +74,7 @@ measureProcess Nothing (LineHarvester harvest)
   -- Semantics of provided environment is to APPEND:
   curEnv <- getEnvironment
   startTime <- getCurrentTime
-  (_inp,out,err,pid) <-
+  (_inp,out,errout,pid) <-
     case command of
       RawCommand exeFile cmdArgs -> Strm.runInteractiveProcess exeFile cmdArgs Nothing (Just$ envVars++curEnv)
       ShellCommand str           -> runInteractiveCommandWithEnv str (envVars++curEnv)
@@ -86,7 +82,7 @@ measureProcess Nothing (LineHarvester harvest)
   setCurrentDirectory origDir  -- Threadsafety!?!
   
   out'  <- Strm.map OutLine =<< Strm.lines out
-  err'  <- Strm.map ErrLine =<< Strm.lines err
+  err'  <- Strm.map ErrLine =<< Strm.lines errout
   timeEvt <- case timeout of
                Nothing -> Strm.nullInput
                Just t  -> Strm.map (\_ -> TimerFire) =<< timeOutStream t
@@ -176,11 +172,11 @@ measureProcessDBG (Just aff) hrv descr =
      measureProcessDBG Nothing hrv descr
                   
 measureProcessDBG Nothing (LineHarvester harvest)
-               CommandDescr{command, envVars, timeout, workingDir, tolerateError} = do
+               CommandDescr{command, envVars, timeout=_, workingDir, tolerateError} = do
   curEnv <- getEnvironment
   -- Create the subprocess:
   startTime <- getCurrentTime
-  (Just hin, Just hout, Just herr, ph) <- createProcess 
+  (Just _hin, Just hout, Just herr, ph) <- createProcess 
      CreateProcess {
        cmdspec = command,
        env = Just (envVars++curEnv),

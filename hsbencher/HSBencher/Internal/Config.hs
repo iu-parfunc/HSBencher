@@ -16,21 +16,15 @@ module HSBencher.Internal.Config
        )
        where
 
-import Control.Monad.Reader
 import qualified Data.Map as M
-import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import Data.Time.Clock (getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Monoid
-import Data.Dynamic
 import GHC.Conc (getNumProcessors)
-import System.Environment (getArgs, getEnv, getEnvironment)
-import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..))
-import System.IO (Handle, hPutStrLn, stderr, openFile, hClose, hGetContents, hIsEOF, hGetLine,
-                  IOMode(..), BufferMode(..), hSetBuffering)
+import System.Environment (getEnvironment)
+import System.Console.GetOpt (OptDescr(Option), ArgDescr(..))
+import System.IO (openFile, IOMode(..), BufferMode(..), hSetBuffering)
 import qualified System.IO.Streams as Strm
-import qualified System.IO.Streams.Concurrent as Strm
-import qualified System.IO.Streams.Process as Strm
-import qualified System.IO.Streams.Combinators as Strm
 
 import HSBencher.Types
 import HSBencher.Internal.Utils
