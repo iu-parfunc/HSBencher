@@ -408,6 +408,7 @@ compileOptsOnly x =
        And ls -> mayb$ And$ catMaybes$ map loop ls
        Or  ls -> mayb$ Or $ catMaybes$ map loop ls
        Set m (CompileParam {}) -> Just bs
+       Set m (CompileEnv _ _)  -> Just bs
        Set m (CmdPath      {}) -> Just bs -- These affect compilation also...
        Set _ _                 -> Nothing
    mayb (And []) = Nothing
