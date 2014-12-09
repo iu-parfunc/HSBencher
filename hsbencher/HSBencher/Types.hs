@@ -341,10 +341,10 @@ andAddParam param cfg =
 -- | Is it a setting that affects compile time?
 isCompileTime :: ParamSetting -> Bool
 isCompileTime CompileParam{} = True
-isCompileTime CompileEnv {}  = True
+isCompileTime CompileEnv  {} = True
 isCompileTime CmdPath     {} = True
 isCompileTime RuntimeParam{} = False
-isCompileTime RuntimeArg{}   = False
+isCompileTime RuntimeArg  {} = False
 isCompileTime RuntimeEnv  {} = False
 isCompileTime CPUSet      {} = False
 
@@ -374,8 +374,8 @@ toEnvVars (_ : tl)                =           toEnvVars tl
 compileTimeEnvVars :: [(a,ParamSetting)] -> EnvVars
 compileTimeEnvVars [] = []
 compileTimeEnvVars ((_,CompileEnv s1 s2)
-           : tl) = (s1,s2) : toEnvVars tl
-compileTimeEnvVars (_ : tl)                =           toEnvVars tl
+           : tl) = (s1,s2) : compileTimeEnvVars tl
+compileTimeEnvVars (_ : tl)                =           compileTimeEnvVars tl
  
 
 -- | A BuildID should uniquely identify a particular (compile-time) configuration,
