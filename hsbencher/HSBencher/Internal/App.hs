@@ -103,7 +103,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
   let (_diroffset,testRoot) = splitFileName testPath
       flags = toCompileFlags cconf
       paths = toCmdPaths     cconf
-      bldid = makeBuildID testPath flags
+      bldid = makeBuildID testPath flags env
       env   = compileTimeEnvVars cconf 
   log  "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
@@ -760,7 +760,8 @@ defaultMainModifyConfig modConfig = do
                 -- a directory that is used for `RunInPlace` builds.
                 let (bench,params) = nextrun
                     ccflags = toCompileFlags params
-                    bid = makeBuildID (target bench) ccflags
+                    env   = compileTimeEnvVars params 
+                    bid = makeBuildID (target bench) ccflags env
                 case M.lookup bid board of 
                   Nothing -> error$ "HSBencher: Internal error: Cannot find entry in map for build ID: "++show bid
                   Just (ccnum, Nothing) -> do 
@@ -794,7 +795,7 @@ defaultMainModifyConfig modConfig = do
               -- Keeps track of what's compiled.
               initBoard _ [] acc = acc 
               initBoard !iter ((bench,params):rest) acc = 
-                let bid = makeBuildID (target bench) $ toCompileFlags params 
+                let bid = makeBuildID (target bench) (toCompileFlags params) (compileTimeEnvVars params) 
                     base = fetchBaseName (target bench)
                     dfltdest = globalBinDir </> base ++"_"++bid in
                 case M.lookup bid acc of
