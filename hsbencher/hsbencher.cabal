@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.20.0.3
+version:             1.20.0.4
 ----------------------------------------
 -- Detailed CHANGELOG:
 ----------------------------------------
@@ -62,6 +62,7 @@ version:             1.20.0.3
 -- 1.19.1   : Additional change to allow filtering of benchmarks by BenchSpace as well.
 -- 1.20     : add --bindir
 -- 1.20.0.3 : bugfix, #71, runSL change
+-- 1.20.0.4 : Build time environmentVariables
 
 -----------------------------------------------------------------------------------------
 
@@ -265,6 +266,21 @@ Test-suite hsbencher-test1
 Test-suite hsbencher-test2
   main-is: benchmark.hs
   hs-source-dirs: example/make_and_ghc/
+  type: exitcode-stdio-1.0
+  -- Self dependency:
+  build-depends: hsbencher
+  -- Standard stuff:
+  build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
+  ghc-options: -threaded 
+  default-language:  Haskell2010
+  if flag(hydra) {
+     build-depends: hydra-print >= 0.1.0.3
+  }
+
+
+Test-suite hsbencher-test3
+  main-is: benchmark.hs
+  hs-source-dirs: example/compiletime_env/
   type: exitcode-stdio-1.0
   -- Self dependency:
   build-depends: hsbencher

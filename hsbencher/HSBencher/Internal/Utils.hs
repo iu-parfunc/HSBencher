@@ -90,15 +90,15 @@ echoStream echoStdout outS = do
 -- | Run a command and wait for all output.  Log output to the appropriate places.
 --   The first argument is a "tag" to append to each output line to make things
 --   clearer.
-runLogged :: String -> String -> BenchM (RunResult, [B.ByteString])
-runLogged tag cmd = do 
+runLogged :: String -> String -> [(String,String)]-> BenchM (RunResult, [B.ByteString])
+runLogged tag cmd env = do 
   log$ " * Executing command: " ++ cmd
   Config{ harvesters } <- ask
   SubProcess {wait,process_out,process_err} <-
     lift$ measureProcess Nothing harvesters
             --- BJS: There is a hardcoded timeout for IO streams here. (USED TO BE 150) 
             -- RRN: Setting this to no timeout for now... could maybe do 10 hrs or something.
-            CommandDescr{ command=ShellCommand cmd, envVars=[], timeout=Nothing, 
+            CommandDescr{ command=ShellCommand cmd, envVars=env, timeout=Nothing, 
                           workingDir=Nothing, tolerateError=False }
   err2 <- lift$ Strm.map (B.append (B.pack "[stderr] ")) process_err
   both <- lift$ Strm.concurrentMerge [process_out, err2]

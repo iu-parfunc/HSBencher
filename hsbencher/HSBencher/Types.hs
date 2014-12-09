@@ -32,6 +32,7 @@ module HSBencher.Types
          andAddParam, 
          compileOptsOnly, isCompileTime,
          toCompileFlags, toEnvVars, toCmdPaths,
+         compileTimeEnvVars,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
          
@@ -50,6 +51,8 @@ module HSBencher.Types
          Plugin(..), genericCmdOpts, getMyConf, setMyConf,
 
          SomeResult(..), Tag,
+         -- Environment Variables
+         EnvVars, 
          
          -- * For convenience -- large records demand pretty-printing
          doc
@@ -161,7 +164,7 @@ data BuildMethod =
   , canBuild    :: FilePredicate  -- ^ Can this method build a given file/directory?
   , concurrentBuild :: Bool -- ^ More than one build can happen at once.  This
                             -- implies that compile always returns StandAloneBinary.
-  , compile :: Config -> BuildID -> CompileFlags -> FilePath -> BenchM BuildResult
+  , compile :: Config -> BuildID -> CompileFlags -> EnvVars -> FilePath -> BenchM BuildResult
               -- ^ Identify the benchmark to build by its target FilePath.  Compile it.
   , clean   :: PathRegistry -> BuildID -> FilePath -> BenchM () -- ^ Clean any left-over build results.
   , setThreads :: Maybe (Int -> [ParamSetting])
@@ -338,6 +341,7 @@ andAddParam param cfg =
 -- | Is it a setting that affects compile time?
 isCompileTime :: ParamSetting -> Bool
 isCompileTime CompileParam{} = True
+isCompileTime CompileEnv {}  = True
 isCompileTime CmdPath     {} = True
 isCompileTime RuntimeParam{} = False
 isCompileTime RuntimeArg{}   = False
@@ -348,6 +352,7 @@ isCompileTime CPUSet      {} = False
 toCompileFlags :: [(a,ParamSetting)] -> CompileFlags
 toCompileFlags [] = []
 toCompileFlags ((_,CompileParam s1) : tl) = s1 : toCompileFlags tl
+toCompileFlags ((_,CompileEnv _1 _2) : tl)      = toCompileFlags tl
 toCompileFlags ((_,(RuntimeParam _)) : tl)      =  toCompileFlags tl
 toCompileFlags ((_,(RuntimeArg _)) : tl)        =  toCompileFlags tl
 toCompileFlags ((_,(RuntimeEnv _1 _2)) : tl)    =  toCompileFlags tl
@@ -366,6 +371,12 @@ toEnvVars ((_,RuntimeEnv s1 s2)
            : tl) = (s1,s2) : toEnvVars tl
 toEnvVars (_ : tl)                =           toEnvVars tl
 
+compileTimeEnvVars :: [(a,ParamSetting)] -> EnvVars
+compileTimeEnvVars [] = []
+compileTimeEnvVars ((_,CompileEnv s1 s2)
+           : tl) = (s1,s2) : toEnvVars tl
+compileTimeEnvVars (_ : tl)                =           toEnvVars tl
+ 
 
 -- | A BuildID should uniquely identify a particular (compile-time) configuration,
 -- but consist only of characters that would be reasonable to put in a filename.
@@ -418,7 +429,7 @@ data ParamSetting
   | RuntimeArg   String -- ^ Runtime "args" are like runtime params but are more prominent.  
                         --   They typically are part of the "key" of the benchmark.
   | CompileParam String -- ^ String contains compile-time options, expanded and tokenized by the shell.
---  CompileEnv   String String -- ^ Establish an environment variable binding during compile time.
+  | CompileEnv   String String -- ^ Establish an environment variable binding during compile time.
   | RuntimeEnv   String String -- ^ The name of the env var and its value, respectively.
                                --   For now Env Vars ONLY affect runtime.
   | CmdPath      String String -- ^ Takes CMD PATH, and establishes a benchmark-private setting to use PATH for CMD.

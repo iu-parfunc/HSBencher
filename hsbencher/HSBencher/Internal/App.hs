@@ -104,9 +104,10 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
       flags = toCompileFlags cconf
       paths = toCmdPaths     cconf
       bldid = makeBuildID testPath flags
+      env   = compileTimeEnvVars cconf 
   log  "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
-       ": "++testRoot++" (args \""++unwords cmdargs++"\") confID "++ show bldid
+       ": "++testRoot++" (args \""++unwords cmdargs++"\") BuildEnv \""++ show env ++"\") confID "++ show bldid 
   log  "--------------------------------------------------------------------------------\n"
 
   matches <- case overrideMethod of
@@ -138,7 +139,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
   let cfg2 = cfg{pathRegistry=newpathR}
 
   -- Prefer the benchmark-local path definitions:
-  x <- compile cfg2 bldid flags testPath
+  x <- compile cfg2 bldid flags env testPath 
   logT$ "Compile finished, result: "++ show x
   return x
   

@@ -47,13 +47,15 @@ makeMethod = BuildMethod
   , setThreads      = Nothing
   , clean = \ pathMap _ target -> do
      doMake pathMap target $ \ makePath -> do
-       _ <- runSuccessful subtag (makePath++" clean")
+       _ <- runSuccessful subtag (makePath++" clean") []
        return ()
-  , compile = \ Config{pathRegistry, runTimeOut} _bldid flags target -> do
+  , compile = \ Config{pathRegistry, runTimeOut} _bldid flags buildenv target -> do
      doMake pathRegistry target $ \ makePath -> do
        absolute <- liftIO getCurrentDirectory
-       _ <- runSuccessful subtag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'")
+       _ <- runSuccessful subtag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'") buildenv
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
+       -- Creating a runit function, that can be used to run
+       -- the now compiled benchmark. 
        let runit args envVars =
              CommandDescr
              { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
@@ -93,7 +95,7 @@ ghcMethod = BuildMethod
      liftIO$ do b <- doesDirectoryExist buildD
                 when b$ removeDirectoryRecursive buildD
      return ()
-  , compile = \ Config{pathRegistry} bldid flags target -> do
+  , compile = \ Config{pathRegistry} bldid flags buildEnv target  -> do
      let dir  = takeDirectory target
          file = takeBaseName target
          suffix = "_"++bldid
@@ -103,9 +105,9 @@ ghcMethod = BuildMethod
        let buildD = "buildoutput_" ++ bldid
        liftIO$ createDirectoryIfMissing True buildD
        let dest = buildD </> file ++ suffix
-       _ <- runSuccessful " [ghc] " $
-         printf "%s %s -outputdir ./%s -o %s %s"
-           ghcPath file buildD dest (unwords flags)
+       _ <- runSuccessful " [ghc] "  
+         (printf "%s %s -outputdir ./%s -o %s %s"
+            ghcPath file buildD dest (unwords flags)) buildEnv
        -- Consider... -fforce-recomp  
        return (StandAloneBinary$ dir </> dest)
   }
@@ -130,7 +132,7 @@ cabalMethod = BuildMethod
   , setThreads = Just $ \ n -> [ CompileParam "--ghc-option='-threaded' --ghc-option='-rtsopts'"
                                , RuntimeParam ("+RTS -N"++ show n++" -RTS")]
   , clean = \ _ _ _target -> return ()
-  , compile = \ Config{pathRegistry} bldid flags target -> do
+  , compile = \ Config{pathRegistry} bldid flags buildEnv target -> do
 
      benchroot <- liftIO$ getCurrentDirectory
      let suffix = "_"++bldid
@@ -142,8 +144,9 @@ cabalMethod = BuildMethod
      dir <- liftIO$ getDir target -- Where the indiv benchmark lives.
      inDirectory dir $ do 
        let tmpdir = benchroot </> dir </> "temp"++suffix
-       _ <- runSuccessful tag $ "rm -rf "++tmpdir
-       _ <- runSuccessful tag $ "mkdir "++tmpdir
+       -- Env should not matter here 
+       _ <- runSuccessful tag ("rm -rf "++tmpdir) [] 
+       _ <- runSuccessful tag ("mkdir "++tmpdir)  [] 
 
        -- Ugh... how could we separate out args to the different phases of cabal?
        log$ tag++" Switched to "++dir++", and cleared temporary directory."
@@ -155,13 +158,13 @@ cabalMethod = BuildMethod
            cmd1 = cmd0++" --only-dependencies"
            cmd2 = cmd0++" --bindir="++tmpdir++" ./ --program-suffix="++suffix
        log$ tag++"Running cabal command for deps only: "++cmd1
-       _ <- runSuccessful tag cmd1
+       _ <- runSuccessful tag cmd1 buildEnv
        log$ tag++"Running cabal command to build benchmark: "++cmd2
-       _ <- runSuccessful tag cmd2
+       _ <- runSuccessful tag cmd2 buildEnv
        -- Now make sure we got exactly one binary as output:
        ls <- liftIO$ filesInDir tmpdir
        case ls of
-         [f] -> do _ <- runSuccessful tag$ "mv "++tmpdir++"/"++f++" "++binD++"/" -- TODO: less shelling
+         [f] -> do _ <- runSuccessful tag ("mv "++tmpdir++"/"++f++" "++binD++"/") buildEnv -- TODO: less shelling
                    return (StandAloneBinary$ binD </> f)
          []  -> error$"No binaries were produced from building cabal file! In: "++show dir
          _   -> error$"Multiple binaries were produced from building cabal file!:"
@@ -217,9 +220,9 @@ filesInDir d = do
 -- | A simple wrapper for a command that is expected to succeed (and whose output we
 -- don't care about).  Throws an exception if the command fails.
 -- Returns lines of output if successful.
-runSuccessful :: String -> String -> BenchM [B.ByteString]
-runSuccessful tag cmd = do
-  (res,lns) <- runLogged tag cmd
+runSuccessful :: String -> String -> EnvVars -> BenchM [B.ByteString]
+runSuccessful tag cmd env = do
+  (res,lns) <- runLogged tag cmd env
   case res of
     ExitError code  -> error$ "expected this command to succeed! But it exited with code "++show code++ ":\n  "++ cmd
     RunTimeOut {}   -> error$ "Methods.hs/runSuccessful - error! The following command timed out:\n  "++show cmd

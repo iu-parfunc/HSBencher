@@ -88,7 +88,7 @@ fullUsageInfo = usageInfo docs core_cli_options
 ---------------------------------------------------------------------------
 data CSV = CSV CSV.Record  CSV.CSV
            deriving Show 
-data CSVCol a = CSVCol [a]
+data CSVCol a = CSVCol [a] 
         deriving Show         
 data CSVRow   = CSVRow [String]
                 deriving Show 
