@@ -22,7 +22,9 @@ import Data.List as L
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs)
 import System.Exit
-import qualified Data.Map                               as Map
+import System.IO.Unsafe (unsafePerformIO)
+import qualified Data.Map as M
+import qualified Data.Set as S
 
 import Text.CSV
 
@@ -96,6 +98,15 @@ checkHeader hdr
   | L.elem "PROGNAME" hdr = return ()
   | otherwise = error $ "Bad HEADER line on CSV file: "++show hdr
 
+-- | Get config data about the benchmark platform, but only if needed
+{-
+{-# NOINLINE gconf #-}
+gconf :: Config
+gconf = unsafePerformIO $ do
+  putStrLn $ "\n\n ["++this_progname++"] WARNING: tuple incomplete, gathering environmental data from current platform..."
+  getConfig [] []
+-}
+
 -- TODO: Add checking to see if the rows are already there.  However
 -- that would be expensive if we do one query per row.  The ideal
 -- implementation would examine the structure of the rowset and make
@@ -104,5 +115,29 @@ uprow :: Int -> Config -> (Int,[(String,String)]) -> IO ()
 uprow total gconf (ix,tuple)  = do
   putStrLn $ "\n\n ["++this_progname++"] Begin upload of row "++show ix++" of "++show total
   putStrLn "================================================================================"
-  let br  = tupleToResult tuple
+
+  let tup0 = resultToTuple emptyBenchmarkResult
+      schema0 = S.fromList (map fst tup0)
+      schema1 = S.fromList (map fst tuple)
+      br1     = tupleToResult tuple
+      missing = S.difference schema0 schema1
+  
+  -- Case 1: EVERYTHING is present in the uploaded tuple.
+  br <- if S.null missing then
+          return (tupleToResult tuple)
+        else do
+          putStrLn $ "\n\n ["++this_progname++"] Fields missing: "++show (S.toList missing)
+          -- Otherwise something is missing.
+          -- Start with the empty tuple, augmented with environmental info:
+          br1 <- augmentResultWithConfig gconf emptyBenchmarkResult
+          -- Layer on what we have.
+          return $ 
+            tupleToResult (M.toList (M.union (M.fromList tuple)
+                                             (M.fromList (resultToTuple br1))))
+  
   runReaderT (uploadBenchResult br) gconf
+
+
+
+
+
