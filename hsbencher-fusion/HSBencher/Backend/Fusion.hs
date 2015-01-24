@@ -11,10 +11,14 @@ module HSBencher.Backend.Fusion
        ( -- * The plugin itself, what you probably want 
          defaultFusionPlugin
 
+         -- * Creating and finding tables
+       , getTableId, findTableId, makeTable, ensureColumns
+         
          -- * Details and configuration options.
-       , FusionConfig(..), stdRetry, getTableId
+       , FusionConfig(..), stdRetry
        , fusionSchema, resultToTuple
        , uploadBenchResult
+
        , FusionPlug(), FusionCmdLnFlag(..),
        )
        where
@@ -119,14 +123,31 @@ fromJustErr msg Nothing  = error msg
 fromJustErr _   (Just x) = x
 
 
+-- TODO: Should probably move these routines into some kind of
+-- "Authenticated" monad which would provide a Reader for the auth
+-- info.
+
 -- | Get the table ID that has been cached on disk, or find the the table in the users
 -- Google Drive, or create a new table if needed.
 --
--- In the case of a preexisting table, this function also performs sanity checking
--- comparing the expected schema (including column ordering) to the sserver side one.
--- It returns the permutation of columns found server side.
+-- This is a simple shorthand for combining findTableId/makeTable/ensureColumns.  
+--
+-- It adds columns if necessary and returns the permutation of columns
+-- found server side.  It assumes the DEFAULT core table Schema and
+-- will not work for creating CUSTOM columns on the server side.
+-- Simple drop down to using the three finer grained routines if you want that.
 getTableId :: OAuth2Client -> String -> BenchM (TableId, [String])
 getTableId auth tablename = do
+  x <- findTableId auth tablename
+  tid <- case x of
+           Nothing -> makeTable auth tablename
+           Just id -> return id
+  order <- ensureColumns auth tid fusionSchema
+  return (tid, order)
+
+-- | Look for a table by name, returning its ID if it is present.
+findTableId :: OAuth2Client -> String -> BenchM (Maybe TableId)
+findTableId auth tablename = do
   log$ " [fusiontable] Fetching access tokens, client ID/secret: "++show (clientId auth, clientSecret auth)
   toks      <- liftIO$ getCachedTokens auth
   log$ " [fusiontable] Retrieved: "++show toks
@@ -134,45 +155,63 @@ getTableId auth tablename = do
   allTables <- fmap (fromJustErr "[fusiontable] getTableId, API call to listTables failed.") $
                stdRetry "listTables" auth toks $ listTables atok
   log$ " [fusiontable] Retrieved metadata on "++show (length allTables)++" tables"
-
-
-  let ourSchema = map fst fusionSchema
-      ourSet    = S.fromList ourSchema
   case filter (\ t -> tab_name t == tablename) allTables of
-    [] -> do log$ " [fusiontable] No table with name "++show tablename ++" found, creating..."
-             Just TableMetadata{tab_tableId} <- stdRetry "createTable" auth toks $
-                                                createTable atok tablename fusionSchema
-             log$ " [fusiontable] Table created with ID "++show tab_tableId
-             
-             -- TODO: IF it exists but doesn't have all the columns, then add the necessary columns.
-             return (tab_tableId, ourSchema)
+    [] -> do log$ " [fusiontable] No table with name "++show tablename 
+             return Nothing
     [t] -> do let tid = (tab_tableId t)
               log$ " [fusiontable] Found one table with name "++show tablename ++", ID: "++show tid
-              log$ " [fusiontable] Checking columns... "              
-              targetSchema <- fmap (map col_name) $ liftIO$ listColumns atok tid
-              let targetSet = S.fromList targetSchema
-                  missing   = S.difference ourSet targetSet
-                  misslist  = L.filter (`S.member` missing) ourSchema -- Keep the order.
-                  extra     = S.difference targetSet ourSet
-              unless (targetSchema == ourSchema) $ 
-                log$ "WARNING: HSBencher upload schema (1) did not match server side schema (2):\n (1) "++
-                     show ourSchema ++"\n (2) " ++ show targetSchema
-                     ++ "\n HSBencher will try to make do..."
-              unless (S.null missing) $ do                
-                log$ "WARNING: These fields are missing server-side, creating them: "++show misslist
-                forM_ misslist $ \ colname -> do
-                  Just ColumnMetadata{col_name, col_columnId} <- stdRetry "createColumn" auth toks $
-                                                                 createColumn atok tid (colname, STRING)
-                  log$ "   -> Created column with name,id: "++show (col_name, col_columnId)
-              unless (S.null extra) $ do
-                log$ "WARNING: The fusion table has extra fields that HSBencher does not know about: "++
-                     show (S.toList extra)
-                log$ "         Expect null-string entries in these fields!  "
-              -- For now we ASSUME that new columns are added to the end:
-              -- TODO: We could do another read from the list of columns to confirm.
-              return (tid, targetSchema ++ misslist)
-    ls  -> error$ " More than one table with the name '"++show tablename++"' !\n "++show ls
+              return (Just tid)
 
+-- | Make a new table, returning its ID.
+--   In the future this may provide failure recovery.  But for now it
+--   simply produces an exception if anything goes wrong.
+--   And in particular there is no way to deal with multiple clients
+--   racing to perform a `makeTable` with the same name.
+makeTable :: OAuth2Client -> String -> BenchM TableId
+makeTable auth tablename = do
+  toks      <- liftIO$ getCachedTokens auth
+  let atok  = B.pack $ accessToken toks  
+  log$ " [fusiontable] No table with name "++show tablename ++" found, creating..."
+  Just TableMetadata{tab_tableId} <- stdRetry "createTable" auth toks $
+                                     createTable atok tablename fusionSchema
+  log$ " [fusiontable] Table created with ID "++show tab_tableId
+  -- TODO: IF it exists but doesn't have all the columns, then add the necessary columns.
+  return tab_tableId
+
+-- | Make sure that a minimal set of columns are present.  This
+--   routine creates columns that are missing and returns the
+--   permutation of columns found on the server.              
+ensureColumns :: OAuth2Client -> TableId -> [(String, CellType)] -> BenchM [String]
+ensureColumns auth tid ourSchema = do
+  log$ " [fusiontable] ensureColumns: Ensuring schema: "++show ourSchema
+  toks      <- liftIO$ getCachedTokens auth
+  log$ " [fusiontable] ensureColumns: Retrieved: "++show toks
+  let ourColNames = map fst ourSchema
+  let atok      = B.pack $ accessToken toks
+  let ourSet    = S.fromList ourColNames
+  log$ " [fusiontable] ensureColumns: Checking columns... "  
+  targetColNames <- fmap (map col_name) $ liftIO$ listColumns atok tid
+  let targetSet = S.fromList targetColNames
+      missing   = S.difference ourSet targetSet
+      misslist  = L.filter (`S.member` missing) ourColNames -- Keep the order.
+      extra     = S.difference targetSet ourSet
+  unless (targetColNames == ourColNames) $ 
+    log$ "WARNING: HSBencher upload schema (1) did not match server side schema (2):\n (1) "++
+         show ourSchema ++"\n (2) " ++ show targetColNames
+         ++ "\n HSBencher will try to make do..."
+  unless (S.null missing) $ do                
+    log$ "WARNING: These fields are missing server-side, creating them: "++show misslist
+    forM_ misslist $ \ colname -> do
+      Just ColumnMetadata{col_name, col_columnId} <- stdRetry "createColumn" auth toks $
+                                                     createColumn atok tid (colname, STRING)
+      log$ "   -> Created column with name,id: "++show (col_name, col_columnId)
+  unless (S.null extra) $ do
+    log$ "WARNING: The fusion table has extra fields that HSBencher does not know about: "++
+         show (S.toList extra)
+    log$ "         Expect null-string entries in these fields!  "
+  -- For now we ASSUME that new columns are added to the end:
+  -- TODO: We could do another read from the list of columns to confirm.
+  return (targetColNames ++ misslist)
 
 
 -- | Upload the raw data, which had better be in the right format.
