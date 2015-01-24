@@ -51,6 +51,7 @@ main = do
 
    let (opts1,plainargs,unrec,errs1) = getOpt' Permute extra_cli_options cli_args
    let (opts2,_,errs2) = getOpt Permute fusion_cli_options unrec
+   putStrLn $ "Fusion opts: "++show opts2
    let errs = errs1 ++ errs2   
    when (L.elem PrintHelp opts1 || not (null errs)) $ do 
      putStrLn $
@@ -71,10 +72,10 @@ main = do
    -- Gather info about the benchmark platform:
    gconf0 <- getConfig [] []
    let gconf1 = gconf0 { benchsetName = Just name }
-   gconf2 <- plugInitialize plug gconf1
-   let fconf0 = getMyConf plug gconf2
+   let fconf0 = getMyConf plug gconf1
    let fconf1 = foldFlags plug opts2 fconf0
-   let gconf3 = setMyConf plug fconf1 gconf2
+   let gconf2 = setMyConf plug fconf1 gconf1       
+   gconf3 <- plugInitialize plug gconf2
                 
    ------------------------------------------------------------
    case plainargs of
