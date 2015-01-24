@@ -1,8 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 -- |
@@ -15,6 +13,8 @@ module Main where
 import HSBencher
 import HSBencher.Internal.Config (augmentResultWithConfig, getConfig)
 import HSBencher.Backend.Fusion
+import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
+import Network.Google.FusionTables(CellType(..))
 
 -- Standard:
 import Control.Monad.Reader
@@ -28,6 +28,7 @@ import qualified Data.Set as S
 
 import Text.CSV
 
+this_progname :: String
 this_progname = "hsbencher-fusion-upload-csv"
 
 ----------------------------------------------------------------------------------------------------
@@ -75,8 +76,8 @@ main = do
    let fconf0 = getMyConf plug gconf1
    let fconf1 = foldFlags plug opts2 fconf0
    let gconf2 = setMyConf plug fconf1 gconf1       
-   gconf3 <- plugInitialize plug gconf2
-                
+   gconf3 <- plugInitialize plug gconf2                
+
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
@@ -84,20 +85,46 @@ main = do
 
 doupload :: Config -> FilePath -> IO ()
 doupload confs file = do
-  x <- parseCSVFromFile file
+  x <- parseCSVFromFile file  
   case x of
     Left err -> error $ "Failed to read CSV file: \n"++show err
     Right [] -> error $ "Bad CSV file, not even a header line: "++file
     Right (hdr:rst) -> do
       checkHeader hdr
+      putStrLn$ " ["++this_progname++"] Beginning upload CSV data with Schema: "++show hdr
+      ensureMyColumns confs hdr -- FIXUP server schema.
       let len = length rst
-      putStrLn$ " ["++this_progname++"] Beginning upload of "++show len++" rows of CSV data..."  
+      putStrLn$ " ["++this_progname++"] Uploading "++show len++" rows of CSV data..."  
       mapM_ (uprow len confs) (zip [1..] (map (zip hdr) rst))
+
+
+-- FIXUP: FusionConfig doesn't document our additional CUSTOM columns.
+-- During initialization it ensures the table has the core schema, but that's it.
+-- Thus we need to make sure ALL columns are present.
+ensureMyColumns  :: Config -> [String] -> IO ()
+ensureMyColumns confs hdr = do
+      let FusionConfig{fusionTableID,fusionClientID,fusionClientSecret,serverColumns} = getMyConf plug confs
+          (Just tid, Just cid, Just sec) = (fusionTableID, fusionClientID, fusionClientSecret)
+          auth = OAuth2Client { clientId=cid, clientSecret=sec }
+          missing = S.difference (S.fromList hdr) (S.fromList serverColumns)
+          -- HACK: we pretend everything in a STRING here... we should probably look at the data in the CSV
+          -- and guess if its a number.  However, if columns already exist we DONT change their type, so it
+          -- can always be done manually on the server.
+          schema = [ case lookup nm fusionSchema of
+                       Nothing -> (nm,STRING)
+                       Just t  -> (nm,t)
+                   | nm <- serverColumns ++ S.toList missing ]
+      if S.null missing
+        then putStrLn$ " ["++this_progname++"] Server has all the columns appearing in the CSV file.  Good."
+        else do putStrLn$ " ["++this_progname++"] Adding missing columns: "++show missing
+                res <- runReaderT (ensureColumns auth tid schema) confs
+                putStrLn$ " ["++this_progname++"] Done adding, final server schema:"++show res
+
 
 checkHeader :: Record -> IO ()
 checkHeader hdr
   | L.elem "PROGNAME" hdr = return ()
-  | otherwise = error $ "Bad HEADER line on CSV file: "++show hdr
+  | otherwise = error $ "Bad HEADER line on CSV file.  Expecting at least PROGNAME to be present: "++show hdr
 
 -- | Get config data about the benchmark platform, but only if needed
 {-
