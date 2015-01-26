@@ -23,6 +23,7 @@ import Statistics.Resampling.Bootstrap                  ( Estimate(..) )
 -- Standard:
 import Control.Monad.Reader
 import Data.List as L
+import Data.Maybe (fromMaybe)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs)
 import System.Exit
@@ -31,6 +32,8 @@ import qualified Data.Map                               as Map
 ----------------------------------------------------------------------------------------------------
 
 data ExtraFlag = TableName String
+               | SetVariant   String
+               | SetArgs      String
                | PrintHelp
   deriving (Eq,Ord,Show,Read)
 
@@ -38,7 +41,12 @@ extra_cli_options :: [OptDescr ExtraFlag]
 extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                        "Show this help message and exit."
                      , Option [] ["name"] (ReqArg TableName "NAME")
-                       "Name for the fusion table to which we upload (discovered or created)." ]
+                       "Name for the fusion table to which we upload (discovered or created)."
+                     , Option [] ["variant"] (ReqArg SetVariant "STR")
+                       "Setting for the VARIANT field for *ALL* uploaded data from the given report."
+                     , Option [] ["args"] (ReqArg SetArgs "STR")
+                       "Set the ARGS column in the uploaded data."
+                     ]
 plug :: FusionPlug
 plug = defaultFusionPlugin
 
@@ -66,6 +74,16 @@ main = do
                [n] -> n
                ls  -> error $ "Multiple table names supplied!: "++show ls
 
+   let presets1 = emptyBenchmarkResult
+   let presets2 = case [ n | SetVariant n <- opts1 ] of
+                  []  -> presets1
+                  [n] -> presets1 { _VARIANT = n }
+                  ls  -> error $ "Multiple VARIANTs supplied!: "++show ls
+   let presets3 = case [ n | SetArgs n <- opts1 ] of
+                  []  -> presets2
+                  [n] -> presets2 { _ARGS = words n }
+                  ls  -> error $ "Multiple ARGS settings supplied!: "++show ls
+   
    -- This bit could be abstracted nicely by the HSBencher lib:
    ------------------------------------------------------------
    -- Gather info about the benchmark platform:
@@ -79,20 +97,19 @@ main = do
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
-     reports -> forM_ reports (doupload gconf3)
+     reports -> forM_ reports (doupload gconf3 presets3)
 
-doupload :: Config -> FilePath -> IO ()
-doupload confs file = do
+doupload :: Config -> BenchmarkResult -> FilePath -> IO ()
+doupload confs presets file = do
   x <- readReports file
   case x of
     Left err -> error $ "Failed to read report file: \n"++err
-    Right reports -> forM_ reports (upreport confs)
+    Right reports -> forM_ reports (upreport confs presets)
 
-upreport :: Config -> Report -> IO ()
-upreport gconf report = do
-  let br  = emptyBenchmarkResult
-  printReport report -- TEMP      
-  br' <- augmentResultWithConfig gconf (addReport report br)
+upreport :: Config -> BenchmarkResult -> Report -> IO ()
+upreport gconf presets report = do
+  printReport report -- TEMP
+  br' <- augmentResultWithConfig gconf (addReport report presets)
   runReaderT (uploadBenchResult br') gconf
 
 printReport :: Report -> IO ()

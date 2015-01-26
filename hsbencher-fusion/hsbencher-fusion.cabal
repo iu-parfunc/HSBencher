@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hsbencher-fusion
-version:             0.3.5.1
+version:             0.3.6
 synopsis:            Backend for uploading benchmark data to Google Fusion Tables.
 description:
          Google Fusion tables are a type of Google Doc that resembles a
@@ -16,6 +16,7 @@ description:
          * (0.3) Added RETRIES field to the core schema.
          * (0.3.3) Jump to new versions of handa-gdata, network, and http-conduit
          * (0.3.5) Add findTableId/makeTable/ensureColumns
+         * (0.3.6) --variant command line argument for criterion uploader
 
 
 license:             BSD3
