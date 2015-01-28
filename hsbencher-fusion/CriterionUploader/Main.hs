@@ -25,7 +25,6 @@ import Statistics.Resampling.Bootstrap                  ( Estimate(..) )
 -- Standard:
 import Control.Monad.Reader
 import Data.List as L
-import Data.Maybe (fromMaybe)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs)
 import System.Exit
@@ -36,10 +35,8 @@ import qualified Data.Map                               as Map
 data ExtraFlag = TableName String
                | SetVariant   String
                | SetArgs      String
---             |       String
                | WriteCSV     FilePath
                | NoUpload
---               | Dribble   Bool
                | PrintHelp
   deriving (Eq,Ord,Show,Read)
 
@@ -110,9 +107,6 @@ main = do
    let gconf2 = setMyConf plug fconf1 gconf1       
    gconf3 <- if noup then return gconf2 else plugInitialize plug gconf2
 
-   -- Could start up dribble:
-   -- gconf4 <- plugInitialize defaultDribblePlugin gconf3
-
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
@@ -157,7 +151,7 @@ printReport Report{..} = do
     putStrLn$ "  Regression: "++ show (regResponder, Map.keys regCoeffs)
 
 addReport :: Report -> BenchmarkResult -> BenchmarkResult
-addReport rep@Report{..} BenchmarkResult{..} =
+addReport Report{..} BenchmarkResult{..} =
   BenchmarkResult
   { _PROGNAME = reportName
   , _VARIANT = if null _VARIANT
