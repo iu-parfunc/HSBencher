@@ -1,5 +1,11 @@
-*.hi
+dist
+cabal-dev
 *.o
-*.exe
-*/#*#
-temp/
+*.hi
+*.chi
+*.chs.h
+.virtualenv
+.hsenv
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.config
