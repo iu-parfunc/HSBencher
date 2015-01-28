@@ -51,14 +51,14 @@ import Data.List (elemIndex)
 
      - Environment variables:
      Allow user to have secret and id as env variables.
-
+      (Elsewhere we use HSBENCHER_GOOGLE_CLIENTID, and HSBENCHER_GOOGLE_CLIENTSECRET)
 
    *Example usage
 
 
       -- Should add --raw to each of these for output 
       -- QUERY 1
-     /hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleuserconteom --table=Dynaprof_Benchmarks --query="SELECT * FROM FT WHERE GIT_DEPTH = 445"
+     hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleuserconteom --table=Dynaprof_Benchmarks --query="SELECT * FROM FT WHERE GIT_DEPTH = 445"
 
      -- QUERY 2 
      hsbencher do --secret=MQ72ZWDde_1e1ihI5YE9YlEi --id=925399326325-6dir7re3ik7686p6v3kkfkf1kj0ec7ck.apps.googleusercontent.com --table=Dynaprof_Benchmarks --query="SELECT 'MEDIANTIME' FROM FT WHERE GIT_DEPTH = 445 AND PROGNAME = 'h264ref-9.3'"
@@ -172,11 +172,15 @@ core_cli_options =
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
 fullUsageInfo = usageInfo docs core_cli_options
- where 
-  docs = "USAGE: hsbencher [mode] <flags> ...\n"++
-         "\nValid modes: "++(unwords valid_modes)++
-         "\n\nhsbencher-tool general options: \n"
---   ++ generalUsageStr
+ where
+   docs =
+  --  "USAGE: hsbencher [mode] <flags> ...\n"++
+  --        "\nValid modes: "++(unwords valid_modes)++
+     unlines
+      [ "hsbencher-fusion-fetch: download hsbencher data stored in a fusion table."
+      , ""
+      , "Valid command line flags are: \n"
+      ]
 
 -- | Is a valid mode requested, if so turn it into a Mode.
 --   a uniquely identifying infix of the mode is all that needs
@@ -207,6 +211,14 @@ main = do
     putStrLn fullUsageInfo
     exitSuccess
 
+  -- RRN: Since this isn't really a multi-tool yet, just renaming it to
+  -- hsbencher-fusion-fetch and having it only fulfill download behavior.  We
+  -- already have hsbencher-fusion-upload-X for X=criterion and csv.
+  case plainargs of
+    [] -> download options
+    ls -> error $  "Unrecognized arguments on command line: " ++show ls
+  
+{-
   let (mode,rest) = 
         case plainargs of
          [] -> error $ "Command command expects the first argument to specify a mode, one of:\n" ++
@@ -226,7 +238,7 @@ main = do
         case e of
           FlagsNotValidE str -> putStrLn $ "Caught error: "++ str
       ) 
-
+-}
 
 
 ---------------------------------------------------------------------------

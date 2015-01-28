@@ -67,7 +67,7 @@ instance Plugin DribblePlugin where
                    "  No additional flags, but uses --name for the base filename.\n"
                    ,[])
 
-  plugUploadRow _p cfg row = runReaderT (uploadBenchResult row) cfg
+  plugUploadRow _p cfg row = runReaderT (writeBenchResult row) cfg
 
   plugInitialize p gconf = do 
    putStrLn " [dribble] Dribble-to-file plugin initializing..."
@@ -97,10 +97,11 @@ instance Plugin DribblePlugin where
 -- TEMP: Hack
 fileLock :: MVar ()
 fileLock = unsafePerformIO (newMVar ())
+{-# NOINLINE fileLock #-}
 -- TODO/FIXME: Make this configurable.
 
-uploadBenchResult :: BenchmarkResult -> BenchM ()
-uploadBenchResult  br@BenchmarkResult{..} = do
+writeBenchResult :: BenchmarkResult -> BenchM ()
+writeBenchResult  br@BenchmarkResult{..} = do
     let tuple = resultToTuple br
         (cols,vals) = unzip tuple
     conf <- ask
