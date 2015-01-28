@@ -97,6 +97,7 @@ instance Plugin DribblePlugin where
 -- TEMP: Hack
 fileLock :: MVar ()
 fileLock = unsafePerformIO (newMVar ())
+{-# NOINLINE fileLock #-}
 -- TODO/FIXME: Make this configurable.
 
 uploadBenchResult :: BenchmarkResult -> BenchM ()
