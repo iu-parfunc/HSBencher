@@ -1,10 +1,11 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 -- |
 -- Seeded from code by:
 -- Copyright    : [2014] Trevor L. McDonell
@@ -15,7 +16,7 @@ module Main where
 import HSBencher
 import HSBencher.Internal.Config (augmentResultWithConfig, getConfig)
 import HSBencher.Backend.Fusion
-import HSBencher.Backend.Dribble (defaultDribblePlugin)
+import HSBencher.Backend.Dribble (defaultDribblePlugin, DribbleConf (..))
 
 import Criterion.Types                                  ( Report(..), SampleAnalysis(..), Regression(..) )
 import Criterion.IO                                     ( readReports )
@@ -79,6 +80,11 @@ main = do
        (usageInfo help fusion_cli_options)
      if null errs then exitSuccess else exitFailure
 
+   let noup = L.elem NoUpload opts1
+   let csvPath = (\(WriteCSV path) -> path) `fmap`
+                     L.find (\case WriteCSV _ -> True
+                                   _ -> False) opts1
+
    let name = case [ n | TableName n <- opts1 ] of
                [] -> error "Must supply a table name!"
                [n] -> n
@@ -102,15 +108,17 @@ main = do
    let fconf0 = getMyConf plug gconf1
    let fconf1 = foldFlags plug opts2 fconf0
    let gconf2 = setMyConf plug fconf1 gconf1       
-   gconf3 <- plugInitialize plug gconf2
+   gconf3 <- if noup then return gconf2 else plugInitialize plug gconf2
 
--- Could start up dribble:
---  gconf4 <- plugInitialize defaultDribblePlugin gconf3
+   -- Could start up dribble:
+   -- gconf4 <- plugInitialize defaultDribblePlugin gconf3
 
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
-     reports -> forM_ reports (doupload gconf3 presets3)
+     reports -> do
+       maybe (return ()) (doCSV gconf3 presets3 reports) csvPath
+       unless noup $ forM_ reports (doupload gconf3 presets3)
 
 doupload :: Config -> BenchmarkResult -> FilePath -> IO ()
 doupload confs presets file = do
@@ -118,6 +126,22 @@ doupload confs presets file = do
   case x of
     Left err -> error $ "Failed to read report file: \n"++err
     Right reports -> forM_ reports (upreport confs presets)
+
+doCSV :: Config -> BenchmarkResult -> [FilePath] -> FilePath -> IO ()
+doCSV confs presets reportFiles csvFile = do
+  brs <- concat `fmap` forM reportFiles (\reportFile -> do
+           critReport <- readReports reportFile
+           case critReport of
+             Left err -> error $ "Failed to read report file " ++ reportFile ++ ": \n" ++ err
+             Right reports -> mapM (augmentResultWithConfig confs . flip addReport presets) reports)
+  -- TODO: need to change file names here
+  forM_ brs $ \benchRet -> do
+    -- we restart dribble plugin to set a new path for each report
+    let updateDribbleConf =
+          Map.insert "dribble" (SomePluginConf defaultDribblePlugin $ DribbleConf (Just csvFile))
+    dribbleConf <- plugInitialize defaultDribblePlugin
+                     confs{plugInConfs=updateDribbleConf (plugInConfs confs)}
+    void $ plugUploadRow defaultDribblePlugin dribbleConf benchRet
 
 upreport :: Config -> BenchmarkResult -> Report -> IO ()
 upreport gconf presets report = do
