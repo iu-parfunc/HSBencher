@@ -15,6 +15,7 @@ module Main where
 import HSBencher
 import HSBencher.Internal.Config (augmentResultWithConfig, getConfig)
 import HSBencher.Backend.Fusion
+import HSBencher.Backend.Dribble (defaultDribblePlugin)
 
 import Criterion.Types                                  ( Report(..), SampleAnalysis(..), Regression(..) )
 import Criterion.IO                                     ( readReports )
@@ -34,6 +35,10 @@ import qualified Data.Map                               as Map
 data ExtraFlag = TableName String
                | SetVariant   String
                | SetArgs      String
+--             |       String
+               | WriteCSV     FilePath
+               | NoUpload
+--               | Dribble   Bool
                | PrintHelp
   deriving (Eq,Ord,Show,Read)
 
@@ -46,6 +51,11 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                        "Setting for the VARIANT field for *ALL* uploaded data from the given report."
                      , Option [] ["args"] (ReqArg SetArgs "STR")
                        "Set the ARGS column in the uploaded data."
+
+                     , Option [] ["csv"] (ReqArg WriteCSV "PATH")
+                       "Write the Criterion report data into a CSV file using the HSBencher schema."
+                     , Option [] ["noupload"] (NoArg NoUpload)
+                       "Don't actually upload to the fusion table (but still psosible write CSV)."
                      ]
 plug :: FusionPlug
 plug = defaultFusionPlugin
@@ -93,7 +103,10 @@ main = do
    let fconf1 = foldFlags plug opts2 fconf0
    let gconf2 = setMyConf plug fconf1 gconf1       
    gconf3 <- plugInitialize plug gconf2
-                
+
+-- Could start up dribble:
+--  gconf4 <- plugInitialize defaultDribblePlugin gconf3
+
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
