@@ -390,6 +390,12 @@ plotIntDouble conf  series = do
   let fopts = Cairo.FileOptions (plotResolution conf)
                                (plotOutFormat conf)
   Cairo.toFile fopts (plotOutFile conf) $ do
+
+    -- 13 colors
+    setColors $ map opaque
+              [blue, green, orange, red
+              ,brown, black, darkblue, darkgray
+              ,darkgreen, darkorange, darkred, yellow, violet]
     
     layout_title .= plotTitle conf
     layout_background .= solidFillStyle (opaque white)
