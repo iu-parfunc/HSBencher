@@ -380,15 +380,14 @@ main = do
   
 ---------------------------------------------------------------------------
 -- Plotting
-    
+
+plotIntInt :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!!"
 
-
---plotIntDouble outfile plotTitle outFormat outResolution series = do
 plotIntDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotIntDouble conf  series = do 
   let fopts = Cairo.FileOptions (plotResolution conf)
-                               (plotOutFormat conf)
+                                (plotOutFormat conf)
   Cairo.toFile fopts (plotOutFile conf) $ do
 
     -- 13 colors
@@ -451,6 +450,7 @@ plotIntDouble conf  series = do
       plot_points_style . point_border_color .= color
       plot_points_style . point_radius .= 2
 
+plotDoubleDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 
 
