@@ -200,15 +200,15 @@ class FromData a where
 
 instance FromData Double where
   fromData (NumData a) = a
-  fromData _ = error "FromData Double"
+  fromData e = error $ "FromData Double, could not parse as Double: "++show e
 
 instance FromData Int where
   fromData (IntData a) = a
-  fromData _ = error "FromData Int"
+  fromData e = error$ "FromData Int, could not parse: "++show e
 
 instance FromData String where
   fromData (StringData a) = a
-  fromData _ = error "FromData String" 
+  fromData e = error "FromData String, could not parse: "++show e 
 
 ---------------------------------------------------------------------------
 -- Data series
