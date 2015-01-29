@@ -315,11 +315,11 @@ main = do
   (csv,aux) <- readCSVFiles (csv',aux') inFiles key xy 
   
          
-  hPutStrLn stderr $ "printing csv" 
+  hPutStrLn stderr $ " [hsbencher-graph] Printing csv:" 
   hPutStrLn stderr $ show csv
 
 
-  hPutStrLn stderr $ "printing aux" 
+  hPutStrLn stderr $ " [hsbencher-graph] Printing aux:" 
   hPutStrLn stderr $ show aux
 
   --------------------------------------------------
@@ -339,6 +339,8 @@ main = do
       plot_series = if normaliseSpecified       
                     then normalise base series'
                     else series'
+
+  hPutStrLn stderr $ " [hsbencher-graph] Inferred types for X/Y axes: "++show series_type
   --------------------------------------------------
   -- All the collected parameters for the plotting. 
   let plotConf = PlotConfig outFile
@@ -365,6 +367,7 @@ plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!!"
 
 
 --plotIntDouble outfile plotTitle outFormat outResolution series = do
+plotIntDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotIntDouble conf  series = do 
   let fopts = Cairo.FileOptions (plotResolution conf)
                                (plotOutFormat conf)
@@ -425,7 +428,7 @@ unifyTypes (name,series) =
   where
     unify xs =
       case (any isString xs, any isInt xs, any isNum xs) of
-        (True, _, _) -> map convertToString xs
+        (True, _, _)   -> map convertToString xs
         (False,_,True) -> map convertToNum xs
         (False,True,False) -> xs
     convertToString (IntData x) = StringData (show x)
