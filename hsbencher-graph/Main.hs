@@ -35,7 +35,7 @@ import Data.Typeable
 -- Charting library
 import Graphics.Rendering.Chart as C
 import Graphics.Rendering.Chart as C 
-import Graphics.Rendering.Chart.Backend.Cairo as C
+import qualified Graphics.Rendering.Chart.Backend.Cairo as Cairo
 import Graphics.Rendering.Chart.Easy as C
 import Data.Colour
 import Data.Colour.Names
@@ -110,11 +110,11 @@ data Flag = ShowHelp | ShowVersion
 data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
                   deriving (Eq, Ord, Show, Read) 
 
-convToFileFormat :: MyFileFormat -> FileFormat
-convToFileFormat MySVG = SVG
-convToFileFormat MyPDF = PDF
-convToFileFormat MyPNG = PNG
-convToFileFormat MyPS = PS
+convToFileFormat :: MyFileFormat -> Cairo.FileFormat
+convToFileFormat MySVG = Cairo.SVG
+convToFileFormat MyPDF = Cairo.PDF
+convToFileFormat MyPNG = Cairo.PNG
+convToFileFormat MyPS  = Cairo.PS
 
 data GraphMode = Bars | BarClusters | Lines 
                deriving (Eq, Ord, Show, Read )
@@ -200,6 +200,7 @@ class FromData a where
 
 instance FromData Double where
   fromData (NumData a) = a
+  fromData (IntData n) = fromIntegral n -- RRN: TEMP: sanity check this.  Allow Int to "subtype" as double.
   fromData e = error $ "FromData Double, could not parse as Double: "++show e
 
 instance FromData Int where
@@ -227,7 +228,7 @@ insertVal m key val@(x,y) =
 -- Plot configuration
 ---------------------------------------------------------------------------
 data PlotConfig = PlotConfig { plotOutFile    :: FilePath
-                             , plotOutFormat  :: FileFormat
+                             , plotOutFormat  :: Cairo.FileFormat
                              , plotResolution :: (Int,Int)                                
                              , plotTitle      :: String                              
                              , plotXLabel     :: String
@@ -248,7 +249,8 @@ main = do
 
       normaliseSpecified = (not . null) [ () | NormaliseKey _ <- options] 
   
-      outFormat = head $ [convToFileFormat format | OutFormat format <- options] ++ [PNG] 
+      outFormat = head $ [convToFileFormat format | OutFormat format <- options]
+                         ++ [Cairo.PNG] 
 
       inFiles = [nom | File nom <- options]   
   
@@ -359,14 +361,14 @@ main = do
 ---------------------------------------------------------------------------
 -- Plotting
     
-plotIntInt conf series = undefined
+plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!!"
 
 
 --plotIntDouble outfile plotTitle outFormat outResolution series = do
 plotIntDouble conf  series = do 
-  let fopts = FileOptions (plotResolution conf)
-                          (plotOutFormat conf)
-  toFile fopts (plotOutFile conf) $ do
+  let fopts = Cairo.FileOptions (plotResolution conf)
+                               (plotOutFormat conf)
+  Cairo.toFile fopts (plotOutFile conf) $ do
     
     layout_title .= plotTitle conf
     layout_background .= solidFillStyle (opaque white)
@@ -407,7 +409,7 @@ plotIntDouble conf  series = do
       plot_points_style . point_border_color .= color
       plot_points_style . point_radius .= 2
 
-plotDoubleDouble = undefined 
+plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 
 
 ---------------------------------------------------------------------------
