@@ -112,7 +112,7 @@ data Flag = ShowHelp | ShowVersion
 -- GroupBy
 -- GroupBy  String       -- Readable as LocationSpec
 
-            
+          | DummyArg -- Don't ask.            
             
   deriving (Eq,Ord,Show,Read)
 
@@ -148,19 +148,32 @@ core_cli_options =
      , Option []     ["id"]     (ReqArg GoogleID "String")     "Google ID"
      , Option []     ["table"]  (ReqArg FTName "String")       "Name of FusionTable"
      , Option ['q']  ["query"]  (ReqArg FTQuery "String")      "A SQL style query"
+
+-- RRN: These are not implemented, so lets not confuse:
+{-       
      , Option ['w']  ["Wizard"] (NoArg Wizard)                 "Generate a decent CSV file with no user guidance"
-     , Option ['n']  ["name"]   (ReqArg BenchName "String")    "For example VARIANT"
-     , Option ['v']  ["variation"] (ReqArg BenchVariation "String") "For example NUM_THREADS"
-     , Option ['d']  ["data"]   (ReqArg BenchData "String")    "For example MEDIANTIME"
-     , Option []     ["raw"]    (NoArg RawCSV)                 "Effortless CSV" 
+       
+     , Option ['n']  ["name"]   (ReqArg BenchName "String")    "Name of plotted entity.  For example VARIANT"
+     , Option ['v']  ["variation"] (ReqArg BenchVariation "String") "Independent var.  For example NUM_THREADS"
+     , Option ['d']  ["data"]   (ReqArg BenchData "String")    "Dependent var.  For example MEDIANTIME"
+-}
+
+     , Option []     ["raw"]    (NoArg RawCSV)           "Directly write query output to CSV" 
 
 -- refined filtering, splitting and grouping that is applied to the resulting CSV
      -- , Option []     ["floc"] (ReqArg FilterLoc "String")      "Row <N> or Column <N>"
      -- , Option []     ["fby"]  (ReqArg FilterBy  "String")      "Prefix or Infix or Suffix"
      -- , Option []     ["fstr"] (ReqArg FilterStr "String")      "String to match against"
 
-     , Option []     ["sloc"] (ReqArg SplitLoc "String")       "Row <N> or Column <N>"
-     , Option []     ["sby"]  (ReqArg SplitBy  "String")       "for example _ or -"
+     , Option []  []    (NoArg DummyArg)   $ "\n" ++
+       "Column splitting: create virtual 'subcolumns'\n"++
+       "---------------------------------------------\n"++
+       "Currently splitting only a single column is supported, and requires\n"++
+       "both the following options.  A column X is split into X0, X1, ..."
+     , Option []  []    (NoArg DummyArg)   ""
+       
+     , Option []     ["sloc"] (ReqArg SplitLoc "String") "Which column to split."
+     , Option []     ["sby"]  (ReqArg SplitBy  "String") "What is the separator character: usually '_', '-', ' '"
 
 --      , Option []     ["gby"]  (ReqArg GroupBy  "String")       "Restructure CSV by creating groups **Warning increases dimensionality!**" 
      ]
@@ -183,8 +196,12 @@ fullUsageInfo = usageInfo docs core_cli_options
       , "always 'FT', e.g.:"
       , ""        
       , " SELECT * FROM FT WHERE GIT_DEPTH = 445 "
-      , ""        
-      , "Valid command line flags are: \n"
+      , ""
+      , "CSV data is written to standard out." 
+      , "For now, direct dumping of query output (--raw) is the only method supported."
+      , "The one caveat is that *column splitting* can post-process the query output."
+      , "In the future other methods of organizing fetched data may be provided."
+      , "Command line flags are: \n"
       ]
 
 -- | Is a valid mode requested, if so turn it into a Mode.
@@ -380,21 +397,24 @@ metaID table_id qe@(SQL.Select _ _ _ _ _ _ _ _ _ ) =
 
 convertToCSV :: [Flag] -> ColData -> [[String]]
 convertToCSV flags cd@(ColData cols values) =
-  case (wizardMode,rawMode, flagsValid) of
-    (True, False, False) -> inJuxHurYlem cols values
-    (False, True, False) -> rawCSV2 cols values
-    (False, False, True) -> toCSV names vars cols values
-    _ -> error "Command line arguments are incorrect for CSV creation" 
-    
-  where 
-    flagsValid =
-      if null [() | BenchName _ <- flags] then
-        error "Benchmark --name is missing."
-      else if null [() | BenchVariation _  <- flags] then
-         error "Benchmark --variation is missing, i.e. VARIANT setting."
-      else if null [() | BenchData _ <- flags] then
-         error "Benchmark --data is missing."
-      else True
+  case (wizardMode,rawMode) of
+    (True, False) -> inJuxHurYlem cols values
+    (False, True) -> rawCSV2 cols values
+    (False, False) ->
+      case flagsValid of
+        Nothing -> toCSV names vars cols values
+        Just err -> error err
+    (True,True) -> error "Cannot use --wizard and --raw mode at the same time."
+  where
+    -- Valid flags for the "toCSV" mode:
+    flagsValid 
+      | null [() | BenchName _ <- flags] =
+        Just "Benchmark --name is missing."
+      | null [() | BenchVariation _  <- flags] =
+         Just "Benchmark --variation is missing, i.e. VARIANT setting."
+      | null [() | BenchData _ <- flags] =
+         Just "Benchmark --data is missing."
+      | otherwise = Nothing
     wizardMode =
       (not . null) [() | Wizard <- flags]
 
