@@ -179,6 +179,11 @@ fullUsageInfo = usageInfo docs core_cli_options
      unlines
       [ "hsbencher-fusion-fetch: download hsbencher data stored in a fusion table."
       , ""
+      , "Limited SQL queries are supported, and the name of the table is "
+      , "always 'FT', e.g.:"
+      , ""        
+      , " SELECT * FROM FT WHERE GIT_DEPTH = 445 "
+      , ""        
       , "Valid command line flags are: \n"
       ]
 
@@ -383,9 +388,13 @@ convertToCSV flags cd@(ColData cols values) =
     
   where 
     flagsValid =
-      (not . null) [() | BenchName _ <- flags] &&
-      (not . null) [() | BenchVariation _  <- flags] &&
-      (not . null) [() | BenchData _ <- flags] 
+      if null [() | BenchName _ <- flags] then
+        error "Benchmark --name is missing."
+      else if null [() | BenchVariation _  <- flags] then
+         error "Benchmark --variation is missing, i.e. VARIANT setting."
+      else if null [() | BenchData _ <- flags] then
+         error "Benchmark --data is missing."
+      else True
     wizardMode =
       (not . null) [() | Wizard <- flags]
 

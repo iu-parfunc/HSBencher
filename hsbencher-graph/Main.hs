@@ -165,8 +165,9 @@ core_cli_options =
 fullUsageInfo :: String
 fullUsageInfo = usageInfo docs core_cli_options
  where 
-  docs = "USAGE: grapher <flags> ...\n"++
-         "\n\nhsbencher-graph general options: \n"
+  docs = "USAGE: hsbencher-graph <flags> ...\n"++
+         "\nA utility for plotting datasets retrieved from HSBencher.\n"++
+         "\nCommand line flags: \n"
 --   ++ generalUsageStr
 
 ---------------------------------------------------------------------------
