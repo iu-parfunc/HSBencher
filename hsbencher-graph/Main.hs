@@ -491,7 +491,7 @@ getCSVHandle (m,aux) handle keys (xcol,ycol)= do
               Nothing -> error $ show ycol ++ " is not present in csv."
         
       case (length keyIxs) == (length keys) of
-        False -> error "Key is not part of table"
+        False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csv
         True -> do
           (m',aux') <- loop keyIxs (xcolIx,ycolIx) (m,aux)
           return (m',aux')
