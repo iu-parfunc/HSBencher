@@ -77,6 +77,10 @@ data Flag = ShowHelp | ShowVersion
           | XLabel String
           | YLabel String
 
+          -- Log mode
+          | YLog  -- logarithmic scale on y-axis
+          | XLog  -- logarithmic scale on x-axis 
+
           -- identify part of a key 
           | Key String -- --key="Arg1" --key?"Arg2" means Arg1_Arg2 is the name of data series
           | XValues String -- column containing x-values
@@ -149,6 +153,11 @@ core_cli_options =
      , Option ['x'] ["xvalue"] (ReqArg XValues "String")      "Column containing x values"
      , Option ['y'] ["yvalue"] (ReqArg YValues "String")      "Column containing y values"
 
+     -- Logarithmic scales
+     , Option []     ["ylog"] (NoArg YLog)                "Logarithmic scale on y-axis"
+     , Option []     ["xlog"] (NoArg XLog)                "Logarithmix scale on x-axis" 
+       
+     -- plot configuration 
      , Option []    ["xres"]   (ReqArg XRes "String")    "X-resolution of output graphics"
      , Option []    ["yres"]   (ReqArg XRes "String")    "Y-resolution of output graphics"
      , Option []    ["SVG"]    (NoArg (OutFormat MySVG)) "Output in SVG format"
@@ -233,6 +242,8 @@ data PlotConfig = PlotConfig { plotOutFile    :: FilePath
                              , plotTitle      :: String                              
                              , plotXLabel     :: String
                              , plotYLabel     :: String
+                             , plotYLog       :: Bool
+                             , plotXLog       :: Bool
                              }
 
 ---------------------------------------------------------------------------
@@ -265,6 +276,11 @@ main = do
   
       -- The user specified not to pipe ?
       nopipe = (not . null) [() | NoPipe <- options]
+
+      -- Should any axis be log scale
+      y_logscale = (not . null) [() | YLog <- options]
+      x_logscale = (not . null) [() | XLog <- options]
+
       
       
   unless (null errs) $ do
@@ -348,7 +364,9 @@ main = do
                             (xRes,yRes)
                             plotTitle
                             "X-Axis"
-                            "Y-Axis" 
+                            "Y-Axis"
+                            y_logscale
+                            x_logscale
   
   
   --------------------------------------------------
@@ -378,6 +396,21 @@ plotIntDouble conf  series = do
     layout_foreground .= opaque black
     layout_left_axis_visibility . axis_show_ticks .= True
     layout_title_style . font_size .= 24
+
+    if (plotYLog conf)
+      then layout_y_axis . laxis_generate .= autoScaledLogAxis (LogAxisParams show) 
+      else return () 
+
+
+    -- Not Possible in IntDouble plot
+    --if (plotXLog conf)
+    --   then layout_x_axis . laxis_generate .= autoScaledLogAxis (LogAxisParams show)
+    --   else return () 
+
+    -- hint ? 
+    --layout_x_axis . laxis_generate .= autoIndexAxis (map fst values)  
+            
+    
     
     mapM_ plotIt series 
   
