@@ -42,7 +42,7 @@ library
                   hsbencher >=1.20.0.2 && <2.0
   -- hs-source-dirs:
   default-language:    Haskell2010
-
+  ghc-options: -Wall
   -- FIXME:
   cpp-options: -DFUSION_TABLES
 
@@ -55,6 +55,7 @@ Executable hsbencher-fusion-upload-criterion
                  criterion >= 1.0, statistics,
                  mtl
   build-depends: hsbencher-fusion, hsbencher >=1.20.0.2 && <2.0
+  ghc-options: -Wall
   default-language:    Haskell2010
 
 
@@ -67,4 +68,5 @@ Executable hsbencher-fusion-upload-csv
                  mtl, csv >= 0.1
   build-depends: hsbencher-fusion, hsbencher >=1.20.0.2 && <2.0,
                  handa-gdata >= 0.7.0.1
+  ghc-options: -Wall
   default-language:    Haskell2010

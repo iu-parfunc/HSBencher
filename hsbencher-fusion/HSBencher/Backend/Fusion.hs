@@ -20,7 +20,8 @@ module HSBencher.Backend.Fusion
 
          -- * Prepping and uploading tuples (rows)
        , PreppedTuple, Schema
-       , uploadRows, uploadBenchResult, authenticate
+       , authenticate, prepBenchResult, uploadRows
+       , uploadBenchResult
 
        , FusionPlug(), FusionCmdLnFlag(..),
        )
@@ -144,7 +145,7 @@ getTableId auth tablename = do
   x <- findTableId auth tablename
   tid <- case x of
            Nothing -> makeTable auth tablename
-           Just id -> return id
+           Just iD -> return iD
   order <- ensureColumns auth tid fusionSchema
   return (tid, order)
 
@@ -216,16 +217,12 @@ ensureColumns auth tid ourSchema = do
   -- TODO: We could do another read from the list of columns to confirm.
   return (targetColNames ++ misslist)
 
-
--- | Upload the raw data, which had better be in the right format.
--- uploadRawTuple :: [(String,String)] -> BenchM ()
--- uploadRawTuple tuple = do
   
 {-# DEPRECATED uploadBenchResult "this is subsumed by the Plugin interface and uploadRows" #-}
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult  br = do
-  (toks,auth,tid) <- authenticate  
+  (_toks,auth,tid) <- authenticate  
   order <- ensureColumns auth tid fusionSchema  
   let row = prepBenchResult order br      
   uploadRows [row]

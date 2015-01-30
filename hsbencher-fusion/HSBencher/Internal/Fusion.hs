@@ -22,9 +22,6 @@ module HSBencher.Internal.Fusion
        where
 
 
--- HSBencher 
-import HSBencher.Types
-
 -- Google API
 import Network.Google.OAuth2 
 import Network.Google.FusionTables hiding (createTable)
@@ -39,16 +36,10 @@ import Control.Concurrent (threadDelay)
 import qualified Control.Exception as E 
 
 -- Date and Time
-import Data.Time.Clock
-import Data.Time.Calendar
 import Data.Time.Format () 
 
 -- Data Structures
-import qualified Data.Set as S
-import qualified Data.Map as M
-import qualified Data.List as L
 import qualified Data.ByteString.Char8 as B
-import Data.Maybe  (isJust, fromJust, catMaybes, fromMaybe) 
 import Data.Dynamic 
 import Data.Default (Default(def))
 
@@ -59,7 +50,6 @@ import System.IO (hPutStrLn, stderr)
 import Prelude hiding (init) 
 
 -- TEMPORARY
-import Network.HTTP.Conduit (Request(..), RequestBody(..),parseUrl)
 import System.Environment (getEnvironment)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -77,12 +67,14 @@ instance E.Exception FusionException
 
 ---------------------------------------------------------------------------
 --
+fusionTag :: String -> String
 fusionTag str = "[HSBencher.Internal.Fusion] " ++ str
 
 
 ---------------------------------------------------------------------------
 -- Initialization and Authorization
 
+initialize :: String -> String -> String -> IO (TableId, [String])
 initialize cid sec table_name = do
   hPutStrLn stderr $ fusionTag "Initializing"
   let auth = OAuth2Client { clientId=cid, clientSecret=sec }
@@ -93,6 +85,7 @@ initialize cid sec table_name = do
 
 -- ////  experimenting  Needs to be updated! 
  
+init :: String -> String -> String -> IO (TableId, OAuth2Client)
 init cid sec table_name = do
   hPutStrLn stderr $ fusionTag "Initializing"
   let auth = OAuth2Client { clientId=cid, clientSecret=sec }
@@ -102,13 +95,14 @@ init cid sec table_name = do
   return (table_id, auth)
 
 
---getSomething :: OAuth2Client -> TableId -> String -> Request m
+getSomething :: OAuth2Client -> String -> String -> Maybe String -> IO ColData
 getSomething auth table_id col_name cond = do
   tokens <- getCachedTokens auth
   let atok = B.pack $ accessToken tokens
   tableSelect atok table_id col_name cond
 
 
+getWithSQLQuery :: OAuth2Client -> String -> String -> IO ColData
 getWithSQLQuery auth table_id query = do
   tokens <- getCachedTokens auth
   let atok = B.pack $ accessToken tokens
@@ -155,8 +149,8 @@ getTableColumns auth table_id = do
   
 
 -- | Create a FusionTable with a column schema
-createTable :: OAuth2Client -> String -> [(String,CellType)] -> IO TableId
-createTable auth table_name schema = do
+_createTable :: OAuth2Client -> String -> [(String,CellType)] -> IO TableId
+_createTable auth table_name schema = do
   tokens <- getCachedTokens auth
   let atok = B.pack $ accessToken tokens 
   result  <- stdRetry "createTable" auth tokens $
@@ -172,10 +166,10 @@ createTable auth table_name schema = do
     
 stdRetry :: String -> OAuth2Client -> OAuth2Tokens -> IO a ->
             IO (Maybe a)
-stdRetry msg client toks action = do
-  let retryHook num exn = do
+stdRetry _msg client toks action = do
+  let retryHook _num _exn = do
         -- datetime <- getDateTime
-        stdRetry "refresh tokens" client toks (refreshTokens client toks)
+        _ <- stdRetry "refresh tokens" client toks (refreshTokens client toks)
         return ()
         
   retryIORequest action retryHook $

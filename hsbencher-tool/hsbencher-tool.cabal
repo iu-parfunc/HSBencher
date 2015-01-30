@@ -1,6 +1,6 @@
 
 name:                hsbencher-fusion-fetch
-version:             0.1.0.1
+version:             0.1.1
 synopsis:            Command line tool for fetching HSBencher data. 
 description:
   Once benchmark data is uploaded to a backend, it is necessary

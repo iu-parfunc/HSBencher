@@ -291,9 +291,15 @@ download flags = do
 
   ---------------------------------------------------------------------------
   -- is a query specified ?
-  tab <- case hasQuery of 
+  tab <- case hasQuery of
+{-
+-- RRN: Unfinished [2015.01.30].  I can't get delete to work yet.
+    True | (isPrefixOf "DELETE" (strip query)) ->
+      do pullWithQuery table_id auth query
+-}
     True -> 
       do
+        -- Let delete queries through without validation.
         let q = parseSQLQuery query
         case q of
           Left (SQL.ParseError msg _ _ fmsg) -> error $ msg ++ "\n" ++ fmsg

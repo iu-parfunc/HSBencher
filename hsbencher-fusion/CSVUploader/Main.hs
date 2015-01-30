@@ -13,7 +13,7 @@ module Main where
 import HSBencher
 import HSBencher.Internal.Config (augmentResultWithConfig, getConfig)
 import HSBencher.Backend.Fusion
-import Network.Google.OAuth2 (getCachedTokens, refreshTokens, OAuth2Client(..), OAuth2Tokens(..))
+import Network.Google.OAuth2 (OAuth2Client(..))
 import Network.Google.FusionTables(CellType(..))
 
 -- Standard:
@@ -22,7 +22,6 @@ import Data.List as L
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs)
 import System.Exit
-import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map as M
 import qualified Data.Set as S
 
@@ -94,16 +93,48 @@ doupload confs file = do
     Right (hdr:rst) -> do
       checkHeader hdr
       putStrLn$ " ["++this_progname++"] Beginning upload CSV data with Schema: "++show hdr
-      ensureMyColumns confs hdr -- FIXUP server schema.
-      let len = length rst
-      putStrLn$ " ["++this_progname++"] Uploading "++show len++" rows of CSV data..."  
-      mapM_ (uprow len confs) (zip [1..] (map (zip hdr) rst))
+      serverSchema <- ensureMyColumns confs hdr -- FIXUP server schema.
+      putStrLn$ " ["++this_progname++"] Uploading "++show (length rst)++" rows of CSV data..."
+      putStrLn "================================================================================"
+      uprows confs serverSchema hdr rst
+      
+
+-- TODO: Add checking to see if the rows are already there.  However
+-- that would be expensive if we do one query per row.  The ideal
+-- implementation would examine the structure of the rowset and make
+-- fewer queries.
+
+-- | Perform the actual upload of N rows
+uprows :: Config -> Schema -> Schema -> [[String]] -> IO ()
+uprows confs serverSchema hdr rst = do
+      let missing = S.difference (S.fromList serverSchema) (S.fromList hdr)  
+      -- Compute a base benchResult to fill in our missing fields:
+      base <- if S.null missing then
+                return emptyBenchmarkResult -- Don't bother computing it, nothing missing.
+              else do
+                putStrLn $ "\n\n ["++this_progname++"] Fields missing, filling in defaults: "++show (S.toList missing)
+                -- Start with the empty tuple, augmented with environmental info:
+                augmentResultWithConfig confs emptyBenchmarkResult
+
+      let tuples = map (zip hdr) rst
+          prepped = map (prepBenchResult serverSchema) $
+                    map (`unionBR` base) tuples
+      putStrLn$ " ["++this_progname++"] Tuples prepped.  Here's the first one: "++ show (head prepped)
+      -- Layer on what we have.
+      runReaderT (uploadRows prepped) confs
+
+-- | Union a tuple with a BenchmarkResult.  Any unmentioned keys in
+-- the tuple retain their value from the input BenchmarkResult.
+unionBR :: [(String,String)] -> BenchmarkResult -> BenchmarkResult
+unionBR tuple br1 =
+   tupleToResult (M.toList (M.union (M.fromList tuple)
+                            (M.fromList (resultToTuple br1))))
 
 
 -- FIXUP: FusionConfig doesn't document our additional CUSTOM columns.
 -- During initialization it ensures the table has the core schema, but that's it.
 -- Thus we need to make sure ALL columns are present.
-ensureMyColumns  :: Config -> [String] -> IO ()
+ensureMyColumns  :: Config -> [String] -> IO Schema
 ensureMyColumns confs hdr = do
       let FusionConfig{fusionTableID,fusionClientID,fusionClientSecret,serverColumns} = getMyConf plug confs
           (Just tid, Just cid, Just sec) = (fusionTableID, fusionClientID, fusionClientSecret)
@@ -118,56 +149,14 @@ ensureMyColumns confs hdr = do
                    | nm <- serverColumns ++ S.toList missing ]
       if S.null missing
         then putStrLn$ " ["++this_progname++"] Server has all the columns appearing in the CSV file.  Good."
-        else do putStrLn$ " ["++this_progname++"] Adding missing columns: "++show missing
-                res <- runReaderT (ensureColumns auth tid schema) confs
-                putStrLn$ " ["++this_progname++"] Done adding, final server schema:"++show res
+        else putStrLn$ " ["++this_progname++"] Adding missing columns: "++show missing
+      res <- runReaderT (ensureColumns auth tid schema) confs
+      putStrLn$ " ["++this_progname++"] Done adding, final server schema:"++show res
+      return res
 
 
 checkHeader :: Record -> IO ()
 checkHeader hdr
   | L.elem "PROGNAME" hdr = return ()
   | otherwise = error $ "Bad HEADER line on CSV file.  Expecting at least PROGNAME to be present: "++show hdr
-
--- | Get config data about the benchmark platform, but only if needed
-{-
-{-# NOINLINE gconf #-}
-gconf :: Config
-gconf = unsafePerformIO $ do
-  putStrLn $ "\n\n ["++this_progname++"] WARNING: tuple incomplete, gathering environmental data from current platform..."
-  getConfig [] []
--}
-
--- TODO: Add checking to see if the rows are already there.  However
--- that would be expensive if we do one query per row.  The ideal
--- implementation would examine the structure of the rowset and make
--- fewer queries.
-uprow :: Int -> Config -> (Int,[(String,String)]) -> IO ()
-uprow total gconf (ix,tuple)  = do
-  putStrLn $ "\n\n ["++this_progname++"] Begin upload of row "++show ix++" of "++show total
-  putStrLn "================================================================================"
-
-  let tup0 = resultToTuple emptyBenchmarkResult
-      schema0 = S.fromList (map fst tup0)
-      schema1 = S.fromList (map fst tuple)
-      br1     = tupleToResult tuple
-      missing = S.difference schema0 schema1
-  
-  -- Case 1: EVERYTHING is present in the uploaded tuple.
-  br <- if S.null missing then
-          return (tupleToResult tuple)
-        else do
-          putStrLn $ "\n\n ["++this_progname++"] Fields missing: "++show (S.toList missing)
-          -- Otherwise something is missing.
-          -- Start with the empty tuple, augmented with environmental info:
-          br1 <- augmentResultWithConfig gconf emptyBenchmarkResult
-          -- Layer on what we have.
-          return $ 
-            tupleToResult (M.toList (M.union (M.fromList tuple)
-                                             (M.fromList (resultToTuple br1))))
-  
-  runReaderT (uploadBenchResult br) gconf
-
-
-
-
 
