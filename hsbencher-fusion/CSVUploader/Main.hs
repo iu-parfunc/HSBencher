@@ -26,6 +26,8 @@ import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map as M
 import qualified Data.Set as S
 
+import Paths_hsbencher_fusion (version)
+
 import Text.CSV
 
 this_progname :: String
@@ -52,12 +54,12 @@ main = do
 
    let (opts1,plainargs,unrec,errs1) = getOpt' Permute extra_cli_options cli_args
    let (opts2,_,errs2) = getOpt Permute fusion_cli_options unrec
-   putStrLn $ "Fusion opts: "++show opts2
    let errs = errs1 ++ errs2   
    when (L.elem PrintHelp opts1 || not (null errs)) $ do 
      putStrLn $
+       this_progname++": "++show version++"\n"++
        "USAGE: "++this_progname++" [options] CSVFILE\n\n"++
-       "Upload a pre-existing CSV data as gathered by the 'dribble' plugin.\n"++
+       "Upload pre-existing CSV, e.g. data as gathered by the 'dribble' plugin.\n"++
        "\n"++
        (usageInfo "Options:" extra_cli_options)++"\n"++
        (usageInfo help fusion_cli_options)

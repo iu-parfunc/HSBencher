@@ -17,7 +17,10 @@ module HSBencher.Backend.Fusion
          -- * Details and configuration options.
        , FusionConfig(..), stdRetry
        , fusionSchema, resultToTuple
-       , uploadBenchResult
+
+         -- * Prepping and uploading tuples (rows)
+       , PreppedTuple, Schema
+       , uploadRows, uploadBenchResult, authenticate
 
        , FusionPlug(), FusionCmdLnFlag(..),
        )
@@ -218,26 +221,74 @@ ensureColumns auth tid ourSchema = do
 -- uploadRawTuple :: [(String,String)] -> BenchM ()
 -- uploadRawTuple tuple = do
   
-
+{-# DEPRECATED uploadBenchResult "this is subsumed by the Plugin interface and uploadRows" #-}
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
-uploadBenchResult  br@BenchmarkResult{..} = do
-    conf <- ask
-    let fusionConfig = getMyConf FusionPlug conf
---    fusionConfig <- error "FINISHME - acquire config dynamically"
-    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID, serverColumns} = fusionConfig
-    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
-        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+uploadBenchResult  br = do
+  (toks,auth,tid) <- authenticate  
+  order <- ensureColumns auth tid fusionSchema  
+  let row = prepBenchResult order br      
+  uploadRows [row]
 
-    
+-- | Upload raw tuples that are already in the format expected on the server.
+uploadRows :: [PreppedTuple] -> BenchM ()
+uploadRows rows = do
+  (toks,auth,tid) <- authenticate
+  ---------------------  
+  let colss = map (map fst) rows
+      dats  = map (map snd) rows 
+  case colss of
+    [] -> return ()
+    (schema:rst) -> do
+       unless (all (== schema) rst) $
+         error ("uploadRows: not all Schemas matched: "++ show (schema, filter (/= schema) rst))
+       -- It's easy to blow the URL size; we need the bulk import version.
+       -- stdRetry "insertRows" authclient toks $ insertRows
+       res <- stdRetry "bulkImportRows" auth toks $ bulkImportRows
+               (B.pack$ accessToken toks) tid schema dats
+       case res of 
+         Just _  -> log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" (head rows))
+                         ++ " date "++ (fromJust$ lookup "DATETIME" (head rows))
+         Nothing -> log$ " [fusiontable] WARNING: Upload failed the maximum number of times.  Continuing with benchmarks anyway"
+     -- TODO/FIXME: Make this configurable.
+       return ()           
+
+-- | Check cached tokens, authenticate with server if necessary, and
+-- return a bundle of the commonly needed information to speak to the
+-- Fusion Table API.
+authenticate :: BenchM (OAuth2Tokens, OAuth2Client, TableId)
+authenticate = do
+  conf <- ask
+  let fusionConfig = getMyConf FusionPlug conf
+ --    fusionConfig <- error "FINISHME - acquire config dynamically"
+  let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID, serverColumns} = fusionConfig
+  let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+      auth = OAuth2Client { clientId = cid, clientSecret = sec }  
+  toks  <- liftIO$ getCachedTokens auth
+  let atok  = B.pack $ accessToken toks
+  let tid = fromJust fusionTableID 
+  return (toks,auth,tid)
+
+-- | Tuples in the format expected on the server.
+type PreppedTuple = [(String,String)]
+
+-- | The ordered set of column names that form a schema.
+type Schema = [String] -- TODO: include types.
+
+{-
+-- | Ensure that a Schema is available on the server, creating columns
+-- if necessary.  
+ensureSchema :: Schema -> BenchM ()
+ensureSchema ourSchema = do
+    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+        authclient = OAuth2Client { clientId = cid, clientSecret = sec }  
     -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
     toks  <- liftIO$ getCachedTokens authclient
     let atok  = B.pack $ accessToken toks
     let tid = fromJust fusionTableID 
-    
+  
 -- ////// Enable working with Custom tags
-
-    let ourSchema = map fst $ benchmarkResultToSchema br
+    let -- ourSchema = map fst $ benchmarkResultToSchema br
         ourSet    = S.fromList ourSchema 
     if null _CUSTOM 
      then log$ " [fusiontable] Computed schema, no custom fields."
@@ -251,29 +302,50 @@ uploadBenchResult  br@BenchmarkResult{..} = do
       forM_ misslist $ \ colname -> do
         stdRetry "createColumn" authclient toks $
                 createColumn atok tid (colname, STRING)
-        -- Create with the correct type !? Above just states STRING. 
-         
+        -- Create with the correct type !? Above just states STRING.          
 --- ////// END
+-}
 
-        
-    let ourData = M.fromList $ resultToTuple br
+  
+-- | Prepare a Benchmark result for upload, matching the given Schema
+-- in order and contents, which may mean adding empty fields.
+-- This function requires that the Schema already contain all columns
+-- in the benchmark result.
+prepBenchResult :: Schema -> BenchmarkResult -> PreppedTuple
+prepBenchResult serverColumns br@BenchmarkResult{..} = 
+{-  
+    conf <- ask
+    let fusionConfig = getMyConf FusionPlug conf
+--    fusionConfig <- error "FINISHME - acquire config dynamically"
+    let FusionConfig{fusionClientID, fusionClientSecret, fusionTableID, serverColumns} = fusionConfig
+    let (Just cid, Just sec) = (fusionClientID, fusionClientSecret)
+        authclient = OAuth2Client { clientId = cid, clientSecret = sec }
+
+    
+    -- FIXME: it's EXTREMELY inefficient to authenticate on every tuple upload:
+    toks  <- liftIO$ getCachedTokens authclient
+    let atok  = B.pack $ accessToken toks
+    let tid = fromJust fusionTableID 
+
+-}
+    let 
+        ourData   = M.fromList $ resultToTuple br
+        ourCols   = M.keysSet ourData
+        targetSet = S.fromList serverColumns
+        missing   = S.difference ourCols targetSet
         -- Any field HSBencher doesn't know about just gets an empty string:
         tuple   = [ (key, fromMaybe "" (M.lookup key ourData))
-                  | key <- serverColumns ++ misslist ]
-        (cols,vals) = unzip tuple
+                  | key <- serverColumns ]
+    in if S.null missing 
+       then tuple
+       else error $ "prepBenchResult: benchmark result contained columns absent on server: "++show missing
+{-        
     log$ " [fusiontable] Uploading row with "++show (length cols)++
          " columns containing "++show (sum$ map length vals)++" characters of data"
     log$ " [fusiontable] Full row contents: "++show ourData
-    -- It's easy to blow the URL size; we need the bulk import version.
-    -- stdRetry "insertRows" authclient toks $ insertRows
-    res <- stdRetry "bulkImportRows" authclient toks $ bulkImportRows
-            (B.pack$ accessToken toks) (fromJust fusionTableID) cols [vals]
-    case res of 
-      Just _  -> log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" tuple)
-                      ++ " date "++ (fromJust$ lookup "DATETIME" tuple)
-      Nothing -> log$ " [fusiontable] WARNING: Upload failed the maximum number of times.  Continuing with benchmarks anyway"
--- TODO/FIXME: Make this configurable.
-    return ()           
+    return tuple
+-}
+
 
 
 -- | A representaton used for creating tables.  Must be isomorphic to
