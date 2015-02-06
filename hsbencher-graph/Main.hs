@@ -14,9 +14,10 @@ import Data.Char (isNumber)
 -- import Data.Default.Class
 import Data.List (elemIndex, intersperse, delete)
 import Data.List.Split (splitOn)
-import qualified Data.Map as M 
+import qualified Data.Map as M
 import Data.Maybe (catMaybes)
 import Data.String.Utils (strip)
+import qualified Data.Set as S
 import Data.Typeable
 import GHC.IO.Exception (IOException(..))
 import Prelude hiding (init) 
@@ -24,6 +25,7 @@ import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgD
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (Handle, hPutStrLn, stderr,stdin, hGetLine, IOMode(..),  withFile)
+import qualified Text.CSV as CSV
 
 #ifdef USECHART
 -- Charting library
@@ -170,7 +172,12 @@ fullUsageInfo = usageInfo docs core_cli_options
 data SeriesData = IntData Int 
                 | NumData Double
                 | StringData String
-                  deriving Show 
+                  deriving (Show, Eq, Ord, Read)
+
+convertToString :: SeriesData -> String
+convertToString (IntData x) = (show x)
+convertToString (NumData x) = (show x)
+convertToString (StringData a) = a
 
 isNum :: SeriesData -> Bool
 isNum (NumData _) = True
@@ -222,6 +229,7 @@ data PlotConfig = PlotConfig { plotOutFile    :: FilePath
                              , plotYLog       :: Bool
                              , plotXLog       :: Bool
                              }
+                  deriving (Show, Eq, Read, Ord)
 
 chatter :: String -> IO ()
 chatter str = hPutStrLn stderr $ " [hsbencher-graph] " ++str
@@ -246,8 +254,12 @@ main = do
       yRes = head $ [read y | YRes y <- options] ++ [600]
   
       plotTitle = head $ [t | Title t <- options] ++ ["NO_TITLE"]
-      _xLabel    = head $ [l | XLabel l <- options] ++ ["X-Axis"] 
-      _yLabel    = head $ [l | YLabel l <- options] ++ ["Y-Axis"]
+      xLabel    = head $ [l | XLabel l <- options] ++
+                         [c | XValues c <- options] ++
+                         ["X-Axis"] -- Last resort, default
+      yLabel    = head $ [l | YLabel l <- options] ++
+                         [c | YValues c <- options] ++
+                         ["Y-Axis"]
 
       -- Should any axis be log scale
       y_logscale = (not . null) [() | YLog <- options]
@@ -291,7 +303,18 @@ main = do
           False -> error "Both -x and -y arguments are needed"
           True  -> (head [x | XValues x <- options],
                     head [y | YValues y <- options])
-      
+
+  --------------------------------------------------
+  -- All the collected parameters for the plotting. 
+  let plotConf = PlotConfig outFile
+                            outFormat
+                            (xRes,yRes)
+                            plotTitle
+                            xLabel
+                            yLabel
+                            y_logscale
+                            x_logscale
+  
   --------------------------------------------------
   -- Acquire data:
 
@@ -321,18 +344,7 @@ main = do
                     then normalise base series'
                     else series'
 
-  chatter$ "Inferred types for X/Y axes: "++show series_type
-  --------------------------------------------------
-  -- All the collected parameters for the plotting. 
-  let plotConf = PlotConfig outFile
-                            outFormat
-                            (xRes,yRes)
-                            plotTitle
-                            "X-Axis"
-                            "Y-Axis"
-                            y_logscale
-                            x_logscale
-  
+  chatter$ "Inferred types for X/Y axes: "++show series_type  
   
   --------------------------------------------------
   -- do it      
@@ -354,8 +366,28 @@ main = do
 
 -- | Don't produce an actual chart, rather write out the data as CSV.
 writeCSV :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
-writeCSV PlotConfig{..} series =
-  error "FINISHME: writeCSV"
+-- Assumes a shared and sensible X axis for all data series.
+writeCSV conf@PlotConfig{..} series = do
+  -- ASSUMPTION: we assume a sensible Ord instance for
+  -- SeriesData... that makes possible unfair assumptions about
+  -- "deriving":
+  let allKeys = map convertToString $
+                S.toAscList $ S.fromList $ concatMap ((map fst) . snd) series
+      header = plotXLabel : map fst series
+      alldata = M.map (\prs -> M.fromList
+                        [ (convertToString x, convertToString y) | (x,y) <- prs ] ) $ 
+                M.fromList series
+      rows = [ [ case M.lookup key seriesMap of
+                    Nothing -> "" -- TODO, make configurable.  Missing data for this X value in this line.
+                    Just x  -> x
+               | (seriesName, _) <- series 
+               , let seriesMap = alldata M.! seriesName ]
+             | key <- allKeys ]
+      csvResult = CSV.printCSV (header:rows)
+  chatter $ "Writing out CSV for "++show (length series)++" data series (lines): "++unwords (tail header) 
+  writeFile plotOutFile csvResult
+  chatter $ "Succesfully wrote file "++show plotOutFile
+  
 
 #ifdef USECHART
 plotIntInt :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
@@ -453,12 +485,9 @@ unifyTypes (name,series) =
     
     unify xs =
       case (any isString xs, any isInt xs, any isNum xs) of
-        (True, _, _)   -> map convertToString xs
+        (True, _, _)   -> map (StringData . convertToString) xs
         (False,_,True) -> map convertToNum xs
         (False,True,False) -> xs
-    convertToString (IntData x) = StringData (show x)
-    convertToString (NumData x) = StringData (show x)
-    convertToString a = a
     convertToNum (IntData x) = NumData (fromIntegral x)
     convertToNum (NumData x) = NumData x
     convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
