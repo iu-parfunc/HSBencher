@@ -350,7 +350,8 @@ main = do
   -- do it      
   case (outFormat, series_type) of
     (_,Nothing) -> error $ "Series failed to typecheck" 
-    (MyCSV, _)  -> writeCSV plotConf plot_series
+    (MyCSV, _)  -> do writeCSV plotConf plot_series
+                      writeGnuplot plotConf plot_series  -- TEMP.  Add a command line flag for this.
 #ifdef USECHART    
     (_,Just (Int,Int))       -> plotIntInt plotConf plot_series
     (_,Just (Int,Double))    -> plotIntDouble plotConf plot_series
@@ -387,6 +388,25 @@ writeCSV conf@PlotConfig{..} series = do
   chatter $ "Writing out CSV for "++show (length series)++" data series (lines): "++unwords (tail header) 
   writeFile plotOutFile csvResult
   chatter $ "Succesfully wrote file "++show plotOutFile
+
+  
+writeGnuplot :: Show a => PlotConfig -> [(a, t)] -> IO ()
+writeGnuplot conf@PlotConfig{..} series = do
+  chatter $ " TEMP: write out Gnuplot script too!!  TODO: Clean up this feature."
+  let gplfile = plotOutFile ++ ".gpl"      
+      gplLines = [ "set xlabel "++ show plotXLabel
+                 , "set ylabel "++ show plotYLabel
+                 , "set output "++ show (plotOutFile ++ ".pdf")
+                 , "plot "++ concat (intersperse ", "
+                   -- Line them up carefully by position:
+                   [ show plotOutFile++" using 1:"++show ind++" title "++show seriesName++" w lp ls "++show(ind-1)
+                   | ((seriesName, _),ind) <- zip series [2::Int ..] ])
+                 ]
+  -- FIXME: assumes the template is in the current directory.  Use a more principled way:
+  prelude <- fmap lines $ readFile "template.gpl"
+  writeFile gplfile (unlines (prelude ++ gplLines))
+  chatter $ "Succesfully wrote file "++show gplfile
+  return ()
   
 
 #ifdef USECHART
