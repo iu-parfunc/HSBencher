@@ -79,8 +79,6 @@ data Flag = ShowHelp | ShowVersion
           -- output format
           | OutFormat MyFileFormat
 
-          -- The standard use case is as a pipe "|"
-          | NoPipe
 
 -- This is getting messy 
             -- Normalize against this column
@@ -153,8 +151,6 @@ core_cli_options =
      , Option []    ["PS"]     (NoArg (OutFormat MyPS))  "Output in PS format"
      , Option []    ["PNG"]    (NoArg (OutFormat MyPNG)) "Output in PNG format"
 
-     , Option []    ["nopipe"] (NoArg NoPipe)            "Tool is not used in a pipe"
-       
      , Option []    ["normalise"] (ReqArg NormaliseKey "String") "What value to normalise against" 
      ]
 
@@ -227,6 +223,9 @@ data PlotConfig = PlotConfig { plotOutFile    :: FilePath
                              , plotXLog       :: Bool
                              }
 
+chatter :: String -> IO ()
+chatter str = hPutStrLn stderr $ " [hsbencher-graph] " ++str
+
 ---------------------------------------------------------------------------
 -- MAIN
 ---------------------------------------------------------------------------
@@ -249,22 +248,19 @@ main = do
       plotTitle = head $ [t | Title t <- options] ++ ["NO_TITLE"]
       _xLabel    = head $ [l | XLabel l <- options] ++ ["X-Axis"] 
       _yLabel    = head $ [l | YLabel l <- options] ++ ["Y-Axis"]
-        
-      -- The user specified not to pipe ?
-      nopipe = (not . null) [() | NoPipe <- options]
 
       -- Should any axis be log scale
       y_logscale = (not . null) [() | YLog <- options]
       x_logscale = (not . null) [() | XLog <- options]
 
   outFormat <- case [ format | OutFormat format <- options] of        
-                []  -> do putStrLn $ "Warning: no output format selected.  Defaulting to CSV output."
+                []  -> do chatter$ "Warning: no output format selected.  Defaulting to CSV output."
                           return MyCSV 
                 [x] -> return x
                 ls  -> error$ "multiple output formats not yet supported: "++show ls
       
   unless (null errs) $ do
-    putStrLn$ "Errors parsing command line options:"
+    chatter$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
     exitFailure
 
@@ -273,8 +269,7 @@ main = do
     exitSuccess
 
   when (not outputSpecified) $ do
-    putStrLn$ "Error: an output file has to be specified"
-    exitFailure
+    error $ "Error: an output file has to be specified"
 
   --------------------------------------------------
   -- Get target
@@ -298,26 +293,15 @@ main = do
                     head [y | YValues y <- options])
       
   --------------------------------------------------
-  -- read csv from stdin. 
+  -- Acquire data:
 
-  -- TODO: get rid of nopipe, stdin is implicit input if no file is given.
-  (csv',aux') <- case nopipe of 
-    False -> getCSV key xy
-    True  -> return $ (M.empty, M.empty)
-  
-  --------------------------------------------------
-  -- read aux csv from files
-  putStrLn $ show inFiles 
+  (csv,aux) <- case inFiles of    
+                [] -> getCSV key xy -- Read from stdin.
+                ls -> do chatter$ "Reading CSV from input files: "++unwords ls
+                         readCSVFiles (M.empty,M.empty) inFiles key xy 
 
-  (csv,aux) <- readCSVFiles (csv',aux') inFiles key xy 
-  
-         
-  hPutStrLn stderr $ " [hsbencher-graph] Printing csv:" 
-  hPutStrLn stderr $ show csv
-
-
-  hPutStrLn stderr $ " [hsbencher-graph] Printing aux:" 
-  hPutStrLn stderr $ show aux
+  chatter$ "Here is a sample of the CSV:" ++ take 500 (show csv)
+  chatter$ "Printing aux: "++ take 500 (show aux) 
 
   --------------------------------------------------
   -- Create a lineplot 
@@ -337,7 +321,7 @@ main = do
                     then normalise base series'
                     else series'
 
-  hPutStrLn stderr $ " [hsbencher-graph] Inferred types for X/Y axes: "++show series_type
+  chatter$ "Inferred types for X/Y axes: "++show series_type
   --------------------------------------------------
   -- All the collected parameters for the plotting. 
   let plotConf = PlotConfig outFile
@@ -564,13 +548,13 @@ getCSVHandle (m0,aux0) hndl keys (xcol,ycol)= do
           -- empty string at key position. 
           -- May be of importance! 
           case (xStr,yStr) of
-            ("","") -> do putStrLn $ "has no x/y values: " ++ show key ++ " discarding."
+            ("","") -> do chatter$ "has no x/y values: " ++ show key ++ " discarding."
                           loop keyIxs xy (m,aux)
-            ("",a)  -> do putStrLn $ "has no x value: " ++ show key ++ " Goes into aux data."
+            ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
                           let aux' = insertVal aux key (StringData "NO_X_VALUE",
                                                         toSeriesData a)
                           loop keyIxs xy (m,aux')
-            (_a,"") -> do putStrLn $ "has no y value: " ++ show key ++ " discarding."
+            (_a,"") -> do chatter$ "has no y value: " ++ show key ++ " discarding."
                           loop keyIxs xy (m,aux)
             (x,y)   -> let m' = insertVal m key (toSeriesData x,
                                                  toSeriesData y)
