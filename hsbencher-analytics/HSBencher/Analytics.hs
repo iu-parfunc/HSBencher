@@ -2,6 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-} 
 
+-- | This experimental module makse plots using the Flot Javascript library.
+
 module HSBencher.Analytics where
 
 import Numeric (showHex) 

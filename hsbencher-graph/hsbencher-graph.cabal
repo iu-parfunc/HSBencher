@@ -3,8 +3,10 @@
 
 name:                hsbencher-graph
 version:             0.1.1
-synopsis:            Command line tool for various hsbencher graphing.
--- description:         
+synopsis:            Command line tool for plotting hsbencher data from CSV files.
+description:         This tool reads CSV files and uses the Haskell Chart library to
+                     produce plots.
+
 license:             MIT
 -- license-file:        LICENSE
 author:              Ryan Newton, Joel Svensson
@@ -14,14 +16,17 @@ maintainer:          rrnewton@gmail.com
 build-type:          Simple
 cabal-version:       >=1.10
 
+flag chart
+  description: Enable use of the Chart plotting library.  Otherwise
+               this tool can only be used for CSV output.
+  default: False
+  manual: True
+
 -- The hsbencher command line tool:
 executable hsbencher-graph
   main-is: Main.hs
   default-language: Haskell2010
   build-depends: base >=4.5 && < 4.8
-               , Chart >= 1.3.1 
-               , Chart-cairo >= 1.3.1
-               , Chart-diagrams >= 1.3.1 
                , lens >= 4.2 && < 4.7
                , data-default-class >= 0.0.1 && < 0.1
                , colour >= 2.3.3 && < 2.4
@@ -33,3 +38,8 @@ executable hsbencher-graph
             --   , simple-sql-parser >= 0.4.0 && < 0.5
             --   , split 
             --   , MissingH >= 1.2.1.0 && < 1.3
+  if flag(chart)
+     cpp-options: -DUSECHART
+     build-depends: Chart >= 1.3.1 
+                  , Chart-cairo >= 1.3.1
+                  , Chart-diagrams >= 1.3.1 

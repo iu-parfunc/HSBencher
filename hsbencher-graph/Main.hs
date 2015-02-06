@@ -1,52 +1,38 @@
 {-# LANGUAGE DeriveDataTypeable #-} 
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE CPP #-}
 
 module Main where
 
-import System.Environment (getArgs, getEnv, getEnvironment)
-import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
-import System.IO (Handle, hPutStrLn, stderr,stdin, openFile, hClose, hGetContents,
-                  hIsEOF, hGetLine, IOMode(..), BufferMode(..), hSetBuffering, withFile)
-
-import GHC.IO.Exception (IOException(..))
-
-import Data.List (isInfixOf, intersperse, delete, transpose, sort,nub, deleteBy)
-import Data.List.Split (splitOn)
-import Data.String.Utils (strip)
-
-import Control.Monad (unless,when)
-import System.Exit (exitFailure, exitSuccess)
-import System.IO (hPutStrLn)
-
-import Data.Char (isNumber)
-
-import qualified Data.Map as M 
-
--- list tweaking
-import Data.List (elemIndex, intersperse, sortBy)
-
-
-import Data.Maybe (catMaybes)
-
--- Exceptions
 import Control.Exception
+-- import Control.Lens
+import Control.Monad (unless,when)
+import Data.Char (isNumber)
+-- import Data.Colour
+-- import Data.Colour.Names
+-- import Data.Default.Class
+import Data.List (elemIndex, intersperse, delete)
+import Data.List.Split (splitOn)
+import qualified Data.Map as M 
+import Data.Maybe (catMaybes)
+import Data.String.Utils (strip)
 import Data.Typeable
+import GHC.IO.Exception (IOException(..))
+import Prelude hiding (init) 
+import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
+import System.Environment (getArgs)
+import System.Exit (exitFailure, exitSuccess)
+import System.IO (Handle, hPutStrLn, stderr,stdin, hGetLine, IOMode(..),  withFile)
 
+#ifdef USECHART
 -- Charting library
 import Graphics.Rendering.Chart as C
 import Graphics.Rendering.Chart as C 
 import qualified Graphics.Rendering.Chart.Backend.Cairo as Cairo
 import Graphics.Rendering.Chart.Easy as C
-import Data.Colour
-import Data.Colour.Names
-import Data.Default.Class
-import Control.Lens
+#endif
 
-
-
-
-import qualified Prelude as P
-import Prelude hiding (init) 
 ---------------------------------------------------------------------------
 --
 
@@ -82,7 +68,7 @@ data Flag = ShowHelp | ShowVersion
           | XLog  -- logarithmic scale on x-axis 
 
           -- identify part of a key 
-          | Key String -- --key="Arg1" --key?"Arg2" means Arg1_Arg2 is the name of data series
+          | Key String -- --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
           | XValues String -- column containing x-values
           | YValues String -- column containing y-values
 
@@ -100,8 +86,6 @@ data Flag = ShowHelp | ShowVersion
             -- Normalize against this column
           | NormaliseKey String
           | NormaliseVal String 
-
-          
             
           --   -- Aux values are not plotted!
           -- | AuxFile String -- a single auxfile that need not have same format as other CSV
@@ -110,15 +94,19 @@ data Flag = ShowHelp | ShowVersion
           -- | AuxY    String -- column with aux y value 
   deriving (Eq,Ord,Show,Read)
 
+
 -- This is all a bit unfortunate. 
-data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
+data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS | MyCSV
                   deriving (Eq, Ord, Show, Read) 
 
+#ifdef USECHART
 convToFileFormat :: MyFileFormat -> Cairo.FileFormat
 convToFileFormat MySVG = Cairo.SVG
 convToFileFormat MyPDF = Cairo.PDF
 convToFileFormat MyPNG = Cairo.PNG
 convToFileFormat MyPS  = Cairo.PS
+convToFileFormat MyCSV = error "Cairo does not do CSV output"
+#endif
 
 data GraphMode = Bars | BarClusters | Lines 
                deriving (Eq, Ord, Show, Read )
@@ -176,6 +164,7 @@ fullUsageInfo = usageInfo docs core_cli_options
  where 
   docs = "USAGE: hsbencher-graph <flags> ...\n"++
          "\nA utility for plotting datasets retrieved from HSBencher.\n"++
+         "\nReads CSV data from stdin unless --file is given.\n"++         
          "\nCommand line flags: \n"
 --   ++ generalUsageStr
 
@@ -187,17 +176,9 @@ data SeriesData = IntData Int
                 | StringData String
                   deriving Show 
 
-isString :: SeriesData -> Bool
-isString (StringData _) = True
-isString _ = False
-
 isNum :: SeriesData -> Bool
 isNum (NumData _) = True
 isNum _ = False
-
-isInt :: SeriesData -> Bool
-isInt (IntData _) = True
-isInt _ = False 
 
 seriesType :: SeriesData -> ValueType
 seriesType (IntData _) = Int
@@ -227,7 +208,7 @@ instance FromData String where
 type DataSeries = M.Map String [(SeriesData,SeriesData)] 
 
 insertVal :: DataSeries -> String -> (SeriesData,SeriesData) -> DataSeries
-insertVal m key val@(x,y) =
+insertVal m key val@(_x,_y) =
   case M.lookup key m of
     Nothing -> M.insert key [val] m 
     Just vals -> M.insert key (val:vals) m
@@ -237,7 +218,7 @@ insertVal m key val@(x,y) =
 -- Plot configuration
 ---------------------------------------------------------------------------
 data PlotConfig = PlotConfig { plotOutFile    :: FilePath
-                             , plotOutFormat  :: Cairo.FileFormat
+                             , plotOutFormat  :: MyFileFormat 
                              , plotResolution :: (Int,Int)                                
                              , plotTitle      :: String                              
                              , plotXLabel     :: String
@@ -253,27 +234,22 @@ main :: IO ()
 main = do
   args <- getArgs
 
-  let (options,plainargs,_unrec,errs) = getOpt' Permute core_cli_options args
+  let (options, _plainargs, _unrec,errs) = getOpt' Permute core_cli_options args
 
       outputSpecified = (not . null) [() | OutFile _ <- options]
-      outputFormatSpecified = (not . null) [() | OutFormat _ <- options]
+      _outputFormatSpecified = (not . null) [() | OutFormat _ <- options]
 
       normaliseSpecified = (not . null) [ () | NormaliseKey _ <- options] 
   
-      outFormat = head $ [convToFileFormat format | OutFormat format <- options]
-                         ++ [Cairo.PNG] 
-
       inFiles = [nom | File nom <- options]   
   
       xRes = head $ [read x | XRes x <- options] ++ [800]
       yRes = head $ [read y | YRes y <- options] ++ [600]
   
       plotTitle = head $ [t | Title t <- options] ++ ["NO_TITLE"]
-      xLabel    = head $ [l | XLabel l <- options] ++ ["X-Axis"] 
-      yLabel    = head $ [l | YLabel l <- options] ++ ["Y-Axis"]
-      
-      outfile = head [nom | OutFile nom <- options]
-  
+      _xLabel    = head $ [l | XLabel l <- options] ++ ["X-Axis"] 
+      _yLabel    = head $ [l | YLabel l <- options] ++ ["Y-Axis"]
+        
       -- The user specified not to pipe ?
       nopipe = (not . null) [() | NoPipe <- options]
 
@@ -281,7 +257,11 @@ main = do
       y_logscale = (not . null) [() | YLog <- options]
       x_logscale = (not . null) [() | XLog <- options]
 
-      
+  outFormat <- case [ format | OutFormat format <- options] of        
+                []  -> do putStrLn $ "Warning: no output format selected.  Defaulting to CSV output."
+                          return MyCSV 
+                [x] -> return x
+                ls  -> error$ "multiple output formats not yet supported: "++show ls
       
   unless (null errs) $ do
     putStrLn$ "Errors parsing command line options:"
@@ -319,7 +299,8 @@ main = do
       
   --------------------------------------------------
   -- read csv from stdin. 
-  
+
+  -- TODO: get rid of nopipe, stdin is implicit input if no file is given.
   (csv',aux') <- case nopipe of 
     False -> getCSV key xy
     True  -> return $ (M.empty, M.empty)
@@ -370,24 +351,36 @@ main = do
   
   
   --------------------------------------------------
-  -- do it 
-  case series_type of
-    Just (Int,Int) -> plotIntInt plotConf plot_series
-    Just (Int,Double) -> plotIntDouble plotConf plot_series
-    Just (Double,Double) -> plotDoubleDouble plotConf plot_series
-    Just (_,_) -> error $ "no support for plotting of this series type: " ++ show series_type
-    Nothing -> error $ "Series failed to typecheck" 
+  -- do it      
+  case (outFormat, series_type) of
+    (_,Nothing) -> error $ "Series failed to typecheck" 
+    (MyCSV, _)  -> writeCSV plotConf plot_series
+#ifdef USECHART    
+    (_,Just (Int,Int))       -> plotIntInt plotConf plot_series
+    (_,Just (Int,Double))    -> plotIntDouble plotConf plot_series
+    (_,Just (Double,Double)) -> plotDoubleDouble plotConf plot_series
+#endif    
+    (_,Just (_,_)) -> error $ "no support for plotting of this series type: "++show series_type++
+                              ", with this output format: "++show outFormat
+
   
 ---------------------------------------------------------------------------
 -- Plotting
 
+
+-- | Don't produce an actual chart, rather write out the data as CSV.
+writeCSV :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
+writeCSV PlotConfig{..} series =
+  error "FINISHME: writeCSV"
+
+#ifdef USECHART
 plotIntInt :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!!"
 
 plotIntDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotIntDouble conf  series = do 
   let fopts = Cairo.FileOptions (plotResolution conf)
-                                (plotOutFormat conf)
+                                (convToFileFormat (plotOutFormat conf))
   Cairo.toFile fopts (plotOutFile conf) $ do
 
     -- 13 colors
@@ -453,6 +446,7 @@ plotIntDouble conf  series = do
 plotDoubleDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 
+#endif
 
 ---------------------------------------------------------------------------
 -- Types in the data 
@@ -465,6 +459,14 @@ unifyTypes (name,series) =
       ys' = unify ys
   in (name,(zip xs' ys'))
   where
+    isString :: SeriesData -> Bool
+    isString (StringData _) = True
+    isString _ = False
+
+    isInt :: SeriesData -> Bool
+    isInt (IntData _) = True
+    isInt _ = False 
+    
     unify xs =
       case (any isString xs, any isInt xs, any isNum xs) of
         (True, _, _)   -> map convertToString xs
@@ -486,9 +488,8 @@ typecheck dat =
      True ->
        let x = seriesType $ head xs
            y = seriesType $ head ys
-
-           xb = all (==x) $ map seriesType xs
-           yb = all (==y) $ map seriesType ys
+           _xb = all (==x) $ map seriesType xs
+           _yb = all (==y) $ map seriesType ys
        in Just (x,y)
      False -> Nothing 
 
@@ -508,13 +509,14 @@ readCSVFiles m (f:fs) keys xy =
      readCSVFiles m' fs keys xy 
 
 
--- This function needs a few comments..     
+-- Read CSV data from a handle.
+--   TODO: replace this with a normal CSV library? -RRN
 getCSVHandle :: (DataSeries,DataSeries) -> Handle -> [String] -> (String,String) -> IO (DataSeries,DataSeries)
-getCSVHandle (m,aux) handle keys (xcol,ycol)= do
+getCSVHandle (m0,aux0) hndl keys (xcol,ycol)= do
   -- Read of the headers 
   res <- catch
              (do
-                 s <- hGetLine handle
+                 s <- hGetLine hndl
                  return $ Just s
              )
              (\(IOError _ _ _ _ _ _ ) -> return Nothing)
@@ -522,7 +524,6 @@ getCSVHandle (m,aux) handle keys (xcol,ycol)= do
     Nothing -> error "Error trying to get csv header line"
     Just str -> do 
       let csv = map strip $ splitOn "," str
-          keyStr = concat keys 
           keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
           
           xcolIx =
@@ -537,13 +538,13 @@ getCSVHandle (m,aux) handle keys (xcol,ycol)= do
       case (length keyIxs) == (length keys) of
         False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csv
         True -> do
-          (m',aux') <- loop keyIxs (xcolIx,ycolIx) (m,aux)
+          (m',aux') <- loop keyIxs (xcolIx,ycolIx) (m0,aux0)
           return (m',aux')
   where
     loop keyIxs xy (m,aux) = do
       res <- catch
              (do
-                 s <- hGetLine handle
+                 s <- hGetLine hndl
                  return $ Just s
              )
              (\(IOError _ _ _ _ _ _ )-> return Nothing)
@@ -569,7 +570,7 @@ getCSVHandle (m,aux) handle keys (xcol,ycol)= do
                           let aux' = insertVal aux key (StringData "NO_X_VALUE",
                                                         toSeriesData a)
                           loop keyIxs xy (m,aux')
-            (a,"")  -> do putStrLn $ "has no y value: " ++ show key ++ " discarding."
+            (_a,"") -> do putStrLn $ "has no y value: " ++ show key ++ " discarding."
                           loop keyIxs xy (m,aux)
             (x,y)   -> let m' = insertVal m key (toSeriesData x,
                                                  toSeriesData y)
@@ -611,18 +612,18 @@ getCSVHandle (m,aux) handle keys (xcol,ycol)= do
 recogValueType :: String -> ValueType
 recogValueType str =
   case (isString str, isInt str, isDouble str) of
-    (True,_,_)     -> String
+    (True,_,_)           -> String
     (False,True, False)  -> Int
-    (False,_, True)  -> Double
-    (_, _, _) -> String
+    (False,_, True)      -> Double
+    (_, _, _)            -> String
   where 
-    isInt str = all isNumber str
+    isInt s = all isNumber s
     -- Not a very proper check. 
-    isDouble str = ((all isNumber $ delete '.' str)
-                    || (all isNumber $ delete '.' $ delete 'e' str)
-                    || (all isNumber $ delete '.' $ delete 'e' $ delete '-' str))
-                   && '.' `elem` str
-    isString str = not (isInt str) && not (isDouble str)
+    isDouble s = ((all isNumber $ delete '.' s)
+                    || (all isNumber $ delete '.' $ delete 'e' s)
+                    || (all isNumber $ delete '.' $ delete 'e' $ delete '-' s))
+                   && '.' `elem` s
+    isString s = not (isInt s) && not (isDouble s)
 
 
 
@@ -631,6 +632,7 @@ recogValueType str =
 -- get a value to normalise against 
 ---------------------------------------------------------------------------
 
+getBaseVal :: Ord k => k -> M.Map k a -> M.Map k a -> a
 getBaseVal normKey csv aux =
   case (M.lookup normKey csv, M.lookup normKey aux) of
     (Nothing, Nothing) -> error "Value to normalise against not found"
@@ -641,14 +643,14 @@ getBaseVal normKey csv aux =
 
 normalise :: [(SeriesData,SeriesData)] -> [(String,[(SeriesData,SeriesData)])] -> [(String,[(SeriesData,SeriesData)])]
 normalise []   _  = error "No Value to normalise against"
-normalise base [] = []
-normalise base ((nom,serie):rest) 
-  = (nom,normalise' base serie):normalise base rest
+normalise _ [] = []
+normalise base0 ((nom,series):rest0) 
+  = (nom,normalise' base0 series):normalise base0 rest0
   where
     normalise' ::  [(SeriesData,SeriesData)] ->  [(SeriesData,SeriesData)] ->  [(SeriesData,SeriesData)] 
-    normalise' base [] = []
+    normalise' _ [] = []
     normalise' base ((sx,sy):rest) =
       doIt base (sx,sy) : normalise' base rest
-    doIt ((x,NumData y):_) (sx,NumData sy) = (sx,NumData ((sy-y)/y))  
+    doIt ((_x,NumData y):_) (sx,NumData sy) = (sx,NumData ((sy-y)/y))  
   
 
