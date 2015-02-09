@@ -59,6 +59,10 @@ set style line 18 lt rgb "#5060D0" lw 2 pt 9
 # set style line 6 lt rgb "#0050A9" lw 2 pt 7
 # set style line 7 lt rgb "#445111" lw 2 pt 6
 # set style line 8 lt rgb "#035009" lw 2 pt 4
+# set style line 9 lt 3 lc rgb "#406030" lw 1 pt 8
+# set style line 10 lt 4 lc rgb "#5020F0" lw 1 pt 5
+# set style line 11 lt 1 lc rgb "#BB50A9" lw 1 pt 3
+# set style line 12 lt 2 lc rgb "#00BBA9" lw 1 pt 1
 
 # set key on bmargin center horizontal Right noreverse enhanced autotitles nobox
 # set key left top noreverse enhanced autotitles nobox
