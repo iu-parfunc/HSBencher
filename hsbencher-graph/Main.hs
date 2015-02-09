@@ -439,7 +439,8 @@ writeCSV conf@PlotConfig{..} series = do
       alldata = M.map (\prs -> M.fromList
                         [ (convertToString x, convertToString y) | (x,y) <- prs ] ) $ 
                 M.fromList series
-      rows = [ [ case M.lookup key seriesMap of
+      rows = [ key :
+               [ case M.lookup key seriesMap of
                     Nothing -> "" -- TODO, make configurable.  Missing data for this X value in this line.
                     Just x  -> x
                | (seriesName, _) <- series 
