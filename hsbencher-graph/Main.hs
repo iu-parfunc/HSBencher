@@ -12,10 +12,10 @@ import Data.Char (isNumber)
 -- import Data.Colour
 -- import Data.Colour.Names
 -- import Data.Default.Class
-import Data.List (elemIndex, intersperse, delete)
+import Data.List (elemIndex, intersperse, delete, intercalate)
 import Data.List.Split (splitOn)
 import qualified Data.Map as M
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.String.Utils (strip)
 import qualified Data.Set as S
 import Data.Typeable
@@ -25,6 +25,7 @@ import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgD
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (Handle, hPutStrLn, stderr,stdin, hGetLine, IOMode(..),  withFile)
+import System.FilePath (replaceExtension)
 import qualified Text.CSV as CSV
 
 #ifdef USECHART
@@ -74,6 +75,9 @@ data Flag = ShowHelp | ShowVersion
           | XValues String -- column containing x-values
           | YValues String -- column containing y-values
 
+          | Filter String String
+          | Renames FilePath
+
           -- output resolution  
           | XRes String
           | YRes String
@@ -81,6 +85,9 @@ data Flag = ShowHelp | ShowVersion
           -- output format
           | OutFormat MyFileFormat
 
+          | GnuPlotTemplate FilePath
+
+          | DummyFlag
 
 -- This is getting messy 
             -- Normalize against this column
@@ -96,7 +103,9 @@ data Flag = ShowHelp | ShowVersion
 
 
 -- This is all a bit unfortunate. 
-data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS | MyCSV
+data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
+                  | MyCSV
+                  | MyGPL
                   deriving (Eq, Ord, Show, Read) 
 
 #ifdef USECHART
@@ -124,27 +133,60 @@ data Error
 
 instance Exception Error 
 
+-- | Parse the comma-separated "KEY,VAL" string.
+parseFilter :: String -> (String,String)
+parseFilter = error "FINISHME parseFilter"
+
 -- | Command line options.
 core_cli_options :: [OptDescr Flag]
 core_cli_options = 
      [ Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
-     , Option ['f'] ["file"] (ReqArg File "FileName.csv")    "Use CSV file as input"
-     , Option ['o'] ["out"]  (ReqArg OutFile "FileName.png") "Chart result file"
+     , Option ['f'] ["file"] (ReqArg File "FILE.csv")    "Use CSV file as input"
+     , Option ['o'] ["out"]  (ReqArg OutFile "FILE")     "Specify result file for main output"
+
+     , Option []    []    (NoArg DummyFlag) "\n Data Handling options"
+     , Option []    []    (NoArg DummyFlag) "--------------------------------"
+
+     , Option ['k'] ["key"]    (ReqArg Key     "STR")      "Columns that make part of the key"
+     , Option ['x'] ["xvalue"] (ReqArg XValues "STR")      "Column containing x values"
+     , Option ['y'] ["yvalue"] (ReqArg YValues "STR")      "Column containing y values"
+
+     --  Not ready yet:
+     -- , Option [] ["filter"] (ReqArg (uncurry Filter . parseFilter) "KEY,VAL") $
+     --   "Given a string \"KEY,VAL\", filter all rows to\n" ++ 
+     --   "those where VAL is a substring of column KEY."
+
+     -- , Option [] ["sort"] (ReqArg () "STR") $
+     --  "Name of a numeric field by which to sort the lines."
+
+     -- , Option [] ["pad"] (ReqArg () "COL,N") $
+     --  "Treat COL as a numeric column, and pad numbers to\n"++
+     --  "N characters, preppending leading zeros."        
+       
+     , Option [] ["renames"] (ReqArg Renames "FILE") $
+       "Provide a comma-separated file where each line is an\n" ++
+       "OLD,NEW pair indicating renames for data series' names"
+       
+     , Option []    []    (NoArg DummyFlag) "\n Presentation options"
+     , Option []    []    (NoArg DummyFlag) "--------------------------------"
+       
      , Option []    ["bars"] (NoArg (RenderMode Bars))       "Plot data as bars"
      , Option []    ["barclusters"] (NoArg (RenderMode BarClusters)) "Plot data as bar clusters" 
      , Option []    ["lines"] (NoArg (RenderMode Lines))     "Plot data as lines"
      , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
      , Option []    ["xlabel"] (ReqArg XLabel "String")      "X-axis label"
      , Option []    ["ylabel"] (ReqArg YLabel "String")      "Y-axis label"
-     , Option []    ["key"]    (ReqArg Key "String")         "Columns that make part of the key"
-     , Option ['x'] ["xvalue"] (ReqArg XValues "String")      "Column containing x values"
-     , Option ['y'] ["yvalue"] (ReqArg YValues "String")      "Column containing y values"
-
+       
      -- Logarithmic scales
      , Option []     ["ylog"] (NoArg YLog)                "Logarithmic scale on y-axis"
      , Option []     ["xlog"] (NoArg XLog)                "Logarithmix scale on x-axis" 
+
+     , Option []    ["CSV"]    (NoArg (OutFormat MyCSV)) "Output raw CSV data to file selected by --out"
        
+     , Option []    []    (NoArg DummyFlag) "\n Haskell Chart specific options"
+     , Option []    []    (NoArg DummyFlag) "--------------------------------"
+      
      -- plot configuration 
      , Option []    ["xres"]   (ReqArg XRes "String")    "X-resolution of output graphics"
      , Option []    ["yres"]   (ReqArg XRes "String")    "Y-resolution of output graphics"
@@ -152,8 +194,19 @@ core_cli_options =
      , Option []    ["PDF"]    (NoArg (OutFormat MyPDF)) "Output in PDF format"
      , Option []    ["PS"]     (NoArg (OutFormat MyPS))  "Output in PS format"
      , Option []    ["PNG"]    (NoArg (OutFormat MyPNG)) "Output in PNG format"
+      
+     , Option []    []    (NoArg DummyFlag) "\n Normalisation:"
+     , Option []    []    (NoArg DummyFlag) "----------------"
 
+       
      , Option []    ["normalise"] (ReqArg NormaliseKey "String") "What value to normalise against" 
+       
+     , Option []    []    (NoArg DummyFlag) "\n GNUPlot Options:"
+     , Option []    []    (NoArg DummyFlag) "------------------"
+
+     , Option []    ["GPL"] (NoArg (OutFormat MyGPL)) "Output a .gpl plot script.  Implies --CSV."       
+     , Option []    ["template"] (ReqArg GnuPlotTemplate "FILE") "Prepend FILE to generated gnuplot scripts."       
+
      ]
 
 -- | Multiple lines of usage info help docs.
@@ -228,6 +281,7 @@ data PlotConfig = PlotConfig { plotOutFile    :: FilePath
                              , plotYLabel     :: String
                              , plotYLog       :: Bool
                              , plotXLog       :: Bool
+                             , gnuPlotTemplate :: Maybe FilePath
                              }
                   deriving (Show, Eq, Read, Ord)
 
@@ -264,7 +318,7 @@ main = do
       -- Should any axis be log scale
       y_logscale = (not . null) [() | YLog <- options]
       x_logscale = (not . null) [() | XLog <- options]
-
+  
   outFormat <- case [ format | OutFormat format <- options] of        
                 []  -> do chatter$ "Warning: no output format selected.  Defaulting to CSV output."
                           return MyCSV 
@@ -304,6 +358,7 @@ main = do
           True  -> (head [x | XValues x <- options],
                     head [y | YValues y <- options])
 
+      gnuPlotTemplate = head $ [ Just f | GnuPlotTemplate f <- options] ++ [Nothing]
   --------------------------------------------------
   -- All the collected parameters for the plotting. 
   let plotConf = PlotConfig outFile
@@ -314,6 +369,7 @@ main = do
                             yLabel
                             y_logscale
                             x_logscale
+                            gnuPlotTemplate
   
   --------------------------------------------------
   -- Acquire data:
@@ -329,6 +385,8 @@ main = do
   --------------------------------------------------
   -- Create a lineplot 
 
+  renameTable <- fmap (concatMap lines) $
+                 mapM readFile [f | Renames f <- options] 
   let series :: [(String,[(SeriesData,SeriesData)])]
       series = M.assocs csv
 
@@ -338,20 +396,23 @@ main = do
       -- normalise values against this datapoint
       normKey = head [nom | NormaliseKey nom <- options]   
       base = getBaseVal normKey csv aux 
-      
-      
-      plot_series = if normaliseSpecified       
-                    then normalise base series'
-                    else series'
-
+            
+      plot_series0 = if normaliseSpecified       
+                     then normalise base series'
+                     else series'
+      renamer = buildRenamer renameTable 
+      plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
+  
   chatter$ "Inferred types for X/Y axes: "++show series_type  
   
   --------------------------------------------------
   -- do it      
   case (outFormat, series_type) of
-    (_,Nothing) -> error $ "Series failed to typecheck" 
-    (MyCSV, _)  -> do writeCSV plotConf plot_series
-                      writeGnuplot plotConf plot_series  -- TEMP.  Add a command line flag for this.
+    (_,Nothing) -> error $ "Series failed to typecheck"
+    (MyCSV, _)  -> writeCSV plotConf plot_series
+    (MyGPL, _)  -> do chatter "Writing out both CSV file and a GnuPlot script to plot it."
+                      writeCSV     plotConf plot_series
+                      writeGnuplot plotConf plot_series 
 #ifdef USECHART    
     (_,Just (Int,Int))       -> plotIntInt plotConf plot_series
     (_,Just (Int,Double))    -> plotIntDouble plotConf plot_series
@@ -392,18 +453,21 @@ writeCSV conf@PlotConfig{..} series = do
   
 writeGnuplot :: Show a => PlotConfig -> [(a, t)] -> IO ()
 writeGnuplot conf@PlotConfig{..} series = do
-  chatter $ " TEMP: write out Gnuplot script too!!  TODO: Clean up this feature."
-  let gplfile = plotOutFile ++ ".gpl"      
-      gplLines = [ "set xlabel "++ show plotXLabel
+  let gplfile = replaceExtension plotOutFile "gpl"
+  chatter $ "Writing out Gnuplot script as well as CSV: "++gplfile
+  let gplLines = [ "set xlabel "++ show plotXLabel
                  , "set ylabel "++ show plotYLabel
-                 , "set output "++ show (plotOutFile ++ ".pdf")
+                 , "set output "++ show (replaceExtension plotOutFile "pdf")
                  , "plot "++ concat (intersperse ", "
                    -- Line them up carefully by position:
                    [ show plotOutFile++" using 1:"++show ind++" title "++show seriesName++" w lp ls "++show(ind-1)
                    | ((seriesName, _),ind) <- zip series [2::Int ..] ])
                  ]
+--      defaultTemplate = "template.gpl"
+      defaultTemplate = error "ERROR: For now you must provide GnuPlot template with --template"
+      template = fromMaybe defaultTemplate gnuPlotTemplate 
   -- FIXME: assumes the template is in the current directory.  Use a more principled way:
-  prelude <- fmap lines $ readFile "template.gpl"
+  prelude <- fmap lines $ readFile template
   writeFile gplfile (unlines (prelude ++ gplLines))
   chatter $ "Succesfully wrote file "++show gplfile
   return ()
@@ -687,3 +751,13 @@ normalise base0 ((nom,series):rest0)
     doIt ((_x,NumData y):_) (sx,NumData sy) = (sx,NumData ((sy-y)/y))  
   
 
+replace :: Eq a => [a] -> [a] -> [a] -> [a]
+replace old new = intercalate new . splitOn old
+
+buildRenamer :: [String] -> String -> String
+buildRenamer [] = id
+buildRenamer (ln:rest) =
+  case (splitOn "," ln) of
+    [lhs,rhs] -> \str -> buildRenamer rest
+                           (replace lhs rhs str)
+    _ -> error ("Bad line in rename table: "++ ln)

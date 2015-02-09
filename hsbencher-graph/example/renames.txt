@@ -1,0 +1,2 @@
+snowball-list_cnf-0.9-bugfix-incremental,Compact
+snowball-list_normal-haskell,Normal

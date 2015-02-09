@@ -1,6 +1,16 @@
 #!/usr/bin/env gnuplot
 
-set terminal pdfcairo font "Gill Sans,12" linewidth 3 rounded dashed
+
+
+# set terminal pdfcairo font "Gill Sans,12" linewidth 3 rounded dashed
+# set terminal pdfcairo font "Gill Sans,12" linewidth 3 rounded dashed size 6in,6in
+set terminal pdfcairo linewidth 3 rounded dashed size 6in,6in
+set pointsize 1.0
+# set size square
+# set size ratio 2
+# show size
+
+# set terminal pdfcairo font "Gill Sans,12" linewidth 3 rounded dashed
 set pointsize 1.0
 
 set style line 80 lt rgb "#222222"
@@ -14,8 +24,8 @@ set border 3 back linestyle 80 # Remove border on top and right.  These
              # borders are useless and make it harder
              # to see plotted lines near the border.
     # Also, put it in grey; no need for so much emphasis on a border.
-set xtics nomirror
-set ytics nomirror
+# set xtics nomirror
+# set ytics nomirror
 
 set mytics 10    # Makes logscale look good.
 set mxtics 10    # Makes logscale look good.
@@ -33,11 +43,12 @@ set style line 6 lt rgb "#0050A9" lw 2 pt 7
 set style line 7 lt rgb "#445111" lw 2 pt 6
 set style line 8 lt rgb "#035009" lw 2 pt 4
 
-#set key bmargin center horizontal Right noreverse enhanced autotitles nobox
-set key left top noreverse enhanced autotitles nobox
+# set key on bmargin center horizontal Right noreverse enhanced autotitles nobox
+# set key left top noreverse enhanced autotitles nobox
+set key on outside below
 #set log y
 # set xrange[2:32]
 
-# CSV support, kind of:
+# CSV-style data:
 set datafile separator ","
 
