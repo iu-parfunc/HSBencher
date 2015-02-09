@@ -19,12 +19,12 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.String.Utils (strip)
 import qualified Data.Set as S
 import Data.Typeable
-import GHC.IO.Exception (IOException(..))
 import Prelude hiding (init) 
 import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
-import System.IO (Handle, hPutStrLn, stderr,stdin, hGetLine, IOMode(..),  withFile)
+-- import System.IO (Handle, hPutStrLn, stderr,stdin, hGetLine, IOMode(..),  withFile)
+import System.IO (hPutStrLn, stderr)
 import System.FilePath (replaceExtension)
 import qualified Text.CSV as CSV
 
@@ -56,6 +56,8 @@ cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0"
 -- 
 ---------------------------------------------------------------------------
 
+type Column = String
+
 -- | Command line flags to the executable.
 data Flag = ShowHelp | ShowVersion
           | File String       -- files must have same CSV layout
@@ -75,7 +77,8 @@ data Flag = ShowHelp | ShowVersion
           | XValues String -- column containing x-values
           | YValues String -- column containing y-values
 
-          | Filter String String
+          | Filter { col :: String, contains :: String }
+          | Pad { col :: String, padTo :: Int }
           | Renames FilePath
 
           -- output resolution  
@@ -133,9 +136,25 @@ data Error
 
 instance Exception Error 
 
+-- | For now this application is hardcoded to use a particular
+-- separator in both rename files and command line arguments.
+universalSeparator :: String
+universalSeparator = ","
+
 -- | Parse the comma-separated "KEY,VAL" string.
 parseFilter :: String -> (String,String)
-parseFilter = error "FINISHME parseFilter"
+parseFilter s =
+  case splitOn universalSeparator s of
+    [l,r] -> (l,r)
+    _ -> error $ "--filter argument expected to be two strings separated by one comma, not: "++s
+
+parsePad :: String -> (String,Int)
+parsePad s =
+  case splitOn universalSeparator s of
+    [l,r] -> case reads r of
+              [(n,"")] -> (l,n)
+              _ -> error $ "--filter could not parse this as an integer: "++r
+    _ -> error $ "--filter argument expected to be two strings separated by one comma, not: "++s
 
 -- | Command line options.
 core_cli_options :: [OptDescr Flag]
@@ -153,16 +172,16 @@ core_cli_options =
      , Option ['y'] ["yvalue"] (ReqArg YValues "STR")      "Column containing y values"
 
      --  Not ready yet:
-     -- , Option [] ["filter"] (ReqArg (uncurry Filter . parseFilter) "KEY,VAL") $
-     --   "Given a string \"KEY,VAL\", filter all rows to\n" ++ 
-     --   "those where VAL is a substring of column KEY."
+     , Option [] ["filter"] (ReqArg (uncurry Filter . parseFilter) "KEY,VAL") $
+       "Given a string \"KEY,VAL\", filter all rows to\n" ++ 
+       "those where VAL is a substring of column KEY."
 
      -- , Option [] ["sort"] (ReqArg () "STR") $
      --  "Name of a numeric field by which to sort the lines."
 
-     -- , Option [] ["pad"] (ReqArg () "COL,N") $
-     --  "Treat COL as a numeric column, and pad numbers to\n"++
-     --  "N characters, preppending leading zeros."        
+     , Option [] ["pad"] (ReqArg (uncurry Pad . parsePad) "COL,N") $
+     "Treat COL as a numeric column, and pad numbers to\n"++
+     "N characters, preppending leading zeros."        
        
      , Option [] ["renames"] (ReqArg Renames "FILE") $
        "Provide a comma-separated file where each line is an\n" ++
@@ -260,7 +279,8 @@ instance FromData String where
 ---------------------------------------------------------------------------
 -- Data series
 ---------------------------------------------------------------------------
-  
+
+-- | These correspond to lines in the plot: named progressions of (x,y) pairs.
 type DataSeries = M.Map String [(SeriesData,SeriesData)] 
 
 insertVal :: DataSeries -> String -> (SeriesData,SeriesData) -> DataSeries
@@ -374,32 +394,39 @@ main = do
   --------------------------------------------------
   -- Acquire data:
 
-  (csv,aux) <- case inFiles of    
-                [] -> getCSV key xy -- Read from stdin.
-                ls -> do chatter$ "Reading CSV from input files: "++unwords ls
-                         readCSVFiles (M.empty,M.empty) inFiles key xy 
+  rawdat <- case inFiles of
+             []    -> error "doesn't currently support reading from stdin"
+             [one] -> do chatter$ "Reading CSV from input file: "++one
+                         CSV.parseCSVFromFile one
+             _     -> error$ "doesn't currently support reading from multiple files: "++show inFiles
+
+  (csv,aux) <- case rawdat of
+                 Left err -> error $ "Error parsing CSV data: \n"++show err
+                 Right dat -> extractData key xy dat
 
   chatter$ "Here is a sample of the CSV:" ++ take 500 (show csv)
   chatter$ "Printing aux: "++ take 500 (show aux) 
 
   --------------------------------------------------
-  -- Create a lineplot 
+  -- Data preprocessing / munging:
 
   renameTable <- fmap (concatMap lines) $
                  mapM readFile [f | Renames f <- options] 
-  let series :: [(String,[(SeriesData,SeriesData)])]
-      series = M.assocs csv
+  let series0 :: [(String,[(SeriesData,SeriesData)])]
+      series0 = M.assocs csv
 
-      series' = map unifyTypes series
-      series_type = typecheck series' 
+      series1 = doFilters [ (c,n) | Filter c n <- options ] series0
+  
+      series2 = map unifyTypes series1
+      series_type = typecheck series2 
 
       -- normalise values against this datapoint
       normKey = head [nom | NormaliseKey nom <- options]   
       base = getBaseVal normKey csv aux 
             
       plot_series0 = if normaliseSpecified       
-                     then normalise base series'
-                     else series'
+                     then normalise base series2
+                     else series2
       renamer = buildRenamer renameTable 
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
   
@@ -429,7 +456,7 @@ main = do
 -- | Don't produce an actual chart, rather write out the data as CSV.
 writeCSV :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 -- Assumes a shared and sensible X axis for all data series.
-writeCSV conf@PlotConfig{..} series = do
+writeCSV PlotConfig{..} series = do
   -- ASSUMPTION: we assume a sensible Ord instance for
   -- SeriesData... that makes possible unfair assumptions about
   -- "deriving":
@@ -453,7 +480,7 @@ writeCSV conf@PlotConfig{..} series = do
 
   
 writeGnuplot :: Show a => PlotConfig -> [(a, t)] -> IO ()
-writeGnuplot conf@PlotConfig{..} series = do
+writeGnuplot PlotConfig{..} series = do
   let gplfile = replaceExtension plotOutFile "gpl"
   chatter $ "Writing out Gnuplot script as well as CSV: "++gplfile
   let gplLines = [ "set xlabel "++ show plotXLabel
@@ -464,6 +491,7 @@ writeGnuplot conf@PlotConfig{..} series = do
                    [ show plotOutFile++" using 1:"++show ind++" title "++show seriesName++" w lp ls "++show(ind-1)
                    | ((seriesName, _),ind) <- zip series [2::Int ..] ])
                  ]
+      -- Todo, make this into a library and look up the template file in ~/.cabal/share (from the Paths_ module)
 --      defaultTemplate = "template.gpl"
       defaultTemplate = error "ERROR: For now you must provide GnuPlot template with --template"
       template = fromMaybe defaultTemplate gnuPlotTemplate 
@@ -592,36 +620,17 @@ typecheck dat =
      False -> Nothing 
 
 ---------------------------------------------------------------------------
--- Get the CSV from stdin
 
-getCSV :: [String] -> (String,String) -> IO (DataSeries,DataSeries)
-getCSV = getCSVHandle (M.empty,M.empty) stdin
-
-
-readCSVFiles :: (DataSeries,DataSeries) -> [FilePath] -> [String] -> (String,String) -> IO (DataSeries,DataSeries)
-readCSVFiles m [] _ _ = return m
-readCSVFiles m (f:fs) keys xy =
-  do m' <-
-       withFile f ReadMode $ \h ->
-            getCSVHandle m h keys xy
-     readCSVFiles m' fs keys xy 
-
-
--- Read CSV data from a handle.
---   TODO: replace this with a normal CSV library? -RRN
-getCSVHandle :: (DataSeries,DataSeries) -> Handle -> [String] -> (String,String) -> IO (DataSeries,DataSeries)
-getCSVHandle (m0,aux0) hndl keys (xcol,ycol)= do
-  -- Read of the headers 
-  res <- catch
-             (do
-                 s <- hGetLine hndl
-                 return $ Just s
-             )
-             (\(IOError _ _ _ _ _ _ ) -> return Nothing)
-  case res of
-    Nothing -> error "Error trying to get csv header line"
-    Just str -> do 
-      let csv = map strip $ splitOn "," str
+-- | Extract the data we care about from in-memory CSV data:
+--      
+-- Note: This is in the IO monad only to produce chatter.
+extractData :: [String] -> (String,String) -> CSV.CSV -> IO (DataSeries,DataSeries)
+extractData keys (xcol,ycol) csvdat = do
+  -- Read of the headers
+  case csvdat of
+    [] -> error "Empty CSV data!"
+    (headers:rest) -> do
+      let csv    = map strip headers
           keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
           
           xcolIx =
@@ -631,28 +640,22 @@ getCSVHandle (m0,aux0) hndl keys (xcol,ycol)= do
           ycolIx =
             case elemIndex ycol csv of
               Just ix -> ix
-              Nothing -> error $ show ycol ++ " is not present in csv."
-        
+              Nothing -> error $ show ycol ++ " is not present in csv."        
       case (length keyIxs) == (length keys) of
         False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csv
         True -> do
-          (m',aux') <- loop keyIxs (xcolIx,ycolIx) (m0,aux0)
+          (m',aux') <- loop keyIxs (xcolIx,ycolIx) (M.empty,M.empty) rest
           return (m',aux')
   where
-    loop keyIxs xy (m,aux) = do
-      res <- catch
-             (do
-                 s <- hGetLine hndl
-                 return $ Just s
-             )
-             (\(IOError _ _ _ _ _ _ )-> return Nothing)
-      case res of
+    loop _ _ (m,aux) [] = return (m,aux)
+    loop keyIxs xy (m,aux) (row:restRows)= do
+      case row of
         -- In the odd event that an empty line occurs 
-        Just []  -> loop keyIxs xy (m,aux)
+        []  -> loop keyIxs xy (m,aux) restRows
         -- A real string, lets see if it contains anything useful. 
-        Just str -> do
+        _ -> do
           -- split out the csv fields 
-          let csv = map strip $ splitOn "," str
+          let csv = map strip row
 
               -- Construct a key
               key = collectKey keyIxs csv      
@@ -663,18 +666,16 @@ getCSVHandle (m0,aux0) hndl keys (xcol,ycol)= do
           -- May be of importance! 
           case (xStr,yStr) of
             ("","") -> do chatter$ "has no x/y values: " ++ show key ++ " discarding."
-                          loop keyIxs xy (m,aux)
+                          loop keyIxs xy (m,aux) restRows
             ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
                           let aux' = insertVal aux key (StringData "NO_X_VALUE",
                                                         toSeriesData a)
-                          loop keyIxs xy (m,aux')
+                          loop keyIxs xy (m,aux') restRows
             (_a,"") -> do chatter$ "has no y value: " ++ show key ++ " discarding."
-                          loop keyIxs xy (m,aux)
+                          loop keyIxs xy (m,aux) restRows
             (x,y)   -> let m' = insertVal m key (toSeriesData x,
                                                  toSeriesData y)
-                       in  loop keyIxs xy (m',aux)
-        -- DONE! (EOF)                   
-        Nothing -> return (m,aux)
+                       in  loop keyIxs xy (m',aux) restRows
         
     collectKey ixs csv = concat $ intersperse "_" $ filter (/="") $ map (\i -> csv !! i) ixs
     
@@ -762,3 +763,12 @@ buildRenamer (ln:rest) =
     [lhs,rhs] -> \str -> buildRenamer rest
                            (replace lhs rhs str)
     _ -> error ("Bad line in rename table: "++ ln)
+
+-- FIXME: Can't do it at this stage, need to filter earlier.  Need to
+-- read the CSV in full before extracting lines.
+doFilters :: [(String,String)]
+             -> [(String,[(SeriesData,SeriesData)])]
+             -> [(String,[(SeriesData,SeriesData)])]
+doFilters ls csv  =
+  csv
+
