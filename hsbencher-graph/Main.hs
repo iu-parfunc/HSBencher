@@ -17,7 +17,7 @@ import Control.DeepSeq (force)
 import Data.List (elemIndex, intersperse, delete, intercalate, isInfixOf)
 import Data.List.Split (splitOn)
 import qualified Data.Map as M
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
 import Data.String.Utils (strip)
 import qualified Data.Set as S
 import Data.Typeable
@@ -59,6 +59,19 @@ cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0"
 
 -- 
 ---------------------------------------------------------------------------
+
+-- | CSV data where all rows have the right number of entries.
+data ValidatedCSV =
+     ValidatedCSV { header :: [CSV.Field]
+                  , rows   :: [CSV.Record] }
+
+-- | Groups of rows chunked together by "key"
+data KeyedCSV =
+     KeyedCSV { kheader :: [CSV.Field]
+              , krows   :: M.Map Key [CSV.Record] }
+
+-- | A combination of fields, e.g. A_B_C, stored as a String.
+type Key = String
 
 type ColName = String
 
@@ -203,7 +216,7 @@ core_cli_options =
      , Option []    []    (NoArg DummyFlag) "----------------------------------------------"
 
 -- TODO:
-     -- , Option [] ["latest"] (ReqArg Latest "STR") "Grab latest data point according to monotonically increasing column."
+     , Option [] ["latest"] (ReqArg Latest "STR") "Grab latest data point according to monotonically increasing column."
      -- , Option [] ["speedup"] (ReqArg (uncurry Speedup . parseFilter) "KEY,VAL") $ ""
      -- , Option [] ["vs"] (ReqArg (uncurry Vs . parseFilter) "KEY,VAL") $ ""       
        
@@ -346,6 +359,7 @@ main = do
   
       xRes = head $ [read x | XRes x <- options] ++ [800]
       yRes = head $ [read y | YRes y <- options] ++ [600]
+
   
       plotTitle = head $ [t | Title t <- options] ++ ["NO_TITLE"]
       xLabel    = head $ [l | XLabel l <- options] ++
@@ -397,7 +411,7 @@ main = do
           False -> error "Both -x and -y arguments are needed"
           True  -> (head [x | XValues x <- options],
                     head [y | YValues y <- options])
-
+  
       gnuPlotTemplate = head $ [ Just f | GnuPlotTemplate f <- options] ++ [Nothing]
   --------------------------------------------------
   -- All the collected parameters for the plotting. 
@@ -427,6 +441,7 @@ main = do
   let dat1 = validateCSV dat0
       dat2 = doFilters [ (c,n) | Filter c n <- options ] dat1
       dat3 = doPadding [ (c,n) | Pad c n <- options ] dat2
+      dat4 = takeLatest (listToMaybe [ c | Latest c <- options]) dat3
   _ <- evaluate (force (rows dat3))  -- Flush out error messages.
   
   chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat3))
@@ -836,6 +851,11 @@ doPadding ls (ValidatedCSV header csv) =
             row'
        Nothing -> error $ show col ++ " is not present in csv." 
 
+-- | Resolve groups of rows that share the same key
+takeLatest :: Maybe ColName -> ValidatedCSV -> ValidatedCSV
+takeLatest Nothing x = x
+takeLatest (Just col) (ValidatedCSV header csv) =
+  error "takeLatest: unfinished"
 
 -- | Make sure that each row has the right number of columns ad discard blank lines:
 validateCSV :: CSV.CSV -> ValidatedCSV
@@ -856,6 +876,4 @@ validateCSV (header:csv) = ValidatedCSV header (loop (2::Int) csv)
                    ++"\nCSV schema was:\n  "++show header
                    ++"\nOffending row (length "++show (length row)++") was:\n  "++show row
 
-data ValidatedCSV = ValidatedCSV { header :: [CSV.Field]
-                                 , rows :: [CSV.Record] }
 
