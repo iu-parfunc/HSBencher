@@ -12,7 +12,9 @@ import Data.Char (isNumber)
 -- import Data.Colour
 -- import Data.Colour.Names
 -- import Data.Default.Class
-import Data.List (elemIndex, intersperse, delete, intercalate)
+
+import Control.DeepSeq (force)
+import Data.List (elemIndex, intersperse, delete, intercalate, isInfixOf)
 import Data.List.Split (splitOn)
 import qualified Data.Map as M
 import Data.Maybe (catMaybes, fromMaybe)
@@ -27,6 +29,8 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.FilePath (replaceExtension)
 import qualified Text.CSV as CSV
+
+import Debug.Trace
 
 #ifdef USECHART
 -- Charting library
@@ -400,22 +404,29 @@ main = do
                          CSV.parseCSVFromFile one
              _     -> error$ "doesn't currently support reading from multiple files: "++show inFiles
 
-  (csv,aux) <- case rawdat of
-                 Left err -> error $ "Error parsing CSV data: \n"++show err
-                 Right dat -> extractData key xy dat
+  dat0 <- case rawdat of
+            Left err -> error $ "Error parsing CSV data: \n"++show err
+            Right d  -> do chatter$ "Successfully parsed CSV file."
+                           return d
+  let dat1 = validateCSV dat0
+      dat2 = doFilters [ (c,n) | Filter c n <- options ] dat1
+  _ <- evaluate (force (rows dat2))  -- Flush out error messages.
+  
+  chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat2))
+  (csv,aux) <- extractData key xy dat2
+  chatter $ "Data series extracted, number of lines: " ++ show (M.size csv)
 
-  chatter$ "Here is a sample of the CSV:" ++ take 500 (show csv)
-  chatter$ "Printing aux: "++ take 500 (show aux) 
+  chatter$ "Here is a sample of the CSV before renaming and normalization:\n" ++
+    unlines [ "    "++take 100 (show l)++"..." | l <- (take 5 (M.toList csv))] ++ "    ...."
+  chatter$ "Also, a sample of 'aux': "++ take 500 (show aux) 
 
   --------------------------------------------------
   -- Data preprocessing / munging:
 
   renameTable <- fmap (concatMap lines) $
                  mapM readFile [f | Renames f <- options] 
-  let series0 :: [(String,[(SeriesData,SeriesData)])]
-      series0 = M.assocs csv
-
-      series1 = doFilters [ (c,n) | Filter c n <- options ] series0
+  let series1 :: [(String,[(SeriesData,SeriesData)])]
+      series1 = M.assocs csv
   
       series2 = map unifyTypes series1
       series_type = typecheck series2 
@@ -504,7 +515,7 @@ writeGnuplot PlotConfig{..} series = do
 
 #ifdef USECHART
 plotIntInt :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
-plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!!"
+plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!"
 
 plotIntDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
 plotIntDouble conf  series = do 
@@ -624,28 +635,24 @@ typecheck dat =
 -- | Extract the data we care about from in-memory CSV data:
 --      
 -- Note: This is in the IO monad only to produce chatter.
-extractData :: [String] -> (String,String) -> CSV.CSV -> IO (DataSeries,DataSeries)
-extractData keys (xcol,ycol) csvdat = do
-  -- Read of the headers
-  case csvdat of
-    [] -> error "Empty CSV data!"
-    (headers:rest) -> do
-      let csv    = map strip headers
-          keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
-          
-          xcolIx =
-            case elemIndex xcol csv of
-              Just ix -> ix
-              Nothing -> error $ show xcol ++ " is not present in csv." 
-          ycolIx =
-            case elemIndex ycol csv of
-              Just ix -> ix
-              Nothing -> error $ show ycol ++ " is not present in csv."        
-      case (length keyIxs) == (length keys) of
-        False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csv
-        True -> do
-          (m',aux') <- loop keyIxs (xcolIx,ycolIx) (M.empty,M.empty) rest
-          return (m',aux')
+extractData :: [String] -> (String,String) -> ValidatedCSV -> IO (DataSeries,DataSeries)
+extractData keys (xcol,ycol) (ValidatedCSV header rest) = do
+  let csv    = map strip header
+      keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
+
+      xcolIx =
+        case elemIndex xcol csv of
+          Just ix -> ix
+          Nothing -> error $ show xcol ++ " is not present in csv." 
+      ycolIx =
+        case elemIndex ycol csv of
+          Just ix -> ix
+          Nothing -> error $ show ycol ++ " is not present in csv."        
+  case (length keyIxs) == (length keys) of
+    False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csv
+    True -> do
+      (m',aux') <- loop keyIxs (xcolIx,ycolIx) (M.empty,M.empty) rest
+      return (m',aux')
   where
     loop _ _ (m,aux) [] = return (m,aux)
     loop keyIxs xy (m,aux) (row:restRows)= do
@@ -677,11 +684,18 @@ extractData keys (xcol,ycol) csvdat = do
                                                  toSeriesData y)
                        in  loop keyIxs xy (m',aux) restRows
         
-    collectKey ixs csv = concat $ intersperse "_" $ filter (/="") $ map (\i -> csv !! i) ixs
+    collectKey ixs csv = concat $
+                         intersperse "_" $
+                         filter (/="") $
+                         map (\i ->
+                               -- trace ("Dereferencing !!1: "++show(csv,i)) $ 
+                               csv !! i) ixs
     
     collectXY (x,y) csv =  ( collectVal x csv
                            , collectVal y csv)
-    collectVal ix csv = csv !! ix 
+    collectVal ix csv =
+      -- trace ("Dereferencing !!2: "++show(csv,ix)) $
+      csv !! ix 
 
     toSeriesData x =
       case recogValueType x of
@@ -764,11 +778,42 @@ buildRenamer (ln:rest) =
                            (replace lhs rhs str)
     _ -> error ("Bad line in rename table: "++ ln)
 
--- FIXME: Can't do it at this stage, need to filter earlier.  Need to
--- read the CSV in full before extracting lines.
-doFilters :: [(String,String)]
-             -> [(String,[(SeriesData,SeriesData)])]
-             -> [(String,[(SeriesData,SeriesData)])]
-doFilters ls csv  =
-  csv
+-- | Take pre-validated CSV and apply filters to CSV data.
+doFilters :: [(String,String)] -> ValidatedCSV -> ValidatedCSV
+doFilters ls (ValidatedCSV header csv) =
+   ValidatedCSV header $ loop ls csv
+  where
+   mkPrj col = 
+     case elemIndex col header of
+       Just ix -> \row ->
+         -- trace ("Dereferencing: !!0"++show(row,ix)) $ 
+         row !! ix
+       Nothing -> error $ show col ++ " is not present in csv." 
+
+   loop [] rows = rows
+   loop ((col,contains):rest) rows =
+     filter ((contains `isInfixOf`) . mkPrj col) $
+     loop rest rows
+
+-- | Make sure that each row has the right number of columns ad discard blank lines:
+validateCSV :: CSV.CSV -> ValidatedCSV
+validateCSV [] = error "validateCSV: empty CSV data (no header row)"
+validateCSV (header:csv) = ValidatedCSV header (loop 2 csv)
+  where
+   numCols = length header -- TODO: could validate that column names look
+                           -- right, i.e. probably shouldn't be numbers!
+   loop _ [] = []
+   loop p ([]:rest) = loop (p+1) rest -- Discard blank
+   -- Ok, this is kind of weird... Text.CSV parses a trailing blank line
+   -- as having one field of zero size:
+   loop p ([""]:rest) = loop (p+1) rest 
+   loop pos (row:rest)
+     | length row == numCols = row : loop (pos+1) rest
+     | otherwise = error $ "error in validateCSV: encountered on row #"++ show pos
+                   ++ "\nRow did not contain the expected number of columns: "++show numCols
+                   ++"\nCSV schema was:\n  "++show header
+                   ++"\nOffending row (length "++show (length row)++") was:\n  "++show row
+
+data ValidatedCSV = ValidatedCSV { header :: [CSV.Field]
+                                 , rows :: [CSV.Record] }
 
