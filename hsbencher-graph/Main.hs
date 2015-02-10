@@ -60,7 +60,10 @@ cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0"
 -- 
 ---------------------------------------------------------------------------
 
-type Column = String
+type ColName = String
+
+-- | For now we only pattern match by string inclusion.  TODO: support regexps?
+type Pattern = String
 
 -- | Command line flags to the executable.
 data Flag = ShowHelp | ShowVersion
@@ -68,7 +71,7 @@ data Flag = ShowHelp | ShowVersion
                               -- and same format as any CSV arriving in pipe
           | OutFile String
           | RenderMode GraphMode
-          | Title String
+          | Title  String
           | XLabel String
           | YLabel String
 
@@ -77,12 +80,12 @@ data Flag = ShowHelp | ShowVersion
           | XLog  -- logarithmic scale on x-axis 
 
           -- identify part of a key 
-          | Key String -- --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
-          | XValues String -- column containing x-values
-          | YValues String -- column containing y-values
+          | Key     { col :: ColName } -- --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
+          | XValues { col :: ColName } -- column containing x-values
+          | YValues { col :: ColName } -- column containing y-values
 
-          | Filter { col :: String, contains :: String }
-          | Pad { col :: String, padTo :: Int }
+          | Filter { col :: ColName, contains :: Pattern }
+          | Pad    { col :: ColName, padTo :: Int }
           | Renames FilePath
 
           -- output resolution  
@@ -94,13 +97,18 @@ data Flag = ShowHelp | ShowVersion
 
           | GnuPlotTemplate FilePath
 
-          | DummyFlag
+          -- Resolving/aggregating duplicates or performing comparisons:
+          | Latest  { col :: ColName }
+          | Speedup { col :: ColName, contains :: Pattern } 
+          | Vs      { col :: ColName, contains :: Pattern }
 
 -- This is getting messy 
             -- Normalize against this column
-          | NormaliseKey String
+          | NormaliseKey { col :: ColName }
           | NormaliseVal String 
-            
+
+          | DummyFlag
+
           --   -- Aux values are not plotted!
           -- | AuxFile String -- a single auxfile that need not have same format as other CSV
           -- | AuxKey  String -- part of key into auxfile
@@ -145,7 +153,7 @@ instance Exception Error
 universalSeparator :: String
 universalSeparator = ","
 
--- | Parse the comma-separated "KEY,VAL" string.
+-- | Parse the comma-separated "COL,VAL" string.
 parseFilter :: String -> (String,String)
 parseFilter s =
   case splitOn universalSeparator s of
@@ -176,10 +184,10 @@ core_cli_options =
      , Option ['y'] ["yvalue"] (ReqArg YValues "STR")      "Column containing y values"
 
      --  Not ready yet:
-     , Option [] ["filter"] (ReqArg (uncurry Filter . parseFilter) "KEY,VAL") $
+     , Option [] ["filter"] (ReqArg (uncurry Filter . parseFilter) "COL,VAL") $
        "Given a string \"KEY,VAL\", filter all rows to\n" ++ 
-       "those where VAL is a substring of column KEY."
-
+       "those where VAL is a substring of column COL."
+       
      -- , Option [] ["sort"] (ReqArg () "STR") $
      --  "Name of a numeric field by which to sort the lines."
 
@@ -190,6 +198,14 @@ core_cli_options =
      , Option [] ["renames"] (ReqArg Renames "FILE") $
        "Provide a comma-separated file where each line is an\n" ++
        "OLD,NEW pair indicating renames for data series' names"
+
+     , Option []    []    (NoArg DummyFlag) "\n Resolving duplicates and making comparisons"
+     , Option []    []    (NoArg DummyFlag) "----------------------------------------------"
+
+-- TODO:
+     -- , Option [] ["latest"] (ReqArg Latest "STR") "Grab latest data point according to monotonically increasing column."
+     -- , Option [] ["speedup"] (ReqArg (uncurry Speedup . parseFilter) "KEY,VAL") $ ""
+     -- , Option [] ["vs"] (ReqArg (uncurry Vs . parseFilter) "KEY,VAL") $ ""       
        
      , Option []    []    (NoArg DummyFlag) "\n Presentation options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
@@ -410,10 +426,11 @@ main = do
                            return d
   let dat1 = validateCSV dat0
       dat2 = doFilters [ (c,n) | Filter c n <- options ] dat1
-  _ <- evaluate (force (rows dat2))  -- Flush out error messages.
+      dat3 = doPadding [ (c,n) | Pad c n <- options ] dat2
+  _ <- evaluate (force (rows dat3))  -- Flush out error messages.
   
-  chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat2))
-  (csv,aux) <- extractData key xy dat2
+  chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat3))
+  (csv,aux) <- extractData key xy dat3
   chatter $ "Data series extracted, number of lines: " ++ show (M.size csv)
 
   chatter$ "Here is a sample of the CSV before renaming and normalization:\n" ++
@@ -795,10 +812,35 @@ doFilters ls (ValidatedCSV header csv) =
      filter ((contains `isInfixOf`) . mkPrj col) $
      loop rest rows
 
+doPadding :: [(String,Int)] -> ValidatedCSV -> ValidatedCSV
+doPadding ls (ValidatedCSV header csv) =
+   ValidatedCSV header $ loop ls csv
+  where
+   loop [] rows = rows
+   loop ((col,pad):rest) rows = map (mkPadder col pad) $
+                                loop rest rows
+   mkPadder :: ColName -> Int -> CSV.Record -> CSV.Record
+   mkPadder col padto =
+     let padit s = 
+           -- Make sure it is a number we are padding
+          case reads s of
+             [(n,"")] -> let s' = show (n::Integer)
+                         in replicate (padto - length s') '0' ++ s'
+             _ -> error $ "attempting to --pad something not an integer: "++s
+         
+           in 
+     case elemIndex col header of
+       Just ix -> \row ->         
+         let row' = take (ix) row ++ [padit (row !! ix)] ++ drop (ix+1) row
+         in -- trace ("PADDING ROW "++col++" at index "++ show ix++": "++show row')
+            row'
+       Nothing -> error $ show col ++ " is not present in csv." 
+
+
 -- | Make sure that each row has the right number of columns ad discard blank lines:
 validateCSV :: CSV.CSV -> ValidatedCSV
 validateCSV [] = error "validateCSV: empty CSV data (no header row)"
-validateCSV (header:csv) = ValidatedCSV header (loop 2 csv)
+validateCSV (header:csv) = ValidatedCSV header (loop (2::Int) csv)
   where
    numCols = length header -- TODO: could validate that column names look
                            -- right, i.e. probably shouldn't be numbers!
