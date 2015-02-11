@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-} 
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 
 module Main where
@@ -14,10 +16,11 @@ import Data.Char (isNumber)
 -- import Data.Default.Class
 
 import Control.DeepSeq (force)
-import Data.List (elemIndex, intersperse, delete, intercalate, isInfixOf)
+import Data.List (elemIndex, intersperse, delete, intercalate, isInfixOf, sortBy)
+import qualified Data.List as L
 import Data.List.Split (splitOn)
 import qualified Data.Map as M
-import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.String.Utils (strip)
 import qualified Data.Set as S
 import Data.Typeable
@@ -63,11 +66,15 @@ cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0"
 -- | CSV data where all rows have the right number of entries.
 data ValidatedCSV =
      ValidatedCSV { header :: [CSV.Field]
-                  , rows   :: [CSV.Record] }
+                  -- TODO: add ixMap that maps each key onto an index or indexing function into a row.
+                  -- This is currently redundantly computed in various places.
+                  , rows   :: [CSV.Record]
+                  }
 
 -- | Groups of rows chunked together by "key"
 data KeyedCSV =
-     KeyedCSV { kheader :: [CSV.Field]
+     KeyedCSV { keys    :: [ColName]
+              , kheader :: [CSV.Field]
               , krows   :: M.Map Key [CSV.Record] }
 
 -- | A combination of fields, e.g. A_B_C, stored as a String.
@@ -79,10 +86,16 @@ type ColName = String
 type Pattern = String
 
 -- | Command line flags to the executable.
-data Flag = ShowHelp | ShowVersion
+data Flag = ShowHelp
+          | ShowVersion -- TODO: implement this
+            
           | File String       -- files must have same CSV layout
                               -- and same format as any CSV arriving in pipe
-          | OutFile String
+          | OutFile  FilePath
+
+            -- TODO: move this functionality over to a separate executable:
+          | DumpFile FilePath -- Dump validated/filtered CSV, in addition to extracted plot.
+            
           | RenderMode GraphMode
           | Title  String
           | XLabel String
@@ -189,6 +202,8 @@ core_cli_options =
      , Option ['f'] ["file"] (ReqArg File "FILE.csv")    "Use CSV file as input"
      , Option ['o'] ["out"]  (ReqArg OutFile "FILE")     "Specify result file for main output"
 
+--     , Option ['d'] ["dump"] (ReqArg DumpFile "FILE")     "Specify result file for main output"
+       
      , Option []    []    (NoArg DummyFlag) "\n Data Handling options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
 
@@ -215,8 +230,9 @@ core_cli_options =
      , Option []    []    (NoArg DummyFlag) "\n Resolving duplicates and making comparisons"
      , Option []    []    (NoArg DummyFlag) "----------------------------------------------"
 
--- TODO:
      , Option [] ["latest"] (ReqArg Latest "STR") "Grab latest data point according to monotonically increasing column."
+
+ -- TODO: and also move this over to a separate CSV->CSV executable:
      -- , Option [] ["speedup"] (ReqArg (uncurry Speedup . parseFilter) "KEY,VAL") $ ""
      -- , Option [] ["vs"] (ReqArg (uncurry Vs . parseFilter) "KEY,VAL") $ ""       
        
@@ -441,11 +457,15 @@ main = do
   let dat1 = validateCSV dat0
       dat2 = doFilters [ (c,n) | Filter c n <- options ] dat1
       dat3 = doPadding [ (c,n) | Pad c n <- options ] dat2
-      dat4 = takeLatest (listToMaybe [ c | Latest c <- options]) dat3
-  _ <- evaluate (force (rows dat3))  -- Flush out error messages.
-  
-  chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat3))
-  (csv,aux) <- extractData key xy dat3
+      dat4 = case [ c | Latest c <- options] of
+               []  -> dat3
+               [c] -> takeLatest key c dat3
+               ls  -> error $ "Error: More than one --latest provided: "++show ls
+  chatter $ "After validation, read total rows: " ++ show (length (rows dat1))
+  _ <- evaluate (force (rows dat4))  -- Flush out error messages.
+
+  chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat4))
+  (csv,aux) <- extractData key xy dat4
   chatter $ "Data series extracted, number of lines: " ++ show (M.size csv)
 
   chatter$ "Here is a sample of the CSV before renaming and normalization:\n" ++
@@ -534,7 +554,7 @@ writeGnuplot PlotConfig{..} series = do
                    [ show plotOutFile++" using 1:"++show ind++" title "++show seriesName++" w lp ls "++show(ind-1)
                    | ((seriesName, _),ind) <- zip series [2::Int ..] ])
                  ]
-      -- Todo, make this into a library and look up the template file in ~/.cabal/share (from the Paths_ module)
+-- TODO, make this into a library and look up the template file in ~/.cabal/share (from the Paths_ module)
 --      defaultTemplate = "template.gpl"
       defaultTemplate = error "ERROR: For now you must provide GnuPlot template with --template"
       template = fromMaybe defaultTemplate gnuPlotTemplate 
@@ -667,7 +687,7 @@ typecheck dat =
 -- | Extract the data we care about from in-memory CSV data:
 --      
 -- Note: This is in the IO monad only to produce chatter.
-extractData :: [String] -> (String,String) -> ValidatedCSV -> IO (DataSeries,DataSeries)
+extractData :: [ColName] -> (ColName,ColName) -> ValidatedCSV -> IO (DataSeries,DataSeries)
 extractData keys (xcol,ycol) (ValidatedCSV header rest) = do
   let csv    = map strip header
       keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
@@ -697,7 +717,7 @@ extractData keys (xcol,ycol) (ValidatedCSV header rest) = do
           let csv = map strip row
 
               -- Construct a key
-              key = collectKey keyIxs csv      
+              key = combineFields keyIxs csv      
 
               -- Find x,y pairs
               (xStr,yStr)  = collectXY xy csv
@@ -716,12 +736,6 @@ extractData keys (xcol,ycol) (ValidatedCSV header rest) = do
                                                  toSeriesData y)
                        in  loop keyIxs xy (m',aux) restRows
         
-    collectKey ixs csv = concat $
-                         intersperse "_" $
-                         filter (/="") $
-                         map (\i ->
-                               -- trace ("Dereferencing !!1: "++show(csv,i)) $ 
-                               csv !! i) ixs
     
     collectXY (x,y) csv =  ( collectVal x csv
                            , collectVal y csv)
@@ -815,17 +829,19 @@ doFilters :: [(String,String)] -> ValidatedCSV -> ValidatedCSV
 doFilters ls (ValidatedCSV header csv) =
    ValidatedCSV header $ loop ls csv
   where
-   mkPrj col = 
-     case elemIndex col header of
-       Just ix -> \row ->
-         -- trace ("Dereferencing: !!0"++show(row,ix)) $ 
-         row !! ix
-       Nothing -> error $ show col ++ " is not present in csv." 
-
    loop [] rows = rows
    loop ((col,contains):rest) rows =
-     filter ((contains `isInfixOf`) . mkPrj col) $
+     filter ((contains `isInfixOf`) . mkPrj header col) $
      loop rest rows
+
+mkPrj :: (Show b, Eq b) => [b] -> b -> [a] -> a
+mkPrj header col = 
+  case elemIndex col header of
+    Just ix -> \row ->
+      -- trace ("Dereferencing: !!0"++show(row,ix)) $ 
+      row !! ix
+    Nothing -> error $ show col ++ " is not present in csv." 
+
 
 doPadding :: [(String,Int)] -> ValidatedCSV -> ValidatedCSV
 doPadding ls (ValidatedCSV header csv) =
@@ -852,15 +868,64 @@ doPadding ls (ValidatedCSV header csv) =
        Nothing -> error $ show col ++ " is not present in csv." 
 
 -- | Resolve groups of rows that share the same key
-takeLatest :: Maybe ColName -> ValidatedCSV -> ValidatedCSV
-takeLatest Nothing x = x
-takeLatest (Just col) (ValidatedCSV header csv) =
-  error "takeLatest: unfinished"
+takeLatest :: [ColName] -> ColName -> ValidatedCSV -> ValidatedCSV
+takeLatest keys col dat =
+  let keyed = toKeyedGroups keys dat
+      hdr   = header dat
+      mp'   = M.map (\ls -> reverse $ rows $
+                            sortCSVBy col compareStrDoubles (ValidatedCSV hdr ls))
+                    (krows keyed)
+      remaining = L.map head (M.elems mp')
+  in ValidatedCSV hdr remaining
 
--- | Make sure that each row has the right number of columns ad discard blank lines:
+-- | Comparison on Strings that are actually valid Doubles.
+compareStrDoubles :: String -> String -> Ordering
+compareStrDoubles a b =
+  case (reads a,reads b) of
+    ((n,_):_,(m,_):_) -> compare (n::Double) m
+    _ -> error $ "compareStrDoubles: expected both of these to parse as Double: "++ show (a,b)
+
+-- | Sort the rows by a certain column.  
+sortCSVBy :: ColName -> (String -> String -> Ordering) -> ValidatedCSV -> ValidatedCSV
+sortCSVBy col fn ValidatedCSV{header,rows} = ValidatedCSV header rows'
+-- This does seem to get into needless reimplementation of DB functionality...
+ where
+  rows' = L.sortBy fn' rows
+  fn' a b = fn (prj a) (prj b)
+  prj = mkPrj header col
+
+toKeyedGroups :: [ColName] -> ValidatedCSV -> KeyedCSV
+toKeyedGroups keys ValidatedCSV{header,rows} =
+  case (length keyIxs) == (length keys) of
+    False -> error $ "Keys "++ show keys++" were not all found in schema: "++show header
+    True -> KeyedCSV keys header (loop M.empty rows)
+ where
+  keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) header)
+  loop !mp [] = mp
+  loop !mp (row:rest) =
+    let mp' = M.insertWith' (++) (combineFields keyIxs row) [row] mp in
+    loop mp' rest
+    
+
+-- Project multiple rows and put them together in a human readable way:
+combineFields :: [Int] -> [CSV.Field] -> String
+combineFields ixs row = concat $ intersperse "_" $ filter (/="") $
+                        map (\i -> row !! i) ixs
+
+-- | Collapse keyed groups back down to a flat list of rows, in no
+-- particular order.
+fromKeyedGroups :: KeyedCSV -> ValidatedCSV 
+fromKeyedGroups KeyedCSV{kheader,krows} = 
+  ValidatedCSV kheader (M.fold (++) [] krows)
+
+-- | Make sure that each row has the right number of columns ad discard blank lines.
+--   Remove any whitespace around header column names.
+-- 
+--   If the ValidatedCSV constructor is stripped off and this is
+--   reapplied, then this function must be idempotent.
 validateCSV :: CSV.CSV -> ValidatedCSV
 validateCSV [] = error "validateCSV: empty CSV data (no header row)"
-validateCSV (header:csv) = ValidatedCSV header (loop (2::Int) csv)
+validateCSV (header:csv) = ValidatedCSV (map strip header) (loop (2::Int) csv)
   where
    numCols = length header -- TODO: could validate that column names look
                            -- right, i.e. probably shouldn't be numbers!
@@ -875,5 +940,4 @@ validateCSV (header:csv) = ValidatedCSV header (loop (2::Int) csv)
                    ++ "\nRow did not contain the expected number of columns: "++show numCols
                    ++"\nCSV schema was:\n  "++show header
                    ++"\nOffending row (length "++show (length row)++") was:\n  "++show row
-
 
