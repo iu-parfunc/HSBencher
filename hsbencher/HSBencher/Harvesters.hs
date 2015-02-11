@@ -1,7 +1,12 @@
 
 module HSBencher.Harvesters ( customTagHarvesterInt,
                               customTagHarvesterDouble,
-                              customTagHarvesterString) where
+                              customTagHarvesterString,
+
+                              customAccumHarvesterInt,
+                              customAccumHarvesterDouble,
+                              customAccumHarvesterString
+                              ) where
 
 import HSBencher.Types
 import HSBencher.Internal.MeasureProcess 
@@ -28,7 +33,22 @@ customTagHarvesterString tag =
   taggedLineHarvesterStr (pack tag) $
     \s r -> r {custom = (tag,StringResult s) : custom r}
 
+-- Harvesters which accumulate their output over multiple "trials"
+customAccumHarvesterInt :: String -> LineHarvester
+customAccumHarvesterInt    = accumHarvester IntResult
 
+customAccumHarvesterDouble :: String -> LineHarvester
+customAccumHarvesterDouble = accumHarvester DoubleResult
+
+customAccumHarvesterString :: String -> LineHarvester
+customAccumHarvesterString = accumHarvester StringResult
+
+accumHarvester :: Read a => (a -> SomeResult) -> String -> LineHarvester
+accumHarvester ctr tag =
+  taggedLineHarvester (pack tag) $ \s r ->
+            r {
+                custom = (tag, AccumResult [ctr s]) : custom r
+              }
 
 ---------------------------------------------------------------------------
 -- Internal.
