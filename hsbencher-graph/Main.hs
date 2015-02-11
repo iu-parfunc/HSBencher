@@ -9,7 +9,7 @@ module Main where
 
 import Control.Exception
 -- import Control.Lens
-import Control.Monad (unless,when)
+import Control.Monad (unless,when,forM_)
 import Data.Char (isNumber)
 -- import Data.Colour
 -- import Data.Colour.Names
@@ -20,7 +20,7 @@ import Data.List (elemIndex, intersperse, delete, intercalate, isInfixOf, sortBy
 import qualified Data.List as L
 import Data.List.Split (splitOn)
 import qualified Data.Map as M
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
 import Data.String.Utils (strip)
 import qualified Data.Set as S
 import Data.Typeable
@@ -97,7 +97,8 @@ data Flag = ShowHelp
 
             -- TODO: move this functionality over to a separate executable:
           | DumpFile FilePath -- Dump validated/filtered CSV, in addition to extracted plot.
-            
+          | Summary
+
           | RenderMode GraphMode
           | Title  String
           | XLabel String
@@ -207,7 +208,8 @@ core_cli_options =
      , Option []    ["version"] (NoArg ShowVersion)      "Show version and exit."
      , Option ['o'] ["out"]  (ReqArg OutFile "FILE")     "Specify result file for main output"
 
---     , Option ['d'] ["dump"] (ReqArg DumpFile "FILE")     "Specify result file for main output"
+     , Option [] ["cleaned"] (ReqArg DumpFile "FILE")  "Write a cleaned, filtered version of the orig CSV here."      
+     , Option [] ["summary"] (NoArg Summary)           "After cleaning, print a summary of each column to stderr."
        
      , Option []    []    (NoArg DummyFlag) "\n Data Handling options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
@@ -232,6 +234,7 @@ core_cli_options =
        "Provide a comma-separated file where each line is an\n" ++
        "OLD,NEW pair indicating renames for data series' names"
 
+       
      , Option []    []    (NoArg DummyFlag) "\n Resolving duplicates and making comparisons"
      , Option []    []    (NoArg DummyFlag) "----------------------------------------------"
 
@@ -256,7 +259,8 @@ core_cli_options =
      , Option []     ["xlog"] (NoArg XLog)                "Logarithmix scale on x-axis" 
 
      , Option []    ["CSV"]    (NoArg (OutFormat MyCSV)) "Output raw CSV data to file selected by --out"
-       
+
+#ifdef USECHART
      , Option []    []    (NoArg DummyFlag) "\n Haskell Chart specific options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
       
@@ -267,6 +271,11 @@ core_cli_options =
      , Option []    ["PDF"]    (NoArg (OutFormat MyPDF)) "Output in PDF format"
      , Option []    ["PS"]     (NoArg (OutFormat MyPS))  "Output in PS format"
      , Option []    ["PNG"]    (NoArg (OutFormat MyPNG)) "Output in PNG format"
+
+#else
+     , Option []    []    (NoArg DummyFlag) "\n Haskell Chart support not compiled in!  No options."
+     , Option []    []    (NoArg DummyFlag) "-----------------------------------------------------"
+#endif
       
      , Option []    []    (NoArg DummyFlag) "\n Normalisation:"
      , Option []    []    (NoArg DummyFlag) "----------------"
@@ -277,7 +286,7 @@ core_cli_options =
      , Option []    []    (NoArg DummyFlag) "\n GNUPlot Options:"
      , Option []    []    (NoArg DummyFlag) "------------------"
 
-     , Option []    ["GPL"] (NoArg (OutFormat MyGPL)) "Output a .gpl plot script.  Implies --CSV."       
+     , Option []    ["GPL"] (NoArg (OutFormat MyGPL))  "Output a .gpl plot script + CSV data."
      , Option []    ["template"] (ReqArg GnuPlotTemplate "FILE") "Prepend FILE to generated gnuplot scripts."       
 
      ]
@@ -370,10 +379,7 @@ main :: IO ()
 main = do
   args <- getArgs
 
-  let (options, inFiles, _unrec,errs) = getOpt' Permute core_cli_options args
-
-      outputSpecified = (not . null) [() | OutFile _ <- options]
-      _outputFormatSpecified = (not . null) [() | OutFormat _ <- options]
+  let (options, inFiles, unrec,errs) = getOpt' Permute core_cli_options args
 
       normaliseSpecified = (not . null) [ () | NormaliseKey _ <- options] 
   
@@ -392,15 +398,19 @@ main = do
       y_logscale = (not . null) [() | YLog <- options]
       x_logscale = (not . null) [() | XLog <- options]
   
-  outFormat <- case [ format | OutFormat format <- options] of        
-                []  -> do chatter$ "Warning: no output format selected.  Defaulting to CSV output."
-                          return MyCSV 
-                [x] -> return x
-                ls  -> error$ "multiple output formats not yet supported: "++show ls
-      
+  outFormat <- case [ format | OutFormat format <- options] of 
+                 []  -> do chatter$ "Warning: no output format selected.  Defaulting to CSV output."
+                           return MyCSV 
+                 [x] -> return x
+                 ls  -> error$ "multiple output formats not yet supported: "++show ls  
+
   unless (null errs) $ do
     chatter$ "Errors parsing command line options:"
     mapM_ (putStr . ("   "++)) errs       
+    exitFailure
+  unless (null unrec) $ do
+    chatter$ "Unrecognized command line options:"
+    mapM_ (putStr . ("   "++)) unrec  
     exitFailure
 
   when (ShowHelp `elem` options) $ do 
@@ -410,12 +420,10 @@ main = do
     putStrLn $ progName ++ ": version "++showVersion version
     exitSuccess
 
-  when (not outputSpecified) $ do
-    error $ "Error: an output file has to be specified"
-
   --------------------------------------------------
   -- Get target
-  let outFile = head [file | OutFile file <- options]  
+  let outFile = fromMaybe (error  "Error: an output file has to be specified") $ 
+                listToMaybe [file | OutFile file <- reverse options]
 
   --------------------------------------------------
   -- Get keys
@@ -454,6 +462,7 @@ main = do
   -- and same format as any CSV arriving in pipe:
   rawdat <- case inFiles of
              []    -> do str <- hGetContents stdin
+                         chatter$ "Reading CSV from stdin... "
                          return $ CSV.parseCSV "stdin" str
              [one] -> do chatter$ "Reading CSV from input file: "++one
                          CSV.parseCSVFromFile one
@@ -461,19 +470,25 @@ main = do
 
   dat0 <- case rawdat of
             Left err -> error $ "Error parsing CSV data: \n"++show err
-            Right d  -> do chatter$ "Successfully parsed CSV file."
+            Right d  -> do chatter$ "Successfully parsed CSV input dataset."
                            return d
   let dat1 = validateCSV dat0
       dat2 = doFilters [ (c,n) | Filter c n <- options ] dat1
       dat3 = doPadding [ (c,n) | Pad c n <- options ] dat2
       dat4 = case [ c | Latest c <- options] of
                []  -> dat3
-               [c] -> takeLatest key c dat3
+               [c] -> -- Here we must not collapse variation in the X axis:
+                      takeLatest (fst xy : key) c dat3
                ls  -> error $ "Error: More than one --latest provided: "++show ls
   chatter $ "After validation, read total rows: " ++ show (length (rows dat1))
   _ <- evaluate (force (rows dat4))  -- Flush out error messages.
-
   chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat4))
+  forM_ [ f | DumpFile f <- options ] $ \fl -> do
+    chatter $ "Writing cleaned/filtered copy of CSV data to: "++fl
+    writeFile fl (CSV.printCSV (fromValidated dat4))
+
+  unless (null [ () | Summary <- options ]) $ printSummary dat4
+
   (csv,aux) <- extractData key xy dat4
   chatter $ "Data series extracted, number of lines: " ++ show (M.size csv)
 
@@ -546,7 +561,7 @@ writeCSV PlotConfig{..} series = do
                , let seriesMap = alldata M.! seriesName ]
              | key <- allKeys ]
       csvResult = CSV.printCSV (header:rows)
-  chatter $ "Writing out CSV for "++show (length series)++" data series (lines): "++unwords (tail header) 
+  chatter $ "Writing out CSV for "++show (length series)++" data series (lines) named: "++unwords (tail header) 
   writeFile plotOutFile csvResult
   chatter $ "Succesfully wrote file "++show plotOutFile
 
@@ -555,9 +570,12 @@ writeGnuplot :: Show a => PlotConfig -> [(a, t)] -> IO ()
 writeGnuplot PlotConfig{..} series = do
   let gplfile = replaceExtension plotOutFile "gpl"
   chatter $ "Writing out Gnuplot script as well as CSV: "++gplfile
-  let gplLines = [ "set xlabel "++ show plotXLabel
+  let gplLines = [ "\n# Begin "++progName++" generated script:"
+                 , "set xlabel "++ show plotXLabel
                  , "set ylabel "++ show plotYLabel
                  , "set output "++ show (replaceExtension plotOutFile "pdf")
+                 , "# And because we're plotting CSV data:"
+                 , "set datafile separator \",\""
                  , "plot "++ concat (intersperse ", "
                    -- Line them up carefully by position:
                    [ show plotOutFile++" using 1:"++show ind++" title "++show seriesName++" w lp ls "++show(ind-1)
@@ -833,6 +851,9 @@ buildRenamer (ln:rest) =
                            (replace lhs rhs str)
     _ -> error ("Bad line in rename table: "++ ln)
 
+fromValidated :: ValidatedCSV -> CSV.CSV
+fromValidated ValidatedCSV{header,rows} = header : rows  
+
 -- | Take pre-validated CSV and apply filters to CSV data.
 doFilters :: [(String,String)] -> ValidatedCSV -> ValidatedCSV
 doFilters ls (ValidatedCSV header csv) =
@@ -950,3 +971,24 @@ validateCSV (header:csv) = ValidatedCSV (map strip header) (loop (2::Int) csv)
                    ++"\nCSV schema was:\n  "++show header
                    ++"\nOffending row (length "++show (length row)++") was:\n  "++show row
 
+-- | Summarize each column
+printSummary :: ValidatedCSV -> IO ()
+printSummary ValidatedCSV{header,rows} = do 
+  chatter "Printing summary of each column:"
+  hPutStrLn stderr "   --------------------------------------------------------------------------------"
+  forM_ rotated $ \ (hdr:vals) -> do
+     let uniques = S.toAscList $ S.fromList vals
+     hPutStrLn stderr $ "   "++hdr++": "++ summarize 300 (show uniques)
+  hPutStrLn stderr "   --------------------------------------------------------------------------------\n"
+  where
+    rotated = L.transpose (header:rows)
+
+
+summarize :: Int -> String -> String
+summarize limit str =
+  case L.splitAt limit str of
+    (hd,[]) -> hd
+    (hd,tl) -> hd ++ "..."
+
+
+    
