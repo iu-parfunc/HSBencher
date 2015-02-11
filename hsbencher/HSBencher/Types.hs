@@ -557,14 +557,16 @@ instance Show LineHarvester where
 ----------------------------------------------------------------------------------------------------
 type Tag = String
 data SomeResult = IntResult Int
-                | DoubleResult Double 
+                | DoubleResult Double
                 | StringResult String
+                | AccumResult [SomeResult]
                   -- expand here 
                 deriving (Eq, Read, Ord)
 instance Show SomeResult where
-  show (IntResult i) = show i
-  show (DoubleResult d) = show d
-  show (StringResult str) = str 
+  show (IntResult i)        = show i
+  show (DoubleResult d)     = show d
+  show (StringResult str)   = str
+  show (AccumResult resLst) = unwords (map show resLst)
 
 -- | This contains all the contextual information for a single benchmark run, which
 --   makes up a "row" in a table of benchmark results.

@@ -389,10 +389,11 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
             , _TRIALS        =  trials
             , _TOPOLOGY      =  show affinity
             , _RETRIES       =  retries
-                                -- Should the user specify how the
-                                -- results over many goodruns are reduced ?
-                                -- I think so. 
-            , _CUSTOM        = custom (head goodruns) -- experimenting 
+                               -- Let the user specify how the results should
+                               -- be reduced. Currently we take the first,
+                               -- or accumulate them all depending on harvester
+                               -- type.
+            , _CUSTOM        = accumulateCustomTags goodruns
             }
       conf <- ask
       result' <- liftIO$ augmentResultWithConfig conf result
@@ -904,6 +905,13 @@ getjittime _                      = Nothing
 posInf :: Double
 posInf = 1/0
 
+accumulateCustomTags :: [RunResult] -> [(Tag, SomeResult)]
+accumulateCustomTags = M.toList . foldr (foldResults . custom) M.empty
+       where foldResults res accum = foldr foldCustom accum res
+             foldCustom (t,v) acc  =
+               case t `M.lookup` acc of
+                Just (AccumResult a) -> M.insert t (AccumResult (v:a)) acc
+                _ -> M.insert t v acc
 
 -- Compute a cut-down version of a benchmark's args list that will do
 -- a short (quick) run.  The way this works is that benchmarks are
