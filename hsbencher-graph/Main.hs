@@ -32,6 +32,8 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr, stdin, hGetContents)
 import System.IO.Unsafe (unsafePerformIO)
 import System.FilePath (replaceExtension)
+import System.Process (system)
+import System.Exit
 import qualified Text.CSV as CSV
 
 import Debug.Trace
@@ -113,7 +115,8 @@ data Flag = ShowHelp
           | XValues { col :: ColName } -- column containing x-values
           | YValues { col :: ColName } -- column containing y-values
 
-          | Filter { col :: ColName, contains :: Pattern }
+          | FilterContain { col :: ColName, pats :: [Pattern] }
+          | FilterEq      { col :: ColName, pats :: [String] }
           | Pad    { col :: ColName, padTo :: Int }
           | Renames FilePath
 
@@ -187,11 +190,11 @@ progName :: String
 progName = unsafePerformIO getProgName
 
 -- | Parse the comma-separated "COL,VAL" string.
-parseFilter :: String -> (String,String)
+parseFilter :: String -> (ColName,[String])
 parseFilter s =
   case splitOn universalSeparator s of
-    [l,r] -> (l,r)
-    _ -> error $ "--filter argument expected to be two strings separated by one comma, not: "++s
+    (l:r1:rest) -> (l,r1:rest)
+    _ -> error $ "--filter argument expected at least two strings separated by commas, not: "++s
 
 parsePad :: String -> (String,Int)
 parsePad s =
@@ -219,9 +222,13 @@ core_cli_options =
      , Option ['y'] ["yvalue"] (ReqArg YValues "STR")      "Column containing y values"
 
      --  Not ready yet:
-     , Option [] ["filter"] (ReqArg (uncurry Filter . parseFilter) "COL,VAL") $
-       "Given a string \"KEY,VAL\", filter all rows to\n" ++ 
-       "those where VAL is a substring of column COL."
+     , Option [] ["filtContain"] (ReqArg (uncurry FilterContain . parseFilter) "COL,VAL1,VAL2..") $
+       "Filter leaving only rows where COL contains one\n" ++ 
+       "of VAL1..VALN as a substring."
+
+     , Option [] ["filtEq"] (ReqArg (uncurry FilterEq . parseFilter) "COL,VAL1,VAL2..") $
+       "Filter leaving only rows where COL is exactly equal\n" ++ 
+       "to one of VAL1, or exactly equal to VAL2, etc."
        
      -- , Option [] ["sort"] (ReqArg () "STR") $
      --  "Name of a numeric field by which to sort the lines."
@@ -405,11 +412,11 @@ main = do
                  ls  -> error$ "multiple output formats not yet supported: "++show ls  
 
   unless (null errs) $ do
-    chatter$ "Errors parsing command line options:"
+    chatter$ "Errors parsing command line option(s):"
     mapM_ (putStr . ("   "++)) errs       
     exitFailure
   unless (null unrec) $ do
-    chatter$ "Unrecognized command line options:"
+    chatter$ "Unrecognized command line option(s):"
     mapM_ (putStr . ("   "++)) unrec  
     exitFailure
 
@@ -473,7 +480,7 @@ main = do
             Right d  -> do chatter$ "Successfully parsed CSV input dataset."
                            return d
   let dat1 = validateCSV dat0
-      dat2 = doFilters [ (c,n) | Filter c n <- options ] dat1
+      dat2 = doFilters options dat1
       dat3 = doPadding [ (c,n) | Pad c n <- options ] dat2
       dat4 = case [ c | Latest c <- options] of
                []  -> dat3
@@ -589,6 +596,13 @@ writeGnuplot PlotConfig{..} series = do
   prelude <- fmap lines $ readFile template
   writeFile gplfile (unlines (prelude ++ gplLines))
   chatter $ "Succesfully wrote file "++show gplfile
+
+  let cmd = "gnuplot "++gplfile
+  chatter $ "Attempting to use gnuplot command to build the plot:"++show cmd
+  cde <- system cmd
+  case cde of
+    ExitSuccess   -> chatter "Gnuplot returned succesfully."
+    ExitFailure c -> chatter$ "WARNING: Gnuplot process returned error code: "++show c
   return ()
   
 
@@ -855,14 +869,17 @@ fromValidated :: ValidatedCSV -> CSV.CSV
 fromValidated ValidatedCSV{header,rows} = header : rows  
 
 -- | Take pre-validated CSV and apply filters to CSV data.
-doFilters :: [(String,String)] -> ValidatedCSV -> ValidatedCSV
-doFilters ls (ValidatedCSV header csv) =
-   ValidatedCSV header $ loop ls csv
-  where
-   loop [] rows = rows
-   loop ((col,contains):rest) rows =
-     filter ((contains `isInfixOf`) . mkPrj header col) $
-     loop rest rows
+doFilters :: [Flag] -> ValidatedCSV -> ValidatedCSV
+doFilters [] dat = dat
+doFilters (FilterEq col vals : rest) (ValidatedCSV header csv) =
+   doFilters rest $ ValidatedCSV header $
+     filter ((\x -> any (==x) vals) . mkPrj header col) csv
+doFilters (FilterContain col vals : rest) (ValidatedCSV header csv) =
+   doFilters rest $ ValidatedCSV header $ 
+     filter ((\x -> any (`isInfixOf` x) vals) . mkPrj header col) csv   
+
+-- | Everything else we ignore:
+doFilters (_ : rest) dat = doFilters rest dat
 
 mkPrj :: (Show b, Eq b) => [b] -> b -> [a] -> a
 mkPrj header col = 
@@ -988,7 +1005,7 @@ summarize :: Int -> String -> String
 summarize limit str =
   case L.splitAt limit str of
     (hd,[]) -> hd
-    (hd,tl) -> hd ++ "..."
+    (hd,_)  -> hd ++ "..."
 
 
     
