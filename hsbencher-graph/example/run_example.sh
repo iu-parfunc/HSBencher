@@ -13,7 +13,7 @@ which $HSG
 set -xe
 
 function go() {
-    $HSG -f snowball-list.csv --GPL \
+    $HSG snowball-list.csv --GPL \
 	 --template=./template_both.gpl --renames=./renames.txt \
 	 --pad=THREADS,2 \
          -x ARGS -y MEDIANTIME --key PROGNAME --key VARIANT --key THREADS $*
