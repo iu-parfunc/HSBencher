@@ -43,6 +43,7 @@ data ExtraFlag = TableName String
                  -- TODO: this should include MOST of the schema's
                  -- fields... we need a scalable way to do this.
                  -- Applicative options would help...
+--               | SetHostname  String 
 
                | WriteCSV     FilePath
                | NoUpload

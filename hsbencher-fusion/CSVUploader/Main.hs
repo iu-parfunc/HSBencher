@@ -17,6 +17,7 @@ import Network.Google.OAuth2 (OAuth2Client(..))
 import Network.Google.FusionTables(CellType(..))
 
 -- Standard:
+import Control.Monad
 import Control.Monad.Reader
 import Data.List as L
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
@@ -122,7 +123,8 @@ uprows confs serverSchema hdr rst = do
                     map (`unionBR` base) tuples
       putStrLn$ " ["++this_progname++"] Tuples prepped.  Here's the first one: "++ show (head prepped)
       -- Layer on what we have.
-      runReaderT (uploadRows prepped) confs
+      flg <- runReaderT (uploadRows prepped) confs
+      unless flg $ error $ this_progname++"/uprows: failed to upload rows."
 
 -- | Union a tuple with a BenchmarkResult.  Any unmentioned keys in
 -- the tuple retain their value from the input BenchmarkResult.

@@ -225,17 +225,19 @@ uploadBenchResult  br = do
   (_toks,auth,tid) <- authenticate  
   order <- ensureColumns auth tid fusionSchema  
   let row = prepBenchResult order br      
-  uploadRows [row]
+  flg <- uploadRows [row]
+  unless flg $ error "uploadBenchResult: failed to upload rows"
 
 -- | Upload raw tuples that are already in the format expected on the server.
-uploadRows :: [PreppedTuple] -> BenchM ()
+--   Returns True if the upload succeeded.
+uploadRows :: [PreppedTuple] -> BenchM Bool
 uploadRows rows = do
   (toks,auth,tid) <- authenticate
   ---------------------  
   let colss = map (map fst) rows
       dats  = map (map snd) rows 
   case colss of
-    [] -> return ()
+    [] -> return True
     (schema:rst) -> do
        unless (all (== schema) rst) $
          error ("uploadRows: not all Schemas matched: "++ show (schema, filter (/= schema) rst))
@@ -244,11 +246,11 @@ uploadRows rows = do
        res <- stdRetry "bulkImportRows" auth toks $ bulkImportRows
                (B.pack$ accessToken toks) tid schema dats
        case res of 
-         Just _  -> log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" (head rows))
+         Just _  -> do log$ " [fusiontable] Done uploading, run ID "++ (fromJust$ lookup "RUNID" (head rows))
                          ++ " date "++ (fromJust$ lookup "DATETIME" (head rows))
-         Nothing -> log$ " [fusiontable] WARNING: Upload failed the maximum number of times.  Continuing with benchmarks anyway"
-     -- TODO/FIXME: Make this configurable.
-       return ()           
+                       return True
+         Nothing -> do log$ " [fusiontable] WARNING: Upload failed the maximum number of times.  Continuing with benchmarks anyway"
+                       return False
 
 -- | Check cached tokens, authenticate with server if necessary, and
 -- return a bundle of the commonly needed information to speak to the

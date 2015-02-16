@@ -1,5 +1,5 @@
 name:                hsbencher-fusion
-version:             0.3.8
+version:             0.3.9
 synopsis:            Backend for uploading benchmark data to Google Fusion Tables.
 description:
          Google Fusion tables are a type of Google Doc that resembles a
@@ -16,6 +16,7 @@ description:
          * (0.3.6) --variant command line argument for criterion uploader
          * (0.3.7) Routines for bulk-upload of rows.
          * (0.3.8) Add --threads to hsbencher-fusion-upload-criterion
+         * (0.3.9) Change type of uploadRows
 
 -- Full ChangeLog (detailing anything omitted above):
 --  :
