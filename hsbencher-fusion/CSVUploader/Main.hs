@@ -88,7 +88,9 @@ main = do
    let fconf0 = getMyConf plug gconf1
    let fconf1 = foldFlags plug opts2 fconf0
    let gconf2 = setMyConf plug fconf1 gconf1       
-   gconf3 <- plugInitialize plug gconf2                
+   gconf3 <- if L.elem NoUpload opts1
+             then return gconf2
+             else plugInitialize plug gconf2 
 
    let outFiles = [ f | OutFile f <- opts1 ]       
    ------------------------------------------------------------
@@ -119,9 +121,15 @@ main = do
 
 writeOutFile :: Config -> FilePath -> CSV -> IO ()
 writeOutFile _ _ [] = error $ "Bad CSV file, not even a header line."
-writeOutFile _ path (hdr:rst) = do
-  putStrLn$ " ["++this_progname++"] Writing to disk CSV data with Schema: "++show hdr  
-  writeFile path $ printCSV (hdr:rst)
+writeOutFile confs path (hdr:rst) = do
+  -- prepped <- preprows confs hdr hdr rst
+  augmented <- augmentRows confs hdr hdr rst  
+  putStrLn$ " ["++this_progname++"] Writing out CSV with schema: "++show (head augmented)
+  let untuple tup = map fst (head tup) :
+                    map (map snd) tup
+  writeFile path $ printCSV $
+    untuple $ map resultToTuple augmented
+  putStrLn$ " ["++this_progname++"] Successfully wrote file: "++path
 
 loadCSV :: FilePath -> IO CSV
 loadCSV f = do
@@ -141,8 +149,10 @@ doupload confs x = do
       serverSchema <- ensureMyColumns confs hdr -- FIXUP server schema.
       putStrLn$ " ["++this_progname++"] Uploading "++show (length rst)++" rows of CSV data..."
       putStrLn "================================================================================"
-      uprows confs serverSchema hdr rst
-      
+--      uprows confs serverSchema hdr rst fusionUploader
+      augmented <- augmentRows confs serverSchema hdr rst
+      prepped <- prepRows serverSchema augmented
+      fusionUploader prepped confs
 
 -- TODO: Add checking to see if the rows are already there.  However
 -- that would be expensive if we do one query per row.  The ideal
@@ -150,8 +160,9 @@ doupload confs x = do
 -- fewer queries.
 
 -- | Perform the actual upload of N rows
-uprows :: Config -> Schema -> Schema -> [[String]] -> IO ()
-uprows confs serverSchema hdr rst = do
+-- uprows :: Config -> [String] -> [String] -> [[String]] -> Uploader -> IO ()
+augmentRows :: Config -> [String] -> [String] -> [[String]] -> IO [BenchmarkResult]
+augmentRows confs serverSchema hdr rst = do
       let missing = S.difference (S.fromList serverSchema) (S.fromList hdr)  
       -- Compute a base benchResult to fill in our missing fields:
       base <- if S.null missing then
@@ -162,10 +173,18 @@ uprows confs serverSchema hdr rst = do
                 augmentResultWithConfig confs emptyBenchmarkResult
 
       let tuples = map (zip hdr) rst
-          prepped = map (prepBenchResult serverSchema) $
-                    map (`unionBR` base) tuples
-      putStrLn$ " ["++this_progname++"] Tuples prepped.  Here's the first one: "++ show (head prepped)
-      -- Layer on what we have.
+          augmented = map (`unionBR` base) tuples
+      return augmented
+
+prepRows :: Schema -> [BenchmarkResult] -> IO [PreppedTuple]
+prepRows serverSchema augmented = do
+    let prepped = map (prepBenchResult serverSchema) augmented
+    putStrLn$ " ["++this_progname++"] Tuples prepped.  Here's the first one: "++ show (head prepped)
+    -- Layer on what we have.
+    return prepped
+
+fusionUploader :: [PreppedTuple] -> Config -> IO ()
+fusionUploader prepped confs = do 
       flg <- runReaderT (uploadRows prepped) confs
       unless flg $ error $ this_progname++"/uprows: failed to upload rows."
 
