@@ -25,16 +25,25 @@ import Statistics.Resampling.Bootstrap                  ( Estimate(..) )
 -- Standard:
 import Control.Monad.Reader
 import Data.List as L
+import Data.Char (isSpace)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
-import System.Environment (getArgs)
+import System.Environment (getArgs, getProgName)
 import System.Exit
 import qualified Data.Map                               as Map
+
+import Data.Version (showVersion)
+import Paths_hsbencher_fusion (version)
 
 ----------------------------------------------------------------------------------------------------
 
 data ExtraFlag = TableName String
                | SetVariant   String
                | SetArgs      String
+               | SetThreads   Int
+                 -- TODO: this should include MOST of the schema's
+                 -- fields... we need a scalable way to do this.
+                 -- Applicative options would help...
+
                | WriteCSV     FilePath
                | NoUpload
                | PrintHelp
@@ -49,12 +58,24 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                        "Setting for the VARIANT field for *ALL* uploaded data from the given report."
                      , Option [] ["args"] (ReqArg SetArgs "STR")
                        "Set the ARGS column in the uploaded data."
+                     , Option [] ["threads"] (ReqArg (SetThreads . safeRead) "NUM")
+                       "Set the THREADS column in the uploaded data."
 
                      , Option [] ["csv"] (ReqArg WriteCSV "PATH")
                        "Write the Criterion report data into a CSV file using the HSBencher schema."
                      , Option [] ["noupload"] (NoArg NoUpload)
                        "Don't actually upload to the fusion table (but still psosible write CSV)."
                      ]
+
+safeRead :: String -> Int
+safeRead x = case reads (trim x) of
+              (n,[]):_ -> n
+              _        -> error $ "error: could not parse as Int: "++x
+
+trim :: String -> String
+trim = f . f
+   where f = reverse . dropWhile isSpace
+
 plug :: FusionPlug
 plug = defaultFusionPlugin
 
@@ -65,10 +86,13 @@ main = do
 
    let (opts1,plainargs,unrec,errs1) = getOpt' Permute extra_cli_options cli_args
    let (opts2,_,errs2) = getOpt Permute fusion_cli_options unrec
-   let errs = errs1 ++ errs2   
+   let errs = errs1 ++ errs2
+   progName <- getProgName
    when (L.elem PrintHelp opts1 || not (null errs)) $ do 
      putStrLn $
-       "USAGE: fusion-upload-criterion [options] REPORTFILE\n\n"++
+       "USAGE: "++progName++" [options] REPORTFILE\n"++
+       "Version: "++ showVersion version++"\n\n"++       
+       
        "Upload a pre-existing Criterion report benchmarked on the CURRENT machine.\n"++
        "This restriction is due to the Report not containing system information.  Rather,\n"++
        "'fusion-upload-criterion' gathers information about the platform at the time of upload.\n"++
@@ -96,6 +120,10 @@ main = do
                   []  -> presets2
                   [n] -> presets2 { _ARGS = words n }
                   ls  -> error $ "Multiple ARGS settings supplied!: "++show ls
+       presets4 = case [ n | SetThreads n <- opts1 ] of
+                  []  -> presets3
+                  [n] -> presets3 { _THREADS = n }
+                  ls  -> error $ "Multiple THREADS settings supplied!: "++show ls
    
    -- This bit could be abstracted nicely by the HSBencher lib:
    ------------------------------------------------------------
@@ -111,8 +139,8 @@ main = do
    case plainargs of
      [] -> error "No file given to upload!"
      reports -> do
-       maybe (return ()) (doCSV gconf3 presets3 reports) csvPath
-       unless noup $ forM_ reports (doupload gconf3 presets3)
+       maybe (return ()) (doCSV gconf3 presets4 reports) csvPath
+       unless noup $ forM_ reports (doupload gconf3 presets4)
 
 doupload :: Config -> BenchmarkResult -> FilePath -> IO ()
 doupload confs presets file = do

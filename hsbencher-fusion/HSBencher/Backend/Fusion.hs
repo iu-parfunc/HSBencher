@@ -475,8 +475,12 @@ fusion_cli_options =
   ("Fusion Table Options:",
       [ Option [] ["fusion-upload"] (OptArg FusionTables "TABLEID")
         "enable fusion table upload.  Optionally set TABLEID; otherwise create/discover it."
-      , Option [] ["clientid"]     (ReqArg ClientID "ID")     "Use (and cache) Google client ID"
-      , Option [] ["clientsecret"] (ReqArg ClientSecret "STR") "Use (and cache) Google client secret"
+      , Option [] ["clientid"]     (ReqArg ClientID "ID") 
+        ("Use (and cache auth tokens for) Google client ID\n"++
+         "Alternatively set by env var HSBENCHER_GOOGLE_CLIENTID")
+      , Option [] ["clientsecret"] (ReqArg ClientSecret "STR")
+        ("Use Google client secret\n"++
+         "Alternatively set by env var HSBENCHER_GOOGLE_CLIENTSECRET")
       , Option [] ["fusion-test"]  (NoArg FusionTest)   "Test authentication and list tables if possible." 
       ])
 

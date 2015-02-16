@@ -25,6 +25,7 @@ import System.Exit
 import qualified Data.Map as M
 import qualified Data.Set as S
 
+import Data.Version (showVersion)
 import Paths_hsbencher_fusion (version)
 
 import Text.CSV
@@ -56,7 +57,7 @@ main = do
    let errs = errs1 ++ errs2   
    when (L.elem PrintHelp opts1 || not (null errs)) $ do 
      putStrLn $
-       this_progname++": "++show version++"\n"++
+       this_progname++": "++showVersion  version++"\n"++
        "USAGE: "++this_progname++" [options] CSVFILE\n\n"++
        "Upload pre-existing CSV, e.g. data as gathered by the 'dribble' plugin.\n"++
        "\n"++

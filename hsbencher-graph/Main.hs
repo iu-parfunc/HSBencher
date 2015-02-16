@@ -303,9 +303,17 @@ fullUsageInfo :: String
 fullUsageInfo = usageInfo docs core_cli_options
  where 
   docs = "USAGE: "++progName++" <flags> ... <inputCSVfiles> ...\n"++
-         "Version: "++showVersion version++"\n"++ 
+         "Version: "++showVersion version++"\n"++
+         
          "\nA utility for plotting datasets retrieved from HSBencher.\n"++
-         "\nReads CSV data from stdin if no input files are given.\n"++
+         "\nReads CSV data from stdin if no input files are given.\n\n"++
+
+         "Basic usage guide:\n"++
+         " \n"++
+         "\n"++
+         "Currently incomplete functionality: :\n"++
+         " * bar charts are not supported in gnuplot output\n"++
+         
          "\nCommand line flags: \n"
 --   ++ generalUsageStr
 
