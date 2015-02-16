@@ -12,6 +12,7 @@ See hsbencher.cabal for a general overview.  Here are a few useful facts:
  * Jobs can take many forms.  Some included protocols are described below, but you can always add your own `BuildMethod`.
  * Other packages like `hsbencher-fusion` and `hsbencher-codespeed` provide additional backends for uploading benchmark data to network destinations.
 
+Below we describe some of the rules benchmarks must follow.  But you will find much more general documentation [on the project's Wiki](https://github.com/rrnewton/HSBencher/wiki).
 
 Protocols for benchmarks to follow
 ----------------------------------
