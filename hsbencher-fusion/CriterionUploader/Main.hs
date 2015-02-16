@@ -65,7 +65,7 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                      , Option [] ["csv"] (ReqArg WriteCSV "PATH")
                        "Write the Criterion report data into a CSV file using the HSBencher schema."
                      , Option [] ["noupload"] (NoArg NoUpload)
-                       "Don't actually upload to the fusion table (but still psosible write CSV)."
+                       "Don't actually upload to the fusion table (but still possible write CSV)."
                      ]
 
 safeRead :: String -> Int

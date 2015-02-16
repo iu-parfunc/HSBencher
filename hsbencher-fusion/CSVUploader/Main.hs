@@ -38,13 +38,22 @@ this_progname = "hsbencher-fusion-upload-csv"
 
 data ExtraFlag = TableName String
                | PrintHelp
+               | NoUpload
+               | OutFile FilePath
   deriving (Eq,Ord,Show,Read)
 
 extra_cli_options :: [OptDescr ExtraFlag]
 extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                        "Show this help message and exit."
                      , Option [] ["name"] (ReqArg TableName "NAME")
-                       "Name for the fusion table to which we upload (discovered or created)." ]
+                       "Name for the fusion table to which we upload (discovered or created)."
+
+                     , Option ['o'] ["out"] (ReqArg OutFile "FILE")
+                       "Write the augmented CSV data out to FILE."
+                                              
+                     , Option [] ["noupload"] (NoArg NoUpload)
+                       "Don't actually upload to the fusion table (but still possible write to disk)."
+                     ]
 plug :: FusionPlug
 plug = defaultFusionPlugin
 
@@ -81,18 +90,52 @@ main = do
    let gconf2 = setMyConf plug fconf1 gconf1       
    gconf3 <- plugInitialize plug gconf2                
 
+   let outFiles = [ f | OutFile f <- opts1 ]       
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
-     reports -> forM_ reports (doupload gconf3)
+     reports -> do
+       allFiles <- mapM loadCSV reports
+       let headers = map head allFiles
+           distinctHeaders = S.fromList headers
+           combined = head headers : L.concatMap tail allFiles
+       unless (S.size distinctHeaders == 1) $
+         error $ unlines ("Not all the headers in CSV files matched: " : 
+                          (L.map show (S.toList distinctHeaders)))
 
-doupload :: Config -> FilePath -> IO ()
-doupload confs file = do
-  x <- parseCSVFromFile file  
-  case x of
+       forM_ outFiles $ \f -> writeOutFile gconf3 f combined
+       if L.elem NoUpload opts1
+         then putStrLn$ " ["++this_progname++"] Skipping fusion table upload due to --noupload "
+         else doupload gconf3 combined
+       
+       -- case (reports, outFiles) of
+       --   (_,[]) -> forM_ reports $ \f -> loadCSV f >>= doupload gconf3 
+       --   ([inp],[out]) ->
+       --      do c <- loadCSV inp
+       --         writeOutFile gconf3 out c
+       --         doupload     gconf3 c
+       --   ([inp],ls) -> error $ "Given multiple CSV output files: "++show ls
+       --   (ls1,ls2) -> error $ "Given multiple input files but also asked to output to a CSV file."
+
+writeOutFile :: Config -> FilePath -> CSV -> IO ()
+writeOutFile _ _ [] = error $ "Bad CSV file, not even a header line."
+writeOutFile _ path (hdr:rst) = do
+  putStrLn$ " ["++this_progname++"] Writing to disk CSV data with Schema: "++show hdr  
+  writeFile path $ printCSV (hdr:rst)
+
+loadCSV :: FilePath -> IO CSV
+loadCSV f = do
+  x <- parseCSVFromFile f 
+  case x of 
     Left err -> error $ "Failed to read CSV file: \n"++show err
-    Right [] -> error $ "Bad CSV file, not even a header line: "++file
-    Right (hdr:rst) -> do
+    Right [] -> error $ "Bad CSV file, not even a header line: "++ f
+    Right v  -> return v    
+
+doupload :: Config -> CSV -> IO ()
+doupload confs x = do
+  case x of
+    [] -> error $ "Bad CSV file, not even a header line."
+    (hdr:rst) -> do
       checkHeader hdr
       putStrLn$ " ["++this_progname++"] Beginning upload CSV data with Schema: "++show hdr
       serverSchema <- ensureMyColumns confs hdr -- FIXUP server schema.
