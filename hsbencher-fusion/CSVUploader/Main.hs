@@ -20,6 +20,7 @@ import Network.Google.FusionTables(CellType(..))
 import Control.Monad
 import Control.Monad.Reader
 import Data.List as L
+import Data.Maybe (fromJust)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs)
 import System.Exit
@@ -54,7 +55,7 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                                               
                      , Option [] ["noupload"] (NoArg NoUpload)
                        "Don't actually upload to the fusion table (but still possible write to disk)."
-                     , Option [] ["matchserver"] (NoArg NoUpload)
+                     , Option [] ["matchserver"] (NoArg MatchServerOrder)
                        "Even if not uploading, retrieve the order of columns from the server and use it."                       
                      ]
 plug :: FusionPlug
@@ -110,6 +111,8 @@ main = do
                           (L.map show (S.toList distinctHeaders)))
 
        unless (null outFiles) $ do
+         putStrLn$ " ["++this_progname++"] First, write out CSVs to disk: "++show outFiles
+         putStrLn$ " ["++this_progname++"] Match server side schema?: "++ show(L.elem MatchServerOrder opts1)
          let hdr = head combined
          serverSchema <-
            if L.elem MatchServerOrder opts1
@@ -136,10 +139,20 @@ writeOutFile :: Config -> [String] -> FilePath -> CSV -> IO ()
 writeOutFile _ _ _ [] = error $ "Bad CSV file, not even a header line."
 writeOutFile confs serverSchema path (hdr:rst) = do
   augmented <- augmentRows confs serverSchema hdr rst  
-  putStrLn$ " ["++this_progname++"] Writing out CSV with schema: "++show (head augmented)
-  let untuple tup = map fst (head tup) :
-                    map (map snd) tup
-  writeFile path $ printCSV $
+  putStrLn$ " ["++this_progname++"] Writing out CSV with schema:\n "++show serverSchema
+  let untuple :: [[(String,String)]] -> [[String]]
+--      untuple tups = map fst (head tups) : map (map snd) tups
+
+      -- Convert while using the ordering from serverSchema:
+      untuple tups = serverSchema : 
+                     [ [ fJ (lookup k tup)
+                       | k <- serverSchema
+                       , let fJ (Just x) = x
+                             fJ Nothing = "" -- Custom fields!
+                               -- error$ "field "++k++" in server schema missing in tuple:\n"++unlines (map show tup)
+                       ]
+                     | tup <- tups ] 
+  writeFile path $ printCSV $ 
     untuple $ map resultToTuple augmented
   putStrLn$ " ["++this_progname++"] Successfully wrote file: "++path
 
