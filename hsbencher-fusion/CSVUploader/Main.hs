@@ -39,6 +39,7 @@ this_progname = "hsbencher-fusion-upload-csv"
 data ExtraFlag = TableName String
                | PrintHelp
                | NoUpload
+               | MatchServerOrder
                | OutFile FilePath
   deriving (Eq,Ord,Show,Read)
 
@@ -53,6 +54,8 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                                               
                      , Option [] ["noupload"] (NoArg NoUpload)
                        "Don't actually upload to the fusion table (but still possible write to disk)."
+                     , Option [] ["matchserver"] (NoArg NoUpload)
+                       "Even if not uploading, retrieve the order of columns from the server and use it."                       
                      ]
 plug :: FusionPlug
 plug = defaultFusionPlugin
@@ -88,7 +91,8 @@ main = do
    let fconf0 = getMyConf plug gconf1
    let fconf1 = foldFlags plug opts2 fconf0
    let gconf2 = setMyConf plug fconf1 gconf1       
-   gconf3 <- if L.elem NoUpload opts1
+   gconf3 <- if L.elem NoUpload opts1 &&
+                not (L.elem MatchServerOrder opts1)
              then return gconf2
              else plugInitialize plug gconf2 
 
@@ -105,7 +109,16 @@ main = do
          error $ unlines ("Not all the headers in CSV files matched: " : 
                           (L.map show (S.toList distinctHeaders)))
 
-       forM_ outFiles $ \f -> writeOutFile gconf3 f combined
+       unless (null outFiles) $ do
+         let hdr = head combined
+         serverSchema <-
+           if L.elem MatchServerOrder opts1
+           then do s <- ensureMyColumns gconf3 hdr
+                   putStrLn$ " ["++this_progname++"] Retrieved schema from server, using for CSV output:\n  "++show s
+                   return s
+           else return hdr
+         forM_ outFiles $ \f ->
+            writeOutFile gconf3 serverSchema f combined
        if L.elem NoUpload opts1
          then putStrLn$ " ["++this_progname++"] Skipping fusion table upload due to --noupload "
          else doupload gconf3 combined
@@ -119,11 +132,10 @@ main = do
        --   ([inp],ls) -> error $ "Given multiple CSV output files: "++show ls
        --   (ls1,ls2) -> error $ "Given multiple input files but also asked to output to a CSV file."
 
-writeOutFile :: Config -> FilePath -> CSV -> IO ()
-writeOutFile _ _ [] = error $ "Bad CSV file, not even a header line."
-writeOutFile confs path (hdr:rst) = do
-  -- prepped <- preprows confs hdr hdr rst
-  augmented <- augmentRows confs hdr hdr rst  
+writeOutFile :: Config -> [String] -> FilePath -> CSV -> IO ()
+writeOutFile _ _ _ [] = error $ "Bad CSV file, not even a header line."
+writeOutFile confs serverSchema path (hdr:rst) = do
+  augmented <- augmentRows confs serverSchema hdr rst  
   putStrLn$ " ["++this_progname++"] Writing out CSV with schema: "++show (head augmented)
   let untuple tup = map fst (head tup) :
                     map (map snd) tup
