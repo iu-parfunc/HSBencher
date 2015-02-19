@@ -40,6 +40,7 @@ data ExtraFlag = TableName String
                | SetVariant   String
                | SetArgs      String
                | SetThreads   Int
+               | SetRunTimeFlags  String
                  -- TODO: this should include MOST of the schema's
                  -- fields... we need a scalable way to do this.
                  -- Applicative options would help...
@@ -62,6 +63,9 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                      , Option [] ["threads"] (ReqArg (SetThreads . safeRead) "NUM")
                        "Set the THREADS column in the uploaded data."
 
+                     , Option [] ["runflags"] (ReqArg SetRunTimeFlags "STR")
+                       "Set the RUNTIME_FLAGS column in the uploaded data."
+                       
                      , Option [] ["csv"] (ReqArg WriteCSV "PATH")
                        "Write the Criterion report data into a CSV file using the HSBencher schema."
                      , Option [] ["noupload"] (NoArg NoUpload)
@@ -121,9 +125,13 @@ main = do
                   []  -> presets2
                   [n] -> presets2 { _ARGS = words n }
                   ls  -> error $ "Multiple ARGS settings supplied!: "++show ls
-       presets4 = case [ n | SetThreads n <- opts1 ] of
+   let presets4 = case [ s | SetRunTimeFlags s <- opts1 ] of
                   []  -> presets3
-                  [n] -> presets3 { _THREADS = n }
+                  [s] -> presets3 { _RUNTIME_FLAGS = s }
+                  ls  -> error $ "Multiple RUNTIME_FLAGS settings supplied!: "++show ls                  
+   let presets5 = case [ n | SetThreads n <- opts1 ] of
+                  []  -> presets4
+                  [n] -> presets4 { _THREADS = n }
                   ls  -> error $ "Multiple THREADS settings supplied!: "++show ls
    
    -- This bit could be abstracted nicely by the HSBencher lib:
@@ -140,8 +148,8 @@ main = do
    case plainargs of
      [] -> error "No file given to upload!"
      reports -> do
-       maybe (return ()) (doCSV gconf3 presets4 reports) csvPath
-       unless noup $ forM_ reports (doupload gconf3 presets4)
+       maybe (return ()) (doCSV gconf3 presets5 reports) csvPath
+       unless noup $ forM_ reports (doupload gconf3 presets5)
 
 doupload :: Config -> BenchmarkResult -> FilePath -> IO ()
 doupload confs presets file = do
