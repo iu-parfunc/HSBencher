@@ -146,6 +146,7 @@ getTableId auth tablename = do
   tid <- case x of
            Nothing -> makeTable auth tablename
            Just iD -> return iD
+  -- FIXME: this really should not mutate columns...  should be deprecated.
   order <- ensureColumns auth tid fusionSchema
   return (tid, order)
 
@@ -222,8 +223,9 @@ ensureColumns auth tid ourSchema = do
 -- | Push the results from a single benchmark to the server.
 uploadBenchResult :: BenchmarkResult -> BenchM ()
 uploadBenchResult  br = do
-  (_toks,auth,tid) <- authenticate  
-  order <- ensureColumns auth tid fusionSchema  
+  (_toks,auth,tid) <- authenticate
+  let schema = benchmarkResultToSchema br
+  order <- ensureColumns auth tid schema
   let row = prepBenchResult order br      
   flg <- uploadRows [row]
   unless flg $ error "uploadBenchResult: failed to upload rows"
