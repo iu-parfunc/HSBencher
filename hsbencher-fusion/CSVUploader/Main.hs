@@ -97,18 +97,24 @@ main = do
              then return gconf2
              else plugInitialize plug gconf2 
 
-   let outFiles = [ f | OutFile f <- opts1 ]       
+   let outFiles = [ f | OutFile f <- opts1 ]
+  
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
      reports -> do
-       allFiles <- mapM loadCSV reports
+       allFiles <- fmap (L.map (L.filter goodLine)) $
+                   mapM loadCSV reports
        let headers = map head allFiles
            distinctHeaders = S.fromList headers
-           combined = head headers : L.concatMap tail allFiles
+           combined = head headers : (L.concatMap tail allFiles)
        unless (S.size distinctHeaders == 1) $
          error $ unlines ("Not all the headers in CSV files matched: " : 
                           (L.map show (S.toList distinctHeaders)))
+
+       putStrLn$ " ["++this_progname++"] File lengths: "++show (map length allFiles)
+--       putStrLn$ " ["++this_progname++"] File headers:\n"++unlines (map show headers)
+--       putStrLn$  "DEBUG:\n  "++unlines (map show combined)
 
        unless (null outFiles) $ do
          putStrLn$ " ["++this_progname++"] First, write out CSVs to disk: "++show outFiles
@@ -156,6 +162,11 @@ writeOutFile confs serverSchema path (hdr:rst) = do
     untuple $ map resultToTuple augmented
   putStrLn$ " ["++this_progname++"] Successfully wrote file: "++path
 
+goodLine :: [String] -> Bool
+goodLine [] = False
+goodLine [""] = False  -- Why does Text.CSV produce these?
+goodLine _ = True
+
 loadCSV :: FilePath -> IO CSV
 loadCSV f = do
   x <- parseCSVFromFile f 
@@ -195,7 +206,8 @@ augmentRows confs serverSchema hdr rst = do
               else do
                 putStrLn $ "\n\n ["++this_progname++"] Fields missing, filling in defaults: "++show (S.toList missing)
                 -- Start with the empty tuple, augmented with environmental info:
-                augmentResultWithConfig confs emptyBenchmarkResult
+                x <- augmentResultWithConfig confs emptyBenchmarkResult
+                return $ x { _WHO = "" } -- Don't use who output from the point in time where we run THIS command.
 
       let tuples = map (zip hdr) rst
           augmented = map (`unionBR` base) tuples
