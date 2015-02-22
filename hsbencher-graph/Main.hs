@@ -379,10 +379,11 @@ instance FromData String where
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
 type DataSeries = M.Map String [Point] 
-type Point = (SeriesData,SeriesData)
+data Point = Point { x::SeriesData, y::SeriesData }
+  deriving (Eq,Show,Ord,Read)
 
 insertVal :: DataSeries -> String -> Point -> DataSeries
-insertVal m key val@(_x,_y) =
+insertVal m key val =
   case M.lookup key m of
     Nothing -> M.insert key [val] m 
     Just vals -> M.insert key (val:vals) m
@@ -548,7 +549,8 @@ main = do
       plot_series0 = if normaliseSpecified       
                      then normalise base series2
                      else series2
-      renamer = buildRenamer renameTable 
+      renamer = buildRenamer renameTable
+      plot_series :: [(String, [Point])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
   
   chatter$ "Inferred types for X/Y axes: "++show series_type  
@@ -575,17 +577,17 @@ main = do
 
 
 -- | Don't produce an actual chart, rather write out the data as CSV.
-writeCSV :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
+writeCSV :: PlotConfig -> [(String, [Point])] -> IO ()
 -- Assumes a shared and sensible X axis for all data series.
 writeCSV PlotConfig{..} series = do
   -- ASSUMPTION: we assume a sensible Ord instance for
   -- SeriesData... that makes possible unfair assumptions about
   -- "deriving":
   let allKeys = map convertToString $
-                S.toAscList $ S.fromList $ concatMap ((map fst) . snd) series
+                S.toAscList $ S.fromList $ concatMap ((map x) . snd) series
       header = plotXLabel : map fst series
       alldata = M.map (\prs -> M.fromList
-                        [ (convertToString x, convertToString y) | (x,y) <- prs ] ) $ 
+                        [ (convertToString x, convertToString y) | Point{x,y} <- prs ] ) $ 
                 M.fromList series
       rows = [ key :
                [ case M.lookup key seriesMap of
@@ -714,10 +716,10 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 unifyTypes :: (String,[Point])
               -> (String,[Point])
 unifyTypes (name,series) =
-  let (xs,ys) = unzip series
+  let (xs,ys) = (map x series, map y series)
       xs' = unify xs
       ys' = unify ys
-  in (name,(zip xs' ys'))
+  in (name, zipWith Point xs' ys')
   where
     isString :: SeriesData -> Bool
     isString (StringData _) = True
@@ -739,7 +741,7 @@ unifyTypes (name,series) =
 typecheck :: [(String,[Point])] -> Maybe (ValueType, ValueType) 
 typecheck dat =
   let series = concatMap snd dat
-      (xs,ys) = unzip series
+      (xs,ys) = (map x series, map y series)
   in
    case length xs >= 1 && length ys >= 1 of 
      True ->
@@ -795,13 +797,13 @@ extractData keys (xcol,ycol) (ValidatedCSV header rest) = do
             ("","") -> do chatter$ "has no x/y values: " ++ show key ++ " discarding."
                           loop keyIxs xy (m,aux) restRows
             ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
-                          let aux' = insertVal aux key (StringData "NO_X_VALUE",
-                                                        toSeriesData a)
+                          let aux' = insertVal aux key (Point{ x= StringData "NO_X_VALUE"
+                                                             , y= toSeriesData a})
                           loop keyIxs xy (m,aux') restRows
             (_a,"") -> do chatter$ "has no y value: " ++ show key ++ " discarding."
                           loop keyIxs xy (m,aux) restRows
-            (x,y)   -> let m' = insertVal m key (toSeriesData x,
-                                                 toSeriesData y)
+            (x,y)   -> let m' = insertVal m key (Point { x= toSeriesData x
+                                                       , y= toSeriesData y})
                        in  loop keyIxs xy (m',aux) restRows
         
     
@@ -874,11 +876,12 @@ normalise _ [] = []
 normalise base0 ((nom,series):rest0) 
   = (nom,normalise' base0 series):normalise base0 rest0
   where
-    normalise' ::  [Point] ->  [Point] ->  [Point] 
+    normalise' ::  [Point] -> [Point] ->  [Point] 
     normalise' _ [] = []
-    normalise' base ((sx,sy):rest) =
+    normalise' base (Point{x=sx,y=sy}:rest) =
       doIt base (sx,sy) : normalise' base rest
-    doIt ((_x,NumData y):_) (sx,NumData sy) = (sx,NumData ((sy-y)/y))  
+    doIt ((Point{y=NumData y}):_) (sx,NumData sy) =
+      Point {x=sx, y=NumData ((sy-y)/y) }
   
 
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
