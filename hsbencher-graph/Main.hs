@@ -95,6 +95,12 @@ data ErrorCols = ErrDelta  ColName
                | ErrMinMax { errmin:: ColName,  errmax:: ColName }
   deriving (Show,Eq,Read,Ord)
 
+-- The error around a specific point in a given dimension can be
+-- either a delta or *bounds*.
+data ErrorVal = DeltaVal  Double
+              | MinMaxVal Double Double
+  deriving (Show,Eq,Read,Ord)
+           
 -- | Command line flags to the executable.
 data Flag = ShowHelp
           | ShowVersion -- TODO: implement this
@@ -379,7 +385,7 @@ instance FromData String where
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
 type DataSeries = M.Map String [Point] 
-data Point = Point { x::SeriesData, y::SeriesData }
+data Point = Point { x::SeriesData, y::SeriesData, err::Maybe Double }
   deriving (Eq,Show,Ord,Read)
 
 insertVal :: DataSeries -> String -> Point -> DataSeries
@@ -471,12 +477,14 @@ main = do
   let hasX    = (not . null) [ () | XValues _ <- options]  
       hasY    = (not . null) [ () | YValues _ <- options]  
 
-      xy =
+      xyerr =
         case hasX && hasY of
           False -> error "Both -x and -y arguments are needed"
           True  -> (head [x | XValues x <- options],
-                    head [y | YValues y <- options])
-  
+                    head [y | YValues y <- options],
+                    listToMaybe [ e | YErrValues e <- options ]
+                    )
+
       gnuPlotTemplate = head $ [ Just f | GnuPlotTemplate f <- options] ++ [Nothing]
   --------------------------------------------------
   -- All the collected parameters for the plotting. 
@@ -513,7 +521,7 @@ main = do
       dat4 = case [ c | Latest c <- options] of
                []  -> dat3
                [c] -> -- Here we must not collapse variation in the X axis:
-                      takeLatest (fst xy : key) c dat3
+                      takeLatest (fst3 xyerr : key) c dat3
                ls  -> error $ "Error: More than one --latest provided: "++show ls
   chatter $ "After validation, read total rows: " ++ show (length (rows dat1))
   _ <- evaluate (force (rows dat4))  -- Flush out error messages.
@@ -524,7 +532,7 @@ main = do
 
   unless (null [ () | Summary <- options ]) $ printSummary dat4
 
-  (csv,aux) <- extractData key xy dat4
+  (csv,aux) <- extractData key xyerr dat4
   chatter $ "Data series extracted, number of lines: " ++ show (M.size csv)
 
   chatter$ "Here is a sample of the CSV before renaming and normalization:\n" ++
@@ -713,13 +721,12 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 ---------------------------------------------------------------------------
 -- Types in the data 
 
-unifyTypes :: (String,[Point])
-              -> (String,[Point])
+unifyTypes :: (String,[Point]) -> (String,[Point])
 unifyTypes (name,series) =
-  let (xs,ys) = (map x series, map y series)
+  let (xs,ys,errs) = (map x series, map y series, map err series)
       xs' = unify xs
       ys' = unify ys
-  in (name, zipWith Point xs' ys')
+  in (name, zipWith3 Point xs' ys' errs)
   where
     isString :: SeriesData -> Bool
     isString (StringData _) = True
@@ -757,35 +764,34 @@ typecheck dat =
 -- | Extract the data we care about from in-memory CSV data:
 --      
 -- Note: This is in the IO monad only to produce chatter.
-extractData :: [ColName] -> (ColName,ColName) -> ValidatedCSV -> IO (DataSeries,DataSeries)
-extractData keys (xcol,ycol) (ValidatedCSV header rest) = do
-  let csv    = map strip header
-      keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csv)
-
-      xcolIx =
-        case elemIndex xcol csv of
-          Just ix -> ix
-          Nothing -> error $ show xcol ++ " is not present in csv." 
-      ycolIx =
-        case elemIndex ycol csv of
-          Just ix -> ix
-          Nothing -> error $ show ycol ++ " is not present in csv."        
+extractData :: [ColName] -> (ColName,ColName,Maybe ErrorCols)
+            -> ValidatedCSV -> IO (DataSeries,DataSeries)
+extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) = 
   case (length keyIxs) == (length keys) of
-    False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csv
+    False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csvhdr
     True -> do
-      (m',aux') <- loop keyIxs (xcolIx,ycolIx) (M.empty,M.empty) rest
+      (m',aux') <- loop (xcolIx,ycolIx) (M.empty,M.empty) rest
       return (m',aux')
   where
-    loop _ _ (m,aux) [] = return (m,aux)
-    loop keyIxs xy (m,aux) (row:restRows)= do
+    csvhdr = map strip header
+    keyIxs = catMaybes $ zipWith elemIndex keys (replicate (length keys) csvhdr)
+    xcolIx = getIx xcol
+    ycolIx = getIx ycol
+
+    getIx col =
+       case elemIndex col csvhdr of
+          Just ix -> ix
+          Nothing -> error $ show ycol ++ " is not present in csv."        
+
+    loop _ (m,aux) [] = return (m,aux)
+    loop xy (m,aux) (row:restRows)= do
       case row of
-        -- In the odd event that an empty line occurs 
-        []  -> loop keyIxs xy (m,aux) restRows
-        -- A real string, lets see if it contains anything useful. 
+        -- In the odd event that an empty line occurs:
+        []  -> loop xy (m,aux) restRows
+        -- A real string, lets see if it contains anything useful:
         _ -> do
           -- split out the csv fields 
           let csv = map strip row
-
               -- Construct a key
               key = combineFields keyIxs csv      
 
@@ -795,20 +801,30 @@ extractData keys (xcol,ycol) (ValidatedCSV header rest) = do
           -- May be of importance! 
           case (xStr,yStr) of
             ("","") -> do chatter$ "has no x/y values: " ++ show key ++ " discarding."
-                          loop keyIxs xy (m,aux) restRows
+                          loop  xy (m,aux) restRows
             ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
                           let aux' = insertVal aux key (Point{ x= StringData "NO_X_VALUE"
-                                                             , y= toSeriesData a})
-                          loop keyIxs xy (m,aux') restRows
+                                                             , y= toSeriesData a
+                                                             , err=Nothing })
+                          loop  xy (m,aux') restRows
             (_a,"") -> do chatter$ "has no y value: " ++ show key ++ " discarding."
-                          loop keyIxs xy (m,aux) restRows
-            (x,y)   -> let m' = insertVal m key (Point { x= toSeriesData x
-                                                       , y= toSeriesData y})
-                       in  loop keyIxs xy (m',aux) restRows
+                          loop  xy (m,aux) restRows
+            (x,y)   -> let e =
+                               case errcols of
+                                 Nothing -> Nothing
+                                 Just (ErrDelta nm) -> Just $ read $ collectVal (getIx nm) csv
+--                                 Just (ErrMinMax mn mx) -> Just (getIx mn, getIx mx)
+
+                           m' = insertVal m key (Point { x= toSeriesData x
+                                                       , y= toSeriesData y
+                                                       , err=e
+                                                       })
+                       in  loop  xy (m',aux) restRows
         
     
     collectXY (x,y) csv =  ( collectVal x csv
                            , collectVal y csv)
+    -- FIXME: I believe using maps is a lot cleaner 
     collectVal ix csv =
       -- trace ("Dereferencing !!2: "++show(csv,ix)) $
       csv !! ix 
@@ -878,10 +894,10 @@ normalise base0 ((nom,series):rest0)
   where
     normalise' ::  [Point] -> [Point] ->  [Point] 
     normalise' _ [] = []
-    normalise' base (Point{x=sx,y=sy}:rest) =
-      doIt base (sx,sy) : normalise' base rest
-    doIt ((Point{y=NumData y}):_) (sx,NumData sy) =
-      Point {x=sx, y=NumData ((sy-y)/y) }
+    normalise' base (pt:rest) =
+      doIt base pt : normalise' base rest
+    doIt ((Point{y=NumData y}):_) (Point {x=sx, y= NumData sy, err}) =
+      Point {x=sx, y=NumData ((sy-y)/y), err }
   
 
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
@@ -1038,4 +1054,5 @@ summarize limit str =
     (hd,_)  -> hd ++ "..."
 
 
-    
+fst3 :: (t, t1, t2) -> t
+fst3 (a,_,_) = a
