@@ -91,6 +91,10 @@ type ColName = String
 -- | For now we only pattern match by string inclusion.  TODO: support regexps?
 type Pattern = String
 
+data ErrorCols = ErrDelta  ColName
+               | ErrMinMax { errmin:: ColName,  errmax:: ColName }
+  deriving (Show,Eq,Read,Ord)
+
 -- | Command line flags to the executable.
 data Flag = ShowHelp
           | ShowVersion -- TODO: implement this
@@ -114,6 +118,8 @@ data Flag = ShowHelp
           | Key     { col :: ColName } -- --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
           | XValues { col :: ColName } -- column containing x-values
           | YValues { col :: ColName } -- column containing y-values
+
+          | YErrValues ErrorCols 
 
           | FilterContain { col :: ColName, pats :: [Pattern] }
           | FilterEq      { col :: ColName, pats :: [String] }
@@ -196,6 +202,13 @@ parseFilter s =
     (l:r1:rest) -> (l,r1:rest)
     _ -> error $ "--filter argument expected at least two strings separated by commas, not: "++s
 
+parseErrCols :: String -> ErrorCols
+parseErrCols s =
+  case splitOn universalSeparator s of
+    [one]   -> ErrDelta one
+    [mn,mx] -> ErrMinMax mn mx
+    _ -> error $ "--filter argument expected at least two strings separated by commas, not: "++s
+
 parsePad :: String -> (String,Int)
 parsePad s =
   case splitOn universalSeparator s of
@@ -221,6 +234,9 @@ core_cli_options =
      , Option ['x'] ["xvalue"] (ReqArg XValues "STR")      "Column containing x values"
      , Option ['y'] ["yvalue"] (ReqArg YValues "STR")      "Column containing y values"
 
+--     , Option [] ["error"] (ReqArg (YErrValues . parseErrCols) "STR")
+--       "Column containing error for Y dimension"
+       
      --  Not ready yet:
      , Option [] ["filtContain"] (ReqArg (uncurry FilterContain . parseFilter) "COL,VAL1,VAL2..") $
        "Filter leaving only rows where COL contains one\n" ++ 
@@ -253,9 +269,11 @@ core_cli_options =
        
      , Option []    []    (NoArg DummyFlag) "\n Presentation options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
+
+-- Not finished yet, don't mention [2015.02.22]:       
+--     , Option []    ["bars"] (NoArg (RenderMode Bars))       "Plot data as bars"
+--     , Option []    ["barclusters"] (NoArg (RenderMode BarClusters)) "Plot data as bar clusters"
        
-     , Option []    ["bars"] (NoArg (RenderMode Bars))       "Plot data as bars"
-     , Option []    ["barclusters"] (NoArg (RenderMode BarClusters)) "Plot data as bar clusters" 
      , Option []    ["lines"] (NoArg (RenderMode Lines))     "Plot data as lines"
      , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
      , Option []    ["xlabel"] (ReqArg XLabel "String")      "X-axis label"
@@ -360,9 +378,10 @@ instance FromData String where
 ---------------------------------------------------------------------------
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
-type DataSeries = M.Map String [(SeriesData,SeriesData)] 
+type DataSeries = M.Map String [Point] 
+type Point = (SeriesData,SeriesData)
 
-insertVal :: DataSeries -> String -> (SeriesData,SeriesData) -> DataSeries
+insertVal :: DataSeries -> String -> Point -> DataSeries
 insertVal m key val@(_x,_y) =
   case M.lookup key m of
     Nothing -> M.insert key [val] m 
