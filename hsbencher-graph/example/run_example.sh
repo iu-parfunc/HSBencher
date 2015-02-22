@@ -15,7 +15,7 @@ set -xe
 function go() {
     $HSG snowball-list.csv --GPL \
 	 --template=./template_both.gpl --renames=./renames.txt \
-	 --pad=THREADS,2 \
+	 --pad=THREADS,2 --error=MINTIME,MAXTIME \
          -x ARGS -y MEDIANTIME --key PROGNAME --key VARIANT --key THREADS $*
 }
 
