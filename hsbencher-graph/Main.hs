@@ -97,7 +97,8 @@ data ErrorCols = ErrDelta  ColName
 
 -- The error around a specific point in a given dimension can be
 -- either a delta or *bounds*.
-data ErrorVal = DeltaVal  Double
+data ErrorVal = NoError
+              | DeltaVal  Double
               | MinMaxVal Double Double
   deriving (Show,Eq,Read,Ord)
            
@@ -385,7 +386,7 @@ instance FromData String where
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
 type DataSeries = M.Map String [Point] 
-data Point = Point { x::SeriesData, y::SeriesData, err::Maybe Double }
+data Point = Point { x::SeriesData, y::SeriesData, err::ErrorVal }
   deriving (Eq,Show,Ord,Read)
 
 insertVal :: DataSeries -> String -> Point -> DataSeries
@@ -424,8 +425,8 @@ main = do
 
       normaliseSpecified = (not . null) [ () | NormaliseKey _ <- options] 
   
-      xRes = head $ [read x | XRes x <- options] ++ [800]
-      yRes = head $ [read y | YRes y <- options] ++ [600]
+      xRes = head $ [readInt x | XRes x <- options] ++ [800]
+      yRes = head $ [readInt y | YRes y <- options] ++ [600]
   
       plotTitle = head $ [t | Title t <- options] ++ ["NO_TITLE"]
       xLabel    = head $ [l | XLabel l <- options] ++
@@ -805,15 +806,17 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
             ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
                           let aux' = insertVal aux key (Point{ x= StringData "NO_X_VALUE"
                                                              , y= toSeriesData a
-                                                             , err=Nothing })
+                                                             , err=NoError })
                           loop  xy (m,aux') restRows
             (_a,"") -> do chatter$ "has no y value: " ++ show key ++ " discarding."
                           loop  xy (m,aux) restRows
             (x,y)   -> let e =
                                case errcols of
-                                 Nothing -> Nothing
-                                 Just (ErrDelta nm) -> Just $ read $ collectVal (getIx nm) csv
---                                 Just (ErrMinMax mn mx) -> Just (getIx mn, getIx mx)
+                                 Nothing -> NoError
+                                 Just (ErrDelta nm) -> DeltaVal $ readDbl $ collectVal (getIx nm) csv
+                                 Just (ErrMinMax mn mx) ->
+                                   MinMaxVal (readDbl$ collectVal (getIx mn) csv)
+                                             (readDbl$ collectVal (getIx mx) csv)
 
                            m' = insertVal m key (Point { x= toSeriesData x
                                                        , y= toSeriesData y
@@ -1056,3 +1059,18 @@ summarize limit str =
 
 fst3 :: (t, t1, t2) -> t
 fst3 (a,_,_) = a
+
+
+readDbl :: String -> Double
+readDbl s =
+  case reads s of
+    (d,_):_ -> d
+    _ -> error $ "Could not parse string as a Double: "++s    
+
+readInt :: String -> Int
+readInt s =
+  case reads s of
+    (x,_):_ -> x
+    _ -> error $ "Could not parse string as an Int: "++s
+    
+
