@@ -535,7 +535,7 @@ main = do
 
   renameTable <- fmap (concatMap lines) $
                  mapM readFile [f | Renames f <- options] 
-  let series1 :: [(String,[(SeriesData,SeriesData)])]
+  let series1 :: [(String,[Point])]
       series1 = M.assocs csv
   
       series2 = map unifyTypes series1
@@ -711,8 +711,8 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 ---------------------------------------------------------------------------
 -- Types in the data 
 
-unifyTypes :: (String,[(SeriesData,SeriesData)])
-              -> (String,[(SeriesData,SeriesData)])
+unifyTypes :: (String,[Point])
+              -> (String,[Point])
 unifyTypes (name,series) =
   let (xs,ys) = unzip series
       xs' = unify xs
@@ -736,7 +736,7 @@ unifyTypes (name,series) =
     convertToNum (NumData x) = NumData x
     convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
 
-typecheck :: [(String,[(SeriesData,SeriesData)])] -> Maybe (ValueType, ValueType) 
+typecheck :: [(String,[Point])] -> Maybe (ValueType, ValueType) 
 typecheck dat =
   let series = concatMap snd dat
       (xs,ys) = unzip series
@@ -868,13 +868,13 @@ getBaseVal normKey csv aux =
       
 
 
-normalise :: [(SeriesData,SeriesData)] -> [(String,[(SeriesData,SeriesData)])] -> [(String,[(SeriesData,SeriesData)])]
+normalise :: [Point] -> [(String,[Point])] -> [(String,[Point])]
 normalise []   _  = error "No Value to normalise against"
 normalise _ [] = []
 normalise base0 ((nom,series):rest0) 
   = (nom,normalise' base0 series):normalise base0 rest0
   where
-    normalise' ::  [(SeriesData,SeriesData)] ->  [(SeriesData,SeriesData)] ->  [(SeriesData,SeriesData)] 
+    normalise' ::  [Point] ->  [Point] ->  [Point] 
     normalise' _ [] = []
     normalise' base ((sx,sy):rest) =
       doIt base (sx,sy) : normalise' base rest
