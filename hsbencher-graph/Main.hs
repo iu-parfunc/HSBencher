@@ -640,6 +640,35 @@ writeCSV PlotConfig{..} series = do
 writeGnuplot :: Show a => PlotConfig -> [(a, t)] -> IO ()
 writeGnuplot PlotConfig{..} series = do
   let gplfile = replaceExtension plotOutFile "gpl"
+  let numSeries = length series      
+  let mkPlotClauses seriesName ind =
+        let basicLine sty = show plotOutFile++" using 1:"++show ind ++
+                            " title "++show seriesName++" w "++sty++" ls "++show(ind-1) 
+            errorStyle = " notitle with yerrorbars ls 99 " -- ++show(ind-1)
+        in 
+        case plotErrorCols of
+          Nothing -> [ basicLine "linespoints" ]
+          Just (ErrDelta _) ->
+            [ basicLine "lines" 
+            , show plotOutFile++" using 1:"++show ind++":"++
+              show (ind + numSeries) ++ errorStyle              
+            ]
+          Just (ErrMinMax _ _) ->
+            [ basicLine "lines" 
+            , show plotOutFile++" using 1:"++show ind++":"++
+              show (ind + numSeries)++":"++show (ind + 2*numSeries)++
+              errorStyle
+            ]
+      
+      -- usingClause ind =
+      --   case plotErrorCols of 
+      --     Nothing -> "using 1:"++show ind
+      --     Just (ErrDelta _)    -> "using 1:"++show ind++":"++ 
+      --                             show (ind + numSeries) ++ " with yerrorbars"
+      --     Just (ErrMinMax _ _) -> "using 1:"++show ind++":"++
+      --                             show (ind +   numSeries)++":"++
+      --                             show (ind + 2*numSeries) ++ " with yerrorbars"
+          
   chatter $ "Writing out Gnuplot script as well as CSV: "++gplfile
   let gplLines = [ "\n# Begin "++progName++" generated script:"
                  , "set xlabel "++ show plotXLabel
@@ -647,10 +676,10 @@ writeGnuplot PlotConfig{..} series = do
                  , "set output "++ show (replaceExtension plotOutFile "pdf")
                  , "# And because we're plotting CSV data:"
                  , "set datafile separator \",\""
-                 , "plot "++ concat (intersperse ", "
+                 , "plot "++ concat (intersperse ", \\\n     "
                    -- Line them up carefully by position:
-                   [ show plotOutFile++" using 1:"++show ind++" title "++show seriesName++" w lp ls "++show(ind-1)
-                   | ((seriesName, _),ind) <- zip series [2::Int ..] ])
+                   (concat [ mkPlotClauses seriesName ind
+                           | ((seriesName, _),ind) <- zip series [2::Int ..] ]))
                  ]
 -- TODO, make this into a library and look up the template file in ~/.cabal/share (from the Paths_ module)
 --      defaultTemplate = "template.gpl"
