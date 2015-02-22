@@ -810,14 +810,12 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
                           loop  xy (m,aux') restRows
             (_a,"") -> do chatter$ "has no y value: " ++ show key ++ " discarding."
                           loop  xy (m,aux) restRows
-            (x,y)   -> let e =
-                               case errcols of
+            (x,y)   -> let e = case errcols of
                                  Nothing -> NoError
                                  Just (ErrDelta nm) -> DeltaVal $ readDbl $ collectVal (getIx nm) csv
                                  Just (ErrMinMax mn mx) ->
                                    MinMaxVal (readDbl$ collectVal (getIx mn) csv)
                                              (readDbl$ collectVal (getIx mx) csv)
-
                            m' = insertVal m key (Point { x= toSeriesData x
                                                        , y= toSeriesData y
                                                        , err=e

@@ -21,8 +21,8 @@ function go() {
 
 go -o plot_both.csv
 
-go --filter=VARIANT,cnf     -o plot1.csv
-go --filter=VARIANT,normal  -o plot2.csv
+go --filtContain=VARIANT,cnf     -o plot1.csv
+go --filtContain=VARIANT,normal  -o plot2.csv
 
 gnuplot plot_both.gpl
 gnuplot plot1.gpl
