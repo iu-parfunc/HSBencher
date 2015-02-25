@@ -85,6 +85,7 @@ safeRead x = case reads (trim x) of
 parsePair :: String -> (String,String)
 parsePair s =
   case splitOn universalSeparator s of
+    ("":_)   -> error $ "bad value for --custom: "++show s
     (l:rest) -> (l, concat (intersperse "," rest))
     _ -> error $ "--custom argument expected at least two strings separated by commas, not: "++s
 
@@ -156,11 +157,13 @@ main = do
                   []  -> presets4
                   [n] -> presets4 { _THREADS = n }
                   ls  -> error $ "Multiple THREADS settings supplied!: "++show ls
-   let presets6 = presets5
+   let customs = [ (a,mkResult b) | SetCustom a b <- opts1 ]
+       presets6 = presets5
                   {
-                     _CUSTOM = _CUSTOM presets5 ++
-                               [ (a,mkResult b) | SetCustom a b <- opts1 ]
+                     _CUSTOM = _CUSTOM presets5 ++ customs                               
                   }
+
+   unless (null customs) $ putStrLn $ "Adding custom fields: "++show customs
    
    -- This bit could be abstracted nicely by the HSBencher lib:
    ------------------------------------------------------------
@@ -236,7 +239,7 @@ addReport Report{..} BenchmarkResult{..} =
        -- Use time to extrapolate the alloc rate / second:
        return (round(estPoint e * (1.0 / medtime)))
 
-  , _CUSTOM =
+  , _CUSTOM = _CUSTOM ++ 
     (maybe [] (\ e -> [("BYTES_ALLOC",DoubleResult (estPoint e))])
               (Map.lookup ("allocated","iters") ests)) ++
 
