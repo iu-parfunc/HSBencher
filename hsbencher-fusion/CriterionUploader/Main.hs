@@ -25,6 +25,7 @@ import Statistics.Resampling.Bootstrap                  ( Estimate(..) )
 -- Standard:
 import Control.Monad.Reader
 import Data.List as L
+import Data.List.Split (splitOn)
 import Data.Char (isSpace)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getProgName)
@@ -45,6 +46,7 @@ data ExtraFlag = TableName String
                  -- fields... we need a scalable way to do this.
                  -- Applicative options would help...
 --               | SetHostname  String 
+               | SetCustom String String
 
                | WriteCSV     FilePath
                | NoUpload
@@ -62,7 +64,9 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                        "Set the ARGS column in the uploaded data."
                      , Option [] ["threads"] (ReqArg (SetThreads . safeRead) "NUM")
                        "Set the THREADS column in the uploaded data."
-
+                     , Option [] ["custom"] (ReqArg (uncurry SetCustom . parsePair) "STR")
+                       "Given STR=COL,VAL, set custom column COL to value VAL."
+                       
                      , Option [] ["runflags"] (ReqArg SetRunTimeFlags "STR")
                        "Set the RUNTIME_FLAGS column in the uploaded data."
                        
@@ -76,6 +80,25 @@ safeRead :: String -> Int
 safeRead x = case reads (trim x) of
               (n,[]):_ -> n
               _        -> error $ "error: could not parse as Int: "++x
+
+-- | Parse the comma-separated "COL,VAL" string.
+parsePair :: String -> (String,String)
+parsePair s =
+  case splitOn universalSeparator s of
+    (l:rest) -> (l, concat (intersperse "," rest))
+    _ -> error $ "--custom argument expected at least two strings separated by commas, not: "++s
+
+-- | Yech, this is hacky silliness.
+mkResult :: String -> SomeResult
+mkResult s =
+  case reads (trim s) of
+    (d,[]):_ -> DoubleResult d
+    _        -> StringResult s
+    
+-- | For now this application is hardcoded to use a particular
+-- separator in both rename files and command line arguments.
+universalSeparator :: String
+universalSeparator = ","
 
 trim :: String -> String
 trim = f . f
@@ -133,6 +156,11 @@ main = do
                   []  -> presets4
                   [n] -> presets4 { _THREADS = n }
                   ls  -> error $ "Multiple THREADS settings supplied!: "++show ls
+   let presets6 = presets5
+                  {
+                     _CUSTOM = _CUSTOM presets5 ++
+                               [ (a,mkResult b) | SetCustom a b <- opts1 ]
+                  }
    
    -- This bit could be abstracted nicely by the HSBencher lib:
    ------------------------------------------------------------
@@ -148,8 +176,8 @@ main = do
    case plainargs of
      [] -> error "No file given to upload!"
      reports -> do
-       maybe (return ()) (doCSV gconf3 presets5 reports) csvPath
-       unless noup $ forM_ reports (doupload gconf3 presets5)
+       maybe (return ()) (doCSV gconf3 presets6 reports) csvPath
+       unless noup $ forM_ reports (doupload gconf3 presets6)
 
 doupload :: Config -> BenchmarkResult -> FilePath -> IO ()
 doupload confs presets file = do
