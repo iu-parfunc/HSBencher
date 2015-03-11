@@ -54,6 +54,7 @@ import Graphics.Rendering.Chart.Easy as C
 
 
 {- DEVLOG
+  - 11 March 2015: Added Points to GraphMode 
 
   - 20 Nov 2014: Starting some simplifications and cleanups
 
@@ -177,7 +178,7 @@ convToFileFormat MyPS  = Cairo.PS
 convToFileFormat MyCSV = error "Cairo does not do CSV output"
 #endif
 
-data GraphMode = Bars | BarClusters | Lines 
+data GraphMode = Bars | BarClusters | Lines | Points 
                deriving (Eq, Ord, Show, Read )
 
 -- | Type of values stored in a series
@@ -284,8 +285,10 @@ core_cli_options =
 -- Not finished yet, don't mention [2015.02.22]:       
 --     , Option []    ["bars"] (NoArg (RenderMode Bars))       "Plot data as bars"
 --     , Option []    ["barclusters"] (NoArg (RenderMode BarClusters)) "Plot data as bar clusters"
-       
+
+     , Option []    ["points"] (NoArg (RenderMode Points))   "Plot data as points" 
      , Option []    ["lines"] (NoArg (RenderMode Lines))     "Plot data as lines"
+       
      , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
      , Option []    ["xlabel"] (ReqArg XLabel "String")      "X-axis label"
      , Option []    ["ylabel"] (ReqArg YLabel "String")      "Y-axis label"
@@ -413,6 +416,7 @@ data PlotConfig = PlotConfig { plotOutFile    :: FilePath
                              , plotXLog       :: Bool
                              , plotErrorCols  :: Maybe ErrorCols
                              , gnuPlotTemplate :: Maybe FilePath
+                             , plotMode       :: GraphMode
                              }
                   deriving (Show, Eq, Read, Ord)
 
@@ -492,6 +496,19 @@ main = do
                     plotErrorCols )
 
       gnuPlotTemplate = head $ [ Just f | GnuPlotTemplate f <- options] ++ [Nothing]
+
+      renderModes = [ x | RenderMode x <- options]
+
+  renderMode <- 
+    case renderModes of
+      [] -> do
+        chatter $ "No mode (--lines, --points) specified. Defaulting to draw lines"
+        return Lines
+      [x] -> return x 
+      (x:_) -> do
+        chatter $ "More than one mode specified. Using " ++ show x
+        return x 
+  
   --------------------------------------------------
   -- All the collected parameters for the plotting. 
   let plotConf = PlotConfig outFile
@@ -504,6 +521,7 @@ main = do
                             x_logscale
                             plotErrorCols
                             gnuPlotTemplate
+                            renderMode
   
   --------------------------------------------------
   -- Acquire data:
@@ -642,23 +660,27 @@ writeGnuplot PlotConfig{..} series = do
   let gplfile = replaceExtension plotOutFile "gpl"
   let numSeries = length series      
   let mkPlotClauses seriesName ind =
-        let basicLine sty = show plotOutFile++" using 1:"++show ind ++
-                            " title "++show seriesName++" w "++sty++" ls "++show(ind-1) 
-            errorStyle = " notitle with yerrorbars ls 99 " -- ++show(ind-1)
-        in 
-        case plotErrorCols of
-          Nothing -> [ basicLine "linespoints" ]
-          Just (ErrDelta _) ->
-            [ basicLine "lines" 
-            , show plotOutFile++" using 1:"++show ind++":"++
-              show (ind + numSeries) ++ errorStyle              
-            ]
-          Just (ErrMinMax _ _) ->
-            [ basicLine "lines" 
-            , show plotOutFile++" using 1:"++show ind++":"++
-              show (ind + numSeries)++":"++show (ind + 2*numSeries)++
-              errorStyle
-            ]
+        case plotMode of
+          Lines -> 
+            let basicLine sty = show plotOutFile++" using 1:"++show ind ++
+                                " title "++show seriesName++" w "++sty++" ls "++show(ind-1) 
+                errorStyle = " notitle with yerrorbars ls 99 " -- ++show(ind-1)
+            in 
+             case plotErrorCols of
+               Nothing -> [ basicLine "linespoints" ]
+               Just (ErrDelta _) ->
+                 [ basicLine "lines" 
+                 , show plotOutFile++" using 1:"++show ind++":"++
+                   show (ind + numSeries) ++ errorStyle              
+                 ]
+               Just (ErrMinMax _ _) ->
+                 [ basicLine "lines" 
+                 , show plotOutFile++" using 1:"++show ind++":"++
+                   show (ind + numSeries)++":"++show (ind + 2*numSeries)++
+                   errorStyle
+                 ]
+          Points -> [show plotOutFile++" using 1:"++show ind ++
+                     " title "++show seriesName++" w points ps "++show(ind-1)]
       
       -- usingClause ind =
       --   case plotErrorCols of 
