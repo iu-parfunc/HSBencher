@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.20.0.4
+version:             1.20.0.5
 ----------------------------------------
 -- Detailed CHANGELOG:
 ----------------------------------------
@@ -63,6 +63,7 @@ version:             1.20.0.4
 -- 1.20     : add --bindir
 -- 1.20.0.3 : bugfix, #71, runSL change
 -- 1.20.0.4 : Build time environmentVariables
+-- 1.20.0.5 : GHC 7.10 support
 
 -----------------------------------------------------------------------------------------
 
@@ -79,7 +80,7 @@ description: Benchmark frameworks are usually very specific to the
   managing the data that results.
  .
   Benchmark data is stored in simple text files, and optionally
-  uploaded via pluggable backend packages such as `hsbencher-fusion`, 
+  uploaded via pluggable backend packages such as `hsbencher-fusion`,
   which uploads to Google Fusion Tables.
   -- TODO: Describe clusterbench functionality when it's ready.
  .
@@ -96,9 +97,9 @@ description: Benchmark frameworks are usually very specific to the
   benchmarks that are well supported by "Criterion".
  .
  .
- `hsbencher` is used by creating a script or executable that imports `HSBencher` 
-  and provides a list of benchmarks, each of which is decorated with its 
-  parameter space.  Below is a minimal example that creates a two-configuration 
+ `hsbencher` is used by creating a script or executable that imports `HSBencher`
+  and provides a list of benchmarks, each of which is decorated with its
+  parameter space.  Below is a minimal example that creates a two-configuration
   parameter space:
  .
  @
@@ -114,7 +115,7 @@ description: Benchmark frameworks are usually very specific to the
  .
  More examples can be found here:
    <https://github.com/rrnewton/HSBencher/tree/master/hsbencher/example>
- . 
+ .
  ChangeLog:
  .
  * (1.3.8) Added @--skipto@ and @--runid@ arguments
@@ -138,17 +139,17 @@ description: Benchmark frameworks are usually very specific to the
  .
  * (1.20)   Add "--bindir" command line argument.
 
- -- * (1.9) 
+ -- * (1.9)
  -- .
- -- * (1.10) 
+ -- * (1.10)
  -- .
- -- * (1.11) 
- -- . 
- -- * (1.12) 
- -- . 
- -- * (1.13) 
- -- . 
- -- * (1.14) 
+ -- * (1.11)
+ -- .
+ -- * (1.12)
+ -- .
+ -- * (1.13)
+ -- .
+ -- * (1.14)
 
 
 
@@ -181,13 +182,13 @@ Source-repository head
   type:  git
   location: https://github.com/rrnewton/HSBencher
 
-Library 
+Library
 
   -- First, modules for the end user:
   exposed-modules: HSBencher
                    HSBencher.Backend.Dribble
   -- Second, internal modules:
-  exposed-modules: 
+  exposed-modules:
                    HSBencher.Types
                    HSBencher.Harvesters
                    HSBencher.Methods.Builtin
@@ -198,12 +199,10 @@ Library
                    HSBencher.Internal.BenchSpace
                    HSBencher.Internal.MeasureProcess
   other-modules: Paths_hsbencher
-  build-depends:   
-      -- base ==4.6.*, bytestring ==0.10.*, process ==1.1.*, directory ==1.2.*, filepath ==1.3.*, random ==1.0.*, 
-      -- unix ==2.6.*, containers ==0.5.*, time ==1.4.*, mtl ==2.1.*, async >= 2.0,
-      base >= 4.5 && <= 4.8, bytestring, process >= 1.2, 
-      directory, filepath, random, unix, containers, time, mtl, 
-      async >= 2.0, 
+  build-depends:
+      base >= 4.5 && < 4.9, bytestring, process >= 1.2,
+      directory, filepath, random, unix, containers, time, mtl,
+      async >= 2.0,
       io-streams >= 1.1,
       data-default >= 0.5.3,
       GenericPretty >= 1.2
@@ -219,15 +218,15 @@ Library
 -----------------------------------------------------------------------------------------------
 -- Executable hsbencher
 --   main-is: Main.hs
---   -- other-modules:       
+--   -- other-modules:
 --   build-depends:
 --       -- <DUPLICATED from above>
---       base >= 4.5, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async, 
+--       base >= 4.5, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async,
 --       hydra-print >= 0.1.0.3, io-streams >= 1.0,
 --       GenericPretty >= 1.2
 --       -- </DUPLICATED>
 
---   ghc-options: -threaded 
+--   ghc-options: -threaded
 --   default-language:    Haskell2010
 
 
@@ -240,10 +239,10 @@ Test-suite hsbencher-unit-tests
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10
   -- Additional deps for testing:
-  build-depends: test-framework >= 0.8, 
+  build-depends: test-framework >= 0.8,
                  test-framework-hunit >= 0.3,
                  HUnit, time, text
-  ghc-options: -threaded 
+  ghc-options: -threaded
   default-language:  Haskell2010
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
@@ -257,7 +256,7 @@ Test-suite hsbencher-test1
   build-depends: hsbencher
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
-  ghc-options: -threaded 
+  ghc-options: -threaded
   default-language:  Haskell2010
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
@@ -271,7 +270,7 @@ Test-suite hsbencher-test2
   build-depends: hsbencher
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
-  ghc-options: -threaded 
+  ghc-options: -threaded
   default-language:  Haskell2010
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
@@ -286,9 +285,8 @@ Test-suite hsbencher-test3
   build-depends: hsbencher
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
-  ghc-options: -threaded 
+  ghc-options: -threaded
   default-language:  Haskell2010
   if flag(hydra) {
      build-depends: hydra-print >= 0.1.0.3
   }
-
