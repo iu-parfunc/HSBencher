@@ -3,7 +3,7 @@
 set -xe
 
 if [ "$CABAL" == "" ]; then
- CABAL=cabal
+ CABAL=cabal-1.22
 fi
 
 PKGS=" ./hsbencher/ ./hsbencher-fusion/ ./hsbencher-codespeed ./hsbencher-analytics ./hgdata "
