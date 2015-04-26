@@ -63,7 +63,6 @@ version:             1.20.0.5
 -- 1.20     : add --bindir
 -- 1.20.0.3 : bugfix, #71, runSL change
 -- 1.20.0.4 : Build time environmentVariables
--- 1.20.0.5 : GHC 7.10 support
 
 -----------------------------------------------------------------------------------------
 
@@ -138,6 +137,9 @@ description: Benchmark frameworks are usually very specific to the
             Also allow filtering of benchmarks by BenchSpace as well.
  .
  * (1.20)   Add "--bindir" command line argument.
+ .
+ * (1.20.0.5) : GHC 7.10 support
+
 
  -- * (1.9)
  -- .

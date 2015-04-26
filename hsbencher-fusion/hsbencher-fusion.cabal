@@ -1,29 +1,47 @@
 name:                hsbencher-fusion
-version:             0.3.15.1
+version:             0.3.15.2
 synopsis:            Backend for uploading benchmark data to Google Fusion Tables.
 description:
-         Google Fusion tables are a type of Google Doc that resembles a
-         SQL database more than a spreadsheet.  They have a web
-         interface and permissions model similar to toher google docs.
-         More information can be found at:
-           <https://support.google.com/fusiontables/answer/2571232?hl=en>
-         .
-         ChangeLog:
-         .
-         * (0.3) Added RETRIES field to the core schema.
-         * (0.3.3) Jump to new versions of handa-gdata, network, and http-conduit
-         * (0.3.5) Add findTableId/makeTable/ensureColumns
-         * (0.3.6) --variant command line argument for criterion uploader
-         * (0.3.7) Routines for bulk-upload of rows.
-         * (0.3.8) Add --threads to hsbencher-fusion-upload-criterion
-         * (0.3.9) Change type of uploadRows
-         * (0.3.10) Add -o to hsbencher-fusion-upload-csv
-         * (0.3.11) Add --matchserver to hsbencher-fusion-upload-csv
-         * (0.3.12) Add --runflags to hsbencher-fusion-upload-criterion
-         * (0.3.13) Fix problem with blank lines.
-         * (0.3.14) Bugfix #80
-         * (0.3.15) add --custom to hsbencher-fusion-upload-criterion
-         * (0.3.15.1) ghc 7.10.1 support
+  Google Fusion tables are a type of Google Doc that resembles a
+  SQL database more than a spreadsheet.  They have a web
+  interface and permissions model similar to toher google docs.
+  More information can be found at:
+    <https://support.google.com/fusiontables/answer/2571232?hl=en>
+  .
+  This package provides both a library, which provides a plugin for use
+  with custom HSBencher harnesses, as well as executables for uploading
+  already existing benchmark data (from Criterion or an earlier HSBencher run)
+  to the fusion table.
+  .
+  ChangeLog:
+  .
+  * (0.3) Added RETRIES field to the core schema.
+  .
+  * (0.3.3) Jump to new versions of handa-gdata, network, and http-conduit
+  .
+  * (0.3.5) Add findTableId/makeTable/ensureColumns
+  .
+  * (0.3.6) --variant command line argument for criterion uploader
+  .
+  * (0.3.7) Routines for bulk-upload of rows.
+  .
+  * (0.3.8) Add --threads to hsbencher-fusion-upload-criterion
+  .
+  * (0.3.9) Change type of uploadRows
+  .
+  * (0.3.10) Add -o to hsbencher-fusion-upload-csv
+  .
+  * (0.3.11) Add --matchserver to hsbencher-fusion-upload-csv
+  .
+  * (0.3.12) Add --runflags to hsbencher-fusion-upload-criterion
+  .
+  * (0.3.13) Fix problem with blank lines.
+  .
+  * (0.3.14) Bugfix #80
+  .
+  * (0.3.15) add --custom to hsbencher-fusion-upload-criterion
+  .
+  * (0.3.15.1) ghc 7.10.1 support
 
 -- Full ChangeLog (detailing anything omitted above):
 --  :
