@@ -10,7 +10,7 @@ PKGS=" ./hsbencher/ ./hsbencher-fusion/ ./hsbencher-codespeed ./hsbencher-analyt
 
 $CABAL --version
 
-if [ "NOSETUP" == "1" ]; then
+if [ "NOSETUP" != "1" ]; then
   git submodule update --init
   $CABAL sandbox init
 fi
