@@ -15,7 +15,11 @@ if [ "NOSETUP" != "1" ]; then
   $CABAL sandbox init
 fi
 
-$CABAL install $PKGS -j --run-tests
+$CABAL install $PKGS -j --enable-tests
+
+cd ./hsbencher/
+$CABAL test
+cd ..
 
 # Next, build individual tests/examples that we can't actually run,
 # because we don't want to connect to the network and upload data:
