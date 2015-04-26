@@ -22,7 +22,7 @@ if [ "NOSETUP" != "1" ]; then
 fi
 
 # "--run-tests" Requires cabal 1.20+
-$CABAL install $PKGS -j --run-tests
+$CABAL install $PKGS -j --enable-tests
 
 cd "./hsbencher/"
 $CABAL test
