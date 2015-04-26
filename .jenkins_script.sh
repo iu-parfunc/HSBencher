@@ -17,6 +17,7 @@ if [ "NOSETUP" != "1" ]; then
   for pkg in $PKGS; do
       cd "$pkg"
       $CABAL sandbox init --sandbox=../.cabal-sandbox/
+      cd "$TOP"
   done
 fi
 
