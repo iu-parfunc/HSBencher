@@ -9,17 +9,23 @@ fi
 PKGS=" ./hsbencher/ ./hsbencher-fusion/ ./hsbencher-codespeed ./hsbencher-analytics ./hgdata "
 
 $CABAL --version
+TOP=`pwd`
 
 if [ "NOSETUP" != "1" ]; then
   git submodule update --init
   $CABAL sandbox init
+  for pkg in $PKGS; do
+      cd "$pkg"
+      $CABAL sandbox init --sandbox=../.cabal-sandbox/
+  done
 fi
 
-$CABAL install $PKGS -j --enable-tests
+# "--run-tests" Requires cabal 1.20+
+$CABAL install $PKGS -j --run-tests
 
-cd ./hsbencher/
+cd "./hsbencher/"
 $CABAL test
-cd ..
+cd "$TOP"
 
 # Next, build individual tests/examples that we can't actually run,
 # because we don't want to connect to the network and upload data:
