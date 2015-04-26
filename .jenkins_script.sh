@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -xe 
+set -xe
 
 if [ "$CABAL" == "" ]; then
  CABAL=cabal
@@ -9,8 +9,12 @@ fi
 PKGS=" ./hsbencher/ ./hsbencher-fusion/ ./hsbencher-codespeed ./hsbencher-analytics ./hgdata "
 
 $CABAL --version
-git submodule update --init
-$CABAL sandbox init
+
+if [ "NOSETUP" == "1" ]; then
+  git submodule update --init
+  $CABAL sandbox init
+fi
+
 $CABAL install $PKGS -j --run-tests
 
 # Next, build individual tests/examples that we can't actually run,
