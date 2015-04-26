@@ -67,24 +67,34 @@ cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0"
 -- 
 ---------------------------------------------------------------------------
 
+-- Notes and observations:
+-- Some laws:
+--   hsbencher-graph a b  ==  cat a b > c ; hsbencher-graph c
+--   hsbencher-graph a b  ==  hsbencher-graph b a
+
+-- Possible changes:
+--   Get rid of no-pipe and behave like "cat".
+
+type ColName = String
+
 -- | Command line flags to the executable.
 data Flag = ShowHelp | ShowVersion
-          | File String       -- files must have same CSV layout
-                              -- and same format as any CSV arriving in pipe
-          | OutFile String
+          | File FilePath  -- ^ files must have same CSV layout
+                           -- and same format as any CSV arriving in pipe
+          | OutFile FilePath
           | RenderMode GraphMode
-          | Title String
-          | XLabel String
-          | YLabel String
+          | Title  String -- ^ Title in the output plot.
+          | XLabel String -- ^ Label of x-axis in output plot.
+          | YLabel String -- ^ Label of y-axis in output plot.
 
           -- identify part of a key 
-          | Key String -- --key="Arg1" --key?"Arg2" means Arg1_Arg2 is the name of data series
-          | XValues String -- column containing x-values
-          | YValues String -- column containing y-values
+          | Key String -- | --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
+          | XValues ColName -- ^ column containing x-values
+          | YValues ColName -- ^ column containing y-values
 
           -- output resolution  
-          | XRes String
-          | YRes String
+          | XRes String -- ^ Output image x-resolution (when applicable)
+          | YRes String -- ^ Output image y-resolution (when applicable)
 
           -- output format
           | OutFormat MyFileFormat

@@ -182,7 +182,8 @@ runOne (iterNum, totalIters) _bldid bldres
 
 
 ------------------------------------------------------------
-runA_gatherContext :: FilePath -> [String] -> [(a, ParamSetting)] -> ReaderT Config IO ([String], [String], FilePath)
+runA_gatherContext :: FilePath -> [String] -> [(DefaultParamMeaning, ParamSetting)] ->
+                      ReaderT Config IO ([String], [String], FilePath)
 runA_gatherContext testPath cmdargs runconfig = do 
   Config{shortrun, argsBeforeFlags} <- ask
   let runParams = [ s | (_,RuntimeParam s) <- runconfig ]
@@ -207,6 +208,10 @@ runA_gatherContext testPath cmdargs runconfig = do
   return (args,fullargs,testRoot)
 
 
+-- | The accumulated config options that affect how we run a process
+-- data ProcessEnv = ProcessEnv { envVars :: String }
+
+
 ------------------------------------------------------------
 runB_runTrials :: [String] -> Maybe Double -> BuildResult 
                -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO (Int,[RunResult])
@@ -228,8 +233,11 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
                        printf "(Cleaning system with user-specified action to achieve an isolated run...)\n"
                        catch act $ \ (e::SomeException) -> 
                           printf $ "WARNING! user-specified cleanup action threw an exception:\n  "++show e++"\n"
-    let envVars = toEnvVars  runconfig
+    ----------------------------------------                          
+    -- Unpack what the ParamSetting means for this run:
+    let envVars  = toEnvVars   runconfig
     let affinity = getAffinity runconfig 
+    ----------------------------------------
     
     let _doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
@@ -283,6 +291,9 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
              Config{ retryFailed } <- ask 
              trialLoop (ind+1) trials (fromMaybe 0 retryFailed) retryAcc (this:acc)
 
+-- | Get the number of threads and the NUMA CPUAffinity that goes with
+-- it.  Together, these let us identify exactly which cores we want to
+-- work on.
 getAffinity :: [(DefaultParamMeaning, ParamSetting)] -> Maybe (Int, CPUAffinity)
 getAffinity cfg = case [ aff | (_, CPUSet aff) <- cfg ] of
                     []  -> Nothing
@@ -306,53 +317,18 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
                              Variant s -> s
                              _         -> acc)
                    "none" runconfig
-
-  let pads n s = take (max 1 (n - length s)) $ repeat ' '
-      padl n x = pads n x ++ x 
-      padr n x = x ++ pads n x
-
-  Config{ keepgoing } <- ask 
-  let exitCheck = when (any isError nruns && not keepgoing) $ do 
-                    log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
-                    liftIO exitFailure
-                    
-  -- FIXME: this old output format can be factored out into a plugin or discarded:
-  --------------------------------------------------------------------------------
-  (_t1,_t2,_t3,_p1,_p2,_p3) <-
-    if all isError nruns then do
-      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
-      logOn [ResultsFile]$ 
-        printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
-                                  (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
-      exitCheck
-      return ("","","","","","")
-    else do
-      exitCheck
-      let goodruns = filter (not . isError) nruns
+      -- Warning: some of these values are only conditionally evaluate below:
+      goodruns = filter (not . isError) nruns
       -- Extract the min, median, and max:
-          sorted = sortBy (\ a b -> compare (gettime a) (gettime b)) goodruns
-          minR = head sorted
-          maxR = last sorted
-          medianR = sorted !! (length sorted `quot` 2)
-
-      let ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
-                             [gettime minR, gettime medianR, gettime maxR]
-          prods@[p1,p2,p3] = map mshow [getprod minR, getprod medianR, getprod maxR]
-          mshow Nothing  = "0"
-          mshow (Just x) = showFFloat (Just 2) x "" 
-
-          -- These are really (time,prod) tuples, but a flat list of
-          -- scalars is simpler and readable by gnuplot:
-          formatted = (padl 15$ unwords $ ts)
-                      ++"   "++ unwords prods -- prods may be empty!
-
-      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
-
-      logOn [ResultsFile]$ 
-        printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
-                                (padr 8$ sched) (padr 3$ show numthreads) formatted
-  --------------------------------------------------------------------------------
-      
+      sorted = sortBy (\ a b -> compare (gettime a) (gettime b)) goodruns
+      minR = head sorted
+      maxR = last sorted
+      medianR = sorted !! (length sorted `quot` 2)
+  
+  if all isError nruns then 
+    log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
+  else (do
+--      log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted        
       -- These should be either all Nothing or all Just:
       let jittimes0 = map getjittime goodruns
           misses = length (filter (==Nothing) jittimes0)
@@ -410,8 +386,41 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
                             )
           Right () -> return ()
         return ()
+      )
 
-      return (t1,t2,t3,p1,p2,p3)
+  -- Bad exit check:
+  (do Config{ keepgoing } <- ask 
+      when (any isError nruns && not keepgoing) $ do 
+        log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
+        liftIO exitFailure)
+
+  -- FIXME: this old output format can be factored out into a plugin or discarded:
+  --------------------------------------------------------------------------------
+  _ <- (do
+    let pads n s = take (max 1 (n - length s)) $ repeat ' '
+        padl n x = pads n x ++ x 
+        padr n x = x ++ pads n x
+        ts@[t1,t2,t3]    = map (\x -> showFFloat Nothing x "")
+                           [gettime minR, gettime medianR, gettime maxR]
+        prods@[p1,p2,p3] = map mshow [getprod minR, getprod medianR, getprod maxR]
+        mshow Nothing  = "0"
+        mshow (Just x) = showFFloat (Just 2) x "" 
+        -- These are really (time,prod) tuples, but a flat list of
+        -- scalars is simpler and readable by gnuplot:
+        formatted = (padl 15$ unwords $ ts)
+                    ++"   "++ unwords prods -- prods may be empty!
+    if all isError nruns then (do
+      logOn [ResultsFile]$ 
+        printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
+                                  (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
+      return ("","","","","",""))
+    else do
+
+      logOn [ResultsFile]$ 
+        printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
+                                (padr 8$ sched) (padr 3$ show numthreads) formatted
+      return (t1,t2,t3,p1,p2,p3))
+  --------------------------------------------------------------------------------
 
   -- If -keepgoing is set, we consider only errors on all runs to
   -- invalidate the whole benchmark job:

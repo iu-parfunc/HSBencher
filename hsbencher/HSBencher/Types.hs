@@ -35,7 +35,7 @@ module HSBencher.Types
          compileOptsOnly, isCompileTime,
          toCompileFlags, toEnvVars, toCmdPaths,
          BuildID, makeBuildID,
-         DefaultParamMeaning(..),
+         DefaultParamMeaning(..), interpretDefaultParamMeaning,
          
          -- * HSBencher Driver Configuration
          Config(..), BenchM, CleanupAction(..),
@@ -322,13 +322,39 @@ data BenchSpace meaning = And [BenchSpace meaning]
                         | Set meaning ParamSetting 
  deriving (Show,Eq,Ord,Read, Generic)
 
--- | A default notion of what extra benchmark arguments actually *mean*.
+-- | A default notion of what extra benchmark arguments actually
+-- *mean*, which in turn affects what information is recorded along
+-- with the measurements in `BenchmarkResult`.
 --
--- Currently this consists of a "setter" for fields of
--- `BenchmarkResult`.  If we used an record package such as fclabels it
--- would be possible to derive this automatically.  (But at a glance,
--- we wouldn't be able to do it as a closed sum with a Show/Read instance.)
+-- The key distinction between the LHS and RHS of `Set`, is that this
+-- meaning parameter does NOT have any EFFECT.  It does not affect
+-- either the compile or run phases.  Rather, it just *describes* the
+-- effect of the RHS (in cases where it is not self explanatory).
+--
+-- Currently each variant of this datatype consists is a "setter" for
+-- a corresponding field of `BenchmarkResult`.  (If we used an record
+-- package such as fclabels it would be possible to derive this
+-- automatically.  But at a glance, we wouldn't be able to do it as a
+-- closed sum with a Show/Read instance.)
 -- 
+data DefaultParamMeaning
+  -- TODO: REMOVE Threads/Variant and 
+  = Threads Int    -- ^ Set the number of threads.
+  | Variant String -- ^ Which scheduler/implementation/etc.
+
+  | COMPILER    String
+  | TOPOLOGY    String
+  | PROCESSOR   String
+
+  | CUSTOM Tag SomeResult
+     -- ^ Set a custom column in the output benchmarkResult.  This is
+     -- not as strongly typed as it might be; it us the user's
+     -- responsibility to make sure the type of the RHS matches the
+     -- type of the column selected by the LHS.
+
+  | NoMeaning
+{-
+
 -- Any option set by the parameter space OVERRIDES any global setting.
 -- For example, even `_PROGNAME` and `_HOSTNAME` can be overwritten
 -- here.  (Even though they almost never should be.)
@@ -336,10 +362,7 @@ data BenchSpace meaning = And [BenchSpace meaning]
 -- Also, because this datatype is designed manually, rather than
 -- derived, it intentionally omits some fields that really should
 -- never ever be set based on static inforhmation only, such as "MEDIANTIME"
-data DefaultParamMeaning
-  -- TODO: REMOVE Threads/Variant and 
-  = Threads Int    -- ^ Set the number of threads.
-  | Variant String -- ^ Which scheduler/implementation/etc.
+
   | PROGNAME String
 -- | ARGS [String] -- SUBSUMED BY RUNTIMEARG
   | HOSTNAME String 
@@ -347,15 +370,14 @@ data DefaultParamMeaning
   | CI_BUILD_ID String 
   | DATETIME    String 
   | TRIALS      Int  
-  | COMPILER    String  
+
   | COMPILE_FLAGS  String
   | RUNTIME_FLAGS  String 
   | ENV_VARS       String  
   | BENCH_VERSION  String 
   | BENCH_FILE  String    
   | UNAME       String     
-  | PROCESSOR   String
-  | TOPOLOGY    String     
+
   | GIT_BRANCH  String     
   | GIT_HASH    String     
   | GIT_DEPTH   Int        
@@ -363,11 +385,6 @@ data DefaultParamMeaning
   | ETC_ISSUE   String     
   | LSPCI       String     
   | RETRIES Int
-  | CUSTOM Tag SomeResult
-     -- ^ Set a custom column in the output benchmarkResult.  This is
-     -- not as strongly typed as it might be; it us the user's
-     -- responsibility to make sure the type of the RHS matches the
-     -- type of the column selected by the LHS.
 
 -- These fields can only be set based on dynamic information:
 --  | AllTimes  String
@@ -383,9 +400,23 @@ data DefaultParamMeaning
 --  | _MEDIANTIME_PRODUCTIVITY ::  Maybe Double  -- ^ GC productivity (if recorded) for the mediantime run.
 --  | _MAXTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the maxtime run.
 --  | FULL_LOG   :: String
-    
-  | NoMeaning
+-}    
  deriving (Show,Eq,Ord,Read, Generic)
+
+-- | Give an interpretation to a DefaultParamMeaning as a "setter" for
+-- the `BenchmarkResult` record.
+interpretDefaultParamMeaning :: DefaultParamMeaning -> BenchmarkResult -> BenchmarkResult
+interpretDefaultParamMeaning NoMeaning bs = bs
+interpretDefaultParamMeaning (Threads prm)   bs = bs { _THREADS = prm }
+interpretDefaultParamMeaning (Variant prm)   bs = bs { _VARIANT = prm }
+interpretDefaultParamMeaning (COMPILER prm)  bs = bs { _COMPILER = prm }
+interpretDefaultParamMeaning (TOPOLOGY prm)  bs = bs { _TOPOLOGY = prm }
+interpretDefaultParamMeaning (PROCESSOR prm) bs = bs { _PROCESSOR = prm }
+interpretDefaultParamMeaning (CUSTOM tag val) bs =
+  case lookup tag (_CUSTOM bs) of
+    Nothing  -> bs { _CUSTOM = (tag,val) : _CUSTOM bs }
+    Just old -> bs { _CUSTOM = (tag,val) : (delete (tag,old) (_CUSTOM bs)) }
+
 
 -- | Modify a config by `And`ing in an extra param setting to *every* `configs` field of *every*
 -- benchmark in the global `Config`.
@@ -468,6 +499,11 @@ compileOptsOnly xx =
 -- | Different types of parameters that may be set or varied.
 data ParamSetting 
   = RuntimeParam String -- ^ String contains runtime options, expanded and tokenized by the shell.
+                        -- These are runtime options as a MEANS of implementing some other policy
+                        -- or variant, and as such they do not show up in the `_ARGS` field of the
+                        -- `BenchmarkResult`.
+    
+-- Note: RuntimeArg should be replaced by "ARGS" as part of the DefaultParamMeaning:
   | RuntimeArg   String -- ^ Runtime "args" are like runtime params but are more prominent.  
                         --   They typically are part of the "key" of the benchmark.
   | CompileParam String -- ^ String contains compile-time options, expanded and tokenized by the shell.
