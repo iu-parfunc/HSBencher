@@ -17,7 +17,7 @@ module HSBencher.Internal.App
        (defaultMainModifyConfig,
         Flag(..), all_cli_options, fullUsageInfo
        )
-       where 
+       where
 
 ----------------------------
 -- Standard library imports
@@ -27,6 +27,7 @@ import Control.Exception (SomeException, try, catch)
 import Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
 import Data.IORef
+import Data.Default
 import Data.List (intercalate, sortBy, intersperse, isInfixOf)
 import qualified Data.List as L
 import qualified Data.Map as M
@@ -67,14 +68,14 @@ import Paths_hsbencher (version) -- Thanks, cabal!
 ----------------------------------------------------------------------------------------------------
 
 hsbencherVersion :: String
-hsbencherVersion = concat $ intersperse "." $ map show $ 
+hsbencherVersion = concat $ intersperse "." $ map show $
                    versionBranch version
 
 -- | General usage information.
 generalUsageStr :: String
 generalUsageStr = unlines $
  [
-   "   ",         
+   "   ",
 {-
    " Many of these options can redundantly be set either when the benchmark driver is run,",
    " or in the benchmark descriptions themselves.  E.g. --with-ghc is just for convenience.",
@@ -90,7 +91,7 @@ generalUsageStr = unlines $
    " Note: This bench harness was built against hsbencher library version "++hsbencherVersion
  ]
 
-  
+
 --------------------------------------------------------------------------------
 -- Compiling Benchmarks
 --------------------------------------------------------------------------------
@@ -104,10 +105,10 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
       flags = toCompileFlags cconf
       paths = toCmdPaths     cconf
       bldid = makeBuildID testPath flags env
-      env   = compileTimeEnvVars cconf 
+      env   = compileTimeEnvVars cconf
   log  "\n--------------------------------------------------------------------------------"
   log$ "  Compiling Config "++show iterNum++" of "++show totalIters++
-       ": "++testRoot++" (args \""++unwords cmdargs++"\") BuildEnv \""++ show env ++"\") confID "++ show bldid 
+       ": "++testRoot++" (args \""++unwords cmdargs++"\") BuildEnv \""++ show env ++"\") confID "++ show bldid
   log  "--------------------------------------------------------------------------------\n"
 
   matches <- case overrideMethod of
@@ -120,8 +121,8 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
        logT$ "  With file preds: "
        forM_ buildMethods $ \ meth ->
          logT$ "    "++ show (canBuild meth)
-       lift exitFailure     
-  logT$ printf "Found %d methods that can handle %s: %s" 
+       lift exitFailure
+  logT$ printf "Found %d methods that can handle %s: %s"
          (length matches) testPath (show$ map methodName matches)
   let BuildMethod{methodName,clean,compile} = head matches
   when (length matches > 1) $
@@ -129,7 +130,7 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
 
   -- Add the static path information to the path information for this specific benchmark:
   let newpathR = (M.union (M.fromList paths) pathRegistry)
-  
+
   when doClean $ clean newpathR bldid testPath
 
   -- This is a bit weird... we could recast ALL fields of the Config
@@ -139,10 +140,10 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
   let cfg2 = cfg{pathRegistry=newpathR}
 
   -- Prefer the benchmark-local path definitions:
-  x <- compile cfg2 bldid flags env testPath 
+  x <- compile cfg2 bldid flags env testPath
   logT$ "Compile finished, result: "++ show x
   return x
-  
+
 
 --------------------------------------------------------------------------------
 -- Running Benchmarks
@@ -153,19 +154,19 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
 --
 -- runconfig contains both compile time and runtime parameters.  All
 -- the params that affect this run.
-runOne :: (Int,Int) -> BuildID -> BuildResult 
-       -> Benchmark DefaultParamMeaning 
+runOne :: (Int,Int) -> BuildID -> BuildResult
+       -> Benchmark DefaultParamMeaning
        -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
 runOne (iterNum, totalIters) _bldid bldres
        thebench@Benchmark{target=testPath, cmdargs, benchTimeOut}
-       runconfig = do       
+       runconfig = do
 
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters ++": "++testPath++" "++unwords cmdargs
 --       "  threads "++show numthreads++" (Env="++show envVars++")"
 
   -- (1) Gather contextual information
-  ----------------------------------------  
+  ----------------------------------------
   -- Fullargs includes the runtime parameters as well as the original args:
   (args, fullargs, testRoot) <- runA_gatherContext testPath cmdargs runconfig
 
@@ -178,19 +179,19 @@ runOne (iterNum, totalIters) _bldid bldres
   -- (3) Produce output to the right places:
   ------------------------------------------
   Config{benchlist} <- ask
-  let thename = canonicalBenchName benchlist thebench 
+  let thename = canonicalBenchName benchlist thebench
   runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig
 
 
 ------------------------------------------------------------
 runA_gatherContext :: FilePath -> [String] -> [(a, ParamSetting)] -> ReaderT Config IO ([String], [String], FilePath)
-runA_gatherContext testPath cmdargs runconfig = do 
+runA_gatherContext testPath cmdargs runconfig = do
   Config{shortrun, argsBeforeFlags} <- ask
   let runParams = [ s | (_,RuntimeParam s) <- runconfig ]
       runArgs   = [ s | (_,RuntimeArg s) <- runconfig ]
-      args0 = cmdargs ++ runArgs 
+      args0 = cmdargs ++ runArgs
   let args = if shortrun then shortArgs args0 else args0
-  let fullargs = if argsBeforeFlags 
+  let fullargs = if argsBeforeFlags
                  then args ++ runParams
                  else runParams ++ args
       testRoot = fetchBaseName testPath
@@ -209,29 +210,29 @@ runA_gatherContext testPath cmdargs runconfig = do
 
 
 ------------------------------------------------------------
-runB_runTrials :: [String] -> Maybe Double -> BuildResult 
+runB_runTrials :: [String] -> Maybe Double -> BuildResult
                -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO (Int,[RunResult])
-runB_runTrials fullargs benchTimeOut bldres runconfig = do 
-    Config{ retryFailed, trials } <- ask 
+runB_runTrials fullargs benchTimeOut bldres runconfig = do
+    Config{ retryFailed, trials } <- ask
     let retryBudget = fromMaybe 0 retryFailed
     trialLoop 1 trials retryBudget 0 []
- where   
+ where
   trialLoop :: Int -> Int -> Int -> Int -> [RunResult] -> ReaderT Config IO (Int,[RunResult])
-  trialLoop ind trials retries retryAcc acc 
+  trialLoop ind trials retries retryAcc acc
    | ind > trials = return (retryAcc, reverse acc)
-   | otherwise = do 
-    Config{ runTimeOut, shortrun, harvesters, systemCleaner } <- ask 
+   | otherwise = do
+    Config{ runTimeOut, shortrun, harvesters, systemCleaner } <- ask
     log$ printf "  Running trial %d of %d" ind trials
     log "  ------------------------"
-    case systemCleaner of 
+    case systemCleaner of
       NoCleanup   -> return ()
-      Cleanup act -> lift $ do 
+      Cleanup act -> lift $ do
                        printf "(Cleaning system with user-specified action to achieve an isolated run...)\n"
-                       catch act $ \ (e::SomeException) -> 
+                       catch act $ \ (e::SomeException) ->
                           printf $ "WARNING! user-specified cleanup action threw an exception:\n  "++show e++"\n"
     let envVars = toEnvVars  runconfig
-    let affinity = getAffinity runconfig 
-    
+    let affinity = getAffinity runconfig
+
     let _doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
             lift$ measureProcess affinity harvesters cmddescr
@@ -241,14 +242,14 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
           x    <- lift wait
           lift$ A.wait mv
           logT$ " Subprocess finished and echo thread done.\n"
-          return x    
+          return x
 
     -- I'm having problems currently [2014.07.04], where after about
     -- 50 benchmarks (* 3 trials), all runs fail but there is NO
     -- echo'd output. So here we try something simpler as a test.
     let doMeasure2 cmddescr = do
-          (lnes,result) <- lift$ measureProcessDBG affinity harvesters cmddescr 
-          mapM_ (logT . B.unpack) lnes 
+          (lnes,result) <- lift$ measureProcessDBG affinity harvesters cmddescr
+          mapM_ (logT . B.unpack) lnes
           logT $ "Subprocess completed with "++show(length lnes)++" of output."
           return result
 
@@ -258,7 +259,7 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
     this <- case bldres of
       StandAloneBinary binpath -> do
         -- NOTE: For now allowing rts args to include things like "+RTS -RTS", i.e. multiple tokens:
-        let command = binpath++" "++unwords fullargs 
+        let command = binpath++" "++unwords fullargs
         logT$ " Executing command: " ++ command
         let timeout = if benchTimeOut == Nothing
                       then runTimeOut
@@ -273,15 +274,15 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
         logT$ " Generated in-place run command: "++show cmd
         doMeasure cmd
 
-    if isError this 
-     then if retries > 0 
+    if isError this
+     then if retries > 0
           then do logT$ " Failed Trial!  Retrying config, repeating trial "++
                         show ind++", "++show (retries - 1)++" retries left."
                   trialLoop ind trials (retries - 1) (retryAcc + 1) acc
           else do logT$ " Failed Trial "++show ind++"!  Out of retries, aborting remaining trials."
                   return (retries, this:acc)
      else do -- When we advance, we reset the retry counter:
-             Config{ retryFailed } <- ask 
+             Config{ retryFailed } <- ask
              trialLoop (ind+1) trials (fromMaybe 0 retryFailed) retryAcc (this:acc)
 
 getAffinity :: [(DefaultParamMeaning, ParamSetting)] -> Maybe (Int, CPUAffinity)
@@ -295,13 +296,13 @@ getNumThreads = foldl (\ acc (x,_) ->
                            case x of
                              Threads n -> n
                              _         -> acc)
-                   0 
+                   0
 
 ------------------------------------------------------------
-runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> String 
+runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> String
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
 runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig = do
-  let numthreads = getNumThreads runconfig 
+  let numthreads = getNumThreads runconfig
       sched      = foldl (\ acc (x,_) ->
                            case x of
                              Variant s -> s
@@ -309,20 +310,20 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
                    "none" runconfig
 
   let pads n s = take (max 1 (n - length s)) $ repeat ' '
-      padl n x = pads n x ++ x 
+      padl n x = pads n x ++ x
       padr n x = x ++ pads n x
 
-  Config{ keepgoing } <- ask 
-  let exitCheck = when (any isError nruns && not keepgoing) $ do 
+  Config{ keepgoing } <- ask
+  let exitCheck = when (any isError nruns && not keepgoing) $ do
                     log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
                     liftIO exitFailure
-                    
+
   -- FIXME: this old output format can be factored out into a plugin or discarded:
   --------------------------------------------------------------------------------
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
     if all isError nruns then do
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) -- got only ERRORS: " ++show nruns
-      logOn [ResultsFile]$ 
+      logOn [ResultsFile]$
         printf "# %s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
                                   (padr 8$ sched) (padr 3$ show numthreads) (" ALL_ERRORS"::String)
       exitCheck
@@ -340,7 +341,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
                              [gettime minR, gettime medianR, gettime maxR]
           prods@[p1,p2,p3] = map mshow [getprod minR, getprod medianR, getprod maxR]
           mshow Nothing  = "0"
-          mshow (Just x) = showFFloat (Just 2) x "" 
+          mshow (Just x) = showFFloat (Just 2) x ""
 
           -- These are really (time,prod) tuples, but a flat list of
           -- scalars is simpler and readable by gnuplot:
@@ -349,11 +350,11 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
 
       log $ "\n >>> MIN/MEDIAN/MAX (TIME,PROD) " ++ formatted
 
-      logOn [ResultsFile]$ 
+      logOn [ResultsFile]$
         printf "%s %s %s %s %s" (padr 35 thename) (padr 20$ intercalate "_" fullargs)
                                 (padr 8$ sched) (padr 3$ show numthreads) formatted
   --------------------------------------------------------------------------------
-      
+
       -- These should be either all Nothing or all Just:
       let jittimes0 = map getjittime goodruns
           misses = length (filter (==Nothing) jittimes0)
@@ -365,12 +366,12 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
                                log "  Zeroing those that did not report."
                                return $ unwords (map (show . fromMaybe 0) jittimes0)
 
-      let affinity = getAffinity runconfig 
+      let affinity = getAffinity runconfig
 
-      Config{ trials } <- ask 
+      Config{ trials } <- ask
       let result =
-            emptyBenchmarkResult
-            { _PROGNAME = thename 
+            def
+            { _PROGNAME = thename
             , _VARIANT  = sched
             , _ARGS     = args
             , _THREADS  = numthreads
@@ -399,11 +400,11 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
       result' <- liftIO$ augmentResultWithConfig conf result
 
       -- Upload results to plugin backends:
-      conf2@Config{ plugIns } <- ask 
-      forM_ plugIns $ \ (SomePlugin p) -> do 
+      conf2@Config{ plugIns } <- ask
+      forM_ plugIns $ \ (SomePlugin p) -> do
 
-        --JS: May 21 2014, added try and case on result. 
-        result3 <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ()) 
+        --JS: May 21 2014, added try and case on result.
+        result3 <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ())
         case result3 of
           Left err -> logT$("plugUploadRow:Failed, error: \n"++
                             "------------------begin-error----------------------\n"++
@@ -431,17 +432,17 @@ printBenchrunHeader :: BenchM ()
 printBenchrunHeader = do
   Config{trials, maxthreads, pathRegistry, defTopology,
          logOut, resultsOut, stdOut, gitInfo=(branch,revision,depth) } <- ask
-  liftIO $ do   
+  liftIO $ do
 --    let (benchfile, ver) = benchversion
     let ls :: [IO String]
         ls = [ e$ "# TestName Variant NumThreads   MinTime MedianTime MaxTime  Productivity1 Productivity2 Productivity3"
-             , e$ "#    "        
+             , e$ "#    "
              , e$ "# `date`"
-             , e$ "# `uname -a`" 
-             , e$ "# Ran by: `whoami` " 
+             , e$ "# `uname -a`"
+             , e$ "# Ran by: `whoami` "
              , e$ "# Determined machine to have "++show maxthreads++" hardware threads."
              , e$ "# Default topology: "++defTopology
-             , e$ "# "                                                                
+             , e$ "# "
              , e$ "# Running each test for "++show trials++" trial(s)."
 --             , e$ "# Benchmarks_File: " ++ benchfile
 --             , e$ "# Benchmarks_Variant: " ++ if shortrun then "SHORTRUN" else whichVariant benchfile
@@ -449,7 +450,7 @@ printBenchrunHeader = do
              , e$ "# Git_Branch: " ++ branch
              , e$ "# Git_Hash: "   ++ revision
              , e$ "# Git_Depth: "  ++ show depth
-             -- , e$ "# Using the following settings from environment variables:" 
+             -- , e$ "# Using the following settings from environment variables:"
              -- , e$ "#  ENV BENCHLIST=$BENCHLIST"
              -- , e$ "#  ENV THREADS=   $THREADS"
              -- , e$ "#  ENV TRIALS=    $TRIALS"
@@ -464,11 +465,11 @@ printBenchrunHeader = do
     ls' <- sequence ls
     forM_ ls' $ \line -> do
       Strm.write (Just$ B.pack line) resultsOut
-      Strm.write (Just$ B.pack line) logOut 
+      Strm.write (Just$ B.pack line) logOut
       Strm.write (Just$ B.pack line) stdOut
     return ()
 
- where 
+ where
    -- This is a hack for shell expanding inside a string:
    e :: String -> IO String
    e s =
@@ -497,15 +498,15 @@ _defaultMainWithBenchmarks benches = do
 
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
-fullUsageInfo = 
+fullUsageInfo =
     "\nUSAGE: naked command line arguments are patterns that select the benchmarks to run.\n"++
     (concat (map (uncurry usageInfo) all_cli_options)) ++
     generalUsageStr
 
-    
+
 -- | Remove a plugin from the configuration based on its plugName
-removePlugin :: Plugin p => p -> Config -> Config 
-removePlugin p cfg = 
+removePlugin :: Plugin p => p -> Config -> Config
+removePlugin p cfg =
   cfg { plugIns = filter byNom  (plugIns cfg)}
   where
     byNom (SomePlugin p1) =  plugName p1 /= plugName p
@@ -515,16 +516,16 @@ removePlugin p cfg =
 
 doShowHelp :: [SomePlugin] -> IO ()
 doShowHelp allplugs = do
-    this_prog_name  <- getProgName    
+    this_prog_name  <- getProgName
     putStrLn$ "\nUSAGE: [set ENV VARS] "++this_prog_name++" [CMDLN OPTS]"
     putStrLn$ "\nNote: \"CMDLN OPTS\" includes patterns that select which benchmarks"
     putStrLn$ "     to run, based on name."
     mapM_ putStr (map (uncurry usageInfo) all_cli_options)
     putStrLn ""
-    putStrLn $ show (length allplugs) ++ " plugins enabled: "++ 
+    putStrLn $ show (length allplugs) ++ " plugins enabled: "++
                show [ plugName p | SomePlugin p <- allplugs ]
     putStrLn ""
-    forM_ allplugs $ \ (SomePlugin p) -> do  
+    forM_ allplugs $ \ (SomePlugin p) -> do
       putStrLn $ "["++ plugName p++"] "++ ((uncurry usageInfo) (plugCmdOpts p))
     putStrLn$ generalUsageStr
 
@@ -540,7 +541,7 @@ doShowHelp allplugs = do
 -- This function doesn't take a benchmark list separately, because that simply
 -- corresponds to the 'benchlist' field of the output 'Config'.
 defaultMainModifyConfig :: (Config -> Config) -> IO ()
-defaultMainModifyConfig modConfig = do    
+defaultMainModifyConfig modConfig = do
   id       <- myThreadId
   writeIORef main_threadid id
   this_prog_name  <- getProgName
@@ -560,7 +561,7 @@ defaultMainModifyConfig modConfig = do
   when gotVersion  $ do
     putStrLn$ "hsbencher version "++ hsbencherVersion
       -- (unwords$ versionTags version)
-    exitSuccess 
+    exitSuccess
 
   ------------------------------------------------------------
   putStrLn$ "\n"++hsbencher_tag++"Harvesting environment data to build Config."
@@ -578,13 +579,13 @@ defaultMainModifyConfig modConfig = do
   let offplugs = [ n  | Right (n, _)  <- plugs ]
       allplugs = [ sp | Left  (_, sp) <- plugs ]
 
-  unless (null offplugs) $ 
+  unless (null offplugs) $
     putStrLn $ hsbencher_tag ++ " DISABLED plugins that were compiled/linked in: "++unwords offplugs
 
   ------------------------------------------------------------
-  let fullBenchList = 
-       case conf1 of 
-        Config{benchlist=ls} -> 
+  let fullBenchList =
+       case conf1 of
+        Config{benchlist=ls} ->
           (unlines  [ (maybe "" (++" = ") progname) ++
                       (target ++ (unwords cmdargs))
                     | Benchmark{progname, cmdargs,target} <- ls])
@@ -592,46 +593,46 @@ defaultMainModifyConfig modConfig = do
                        exitSuccess
   unless (null errs) $ do
     putStrLn$ "Errors parsing command line options:"
-    mapM_ (putStr . ("   "++)) errs       
+    mapM_ (putStr . ("   "++)) errs
     doShowHelp allplugs
     exitFailure
   when showHelp   $ do doShowHelp    allplugs; exitSuccess
 
   ------------------------------------------------------------
   -- Fully populate the per-plugin configurations, folding in command line args:
-  -- 
+  --
   -- Hmm, not really a strong reason to *combine* the options lists, rather we do
   -- them one at a time:
   let pconfs = [ (plugName p, SomePluginConf p pconf)
                | (SomePlugin p) <- (plugIns conf1)
                , let (_pusage,popts) = plugCmdOpts p
-               , let (o2,_,_,_) = getOpt' Permute popts cli_args 
+               , let (o2,_,_,_) = getOpt' Permute popts cli_args
                , let pconf = foldFlags p o2 (getMyConf p conf1)
                ]
 
   let conf2 = conf1 { plugInConfs = M.fromList pconfs }
   -- Combine all plugins command line options, and reparse the command line.
 
-  putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured ("++ 
+  putStrLn$ hsbencher_tag++(show$ length allplugs)++" plugins configured ("++
             concat (intersperse ", " [ plugName p | SomePlugin p <- allplugs ])
             ++"), now initializing them."
 
   -- TODO/FIXME: CATCH ERRORS... should remove the plugin from the list if it errors on init.
   -- JS attempted fix
   conf3 <- foldM (\ cfg (SomePlugin p) ->
-                        do result <- try (plugInitialize p cfg) :: IO (Either SomeException Config) 
+                        do result <- try (plugInitialize p cfg) :: IO (Either SomeException Config)
                            case result of
                              Left err -> do
                                putStrLn (hsbencher_tag++"Plugin Init FAILED!  Error:\n"++show err)
                                return $ removePlugin p cfg
-                               -- cannot log here, only "chatter". 
-                             Right c -> return c 
+                               -- cannot log here, only "chatter".
+                             Right c -> return c
                  ) conf2 allplugs
   putStrLn$ hsbencher_tag++" plugin init complete."
 
   -------------------------------------------------------------------
   -- Next prune the list of benchmarks to those selected by the user:
-  let filtlist = map (filterBenchmark plainargs) (benchlist conf3) 
+  let filtlist = map (filterBenchmark plainargs) (benchlist conf3)
 --      cutlist  = filterBenchmarks plainargs (benchlist conf3)
       cutlist  = [ b | b@Benchmark{configs} <- filtlist, configs /= Or[] ]
   let conf4@Config{extraParams} = conf3{benchlist=cutlist}
@@ -639,10 +640,10 @@ defaultMainModifyConfig modConfig = do
   -- Finally, put the extra Params right into the benchmark config
   -- spaces at the last minute:
   let conf5@Config{benchlist} = L.foldr andAddParam conf4 extraParams
-    
+
   ------------------------------------------------------------
-  rootDir <- getCurrentDirectory  
-  runReaderT 
+  rootDir <- getCurrentDirectory
+  runReaderT
     (do
         unless (null plainargs) $ do
           let len = (length cutlist)
@@ -651,17 +652,17 @@ defaultMainModifyConfig modConfig = do
             _  -> do let Config{benchlist=fullList} = conf3
                      logT$"There were "++show (length fullList)++" total listed."
                      logT$"Filtered with patterns "++show plainargs++" down to "++show len++" benchmark(s), with these configs:"
-                     forM_ (zip fullList filtlist) $ \(orig,filt) -> 
+                     forM_ (zip fullList filtlist) $ \(orig,filt) ->
                        when (configs filt /= Or[]) $ do
                          let name = prettyBenchName fullList orig
                          logT$ "  "++name++": "++ show(benchSpaceSize (configs filt))
                                ++ " of "       ++ show(benchSpaceSize (configs orig))++" configs."
                          return ()
-                     
-          when (len == 0) $ do 
+
+          when (len == 0) $ do
             error$ "Expected at least one pattern to match!.  All benchmarks: \n"++
                    fullBenchList
-        
+
         logT$"Beginning benchmarking, root directory: "++rootDir
         Config{binDir} <- ask
         let globalBinDir = rootDir </> binDir
@@ -669,11 +670,11 @@ defaultMainModifyConfig modConfig = do
           logT$"Clearing any preexisting files in build output dir: "++ binDir
           lift$ do dde <- doesDirectoryExist globalBinDir -- Data race...
                    when dde $ removeDirectoryRecursive globalBinDir
-        lift$ createDirectoryIfMissing True globalBinDir 
-     
+        lift$ createDirectoryIfMissing True globalBinDir
+
 	logT "Writing header for result data file:"
 	printBenchrunHeader
-     
+
         unless recomp $ log "[!!!] Skipping benchmark recompilation!"
 
         let
@@ -682,7 +683,7 @@ defaultMainModifyConfig modConfig = do
             cccfgs = map (enumerateBenchSpace . configs) benches' -- compile configs
             cclengths = map length cccfgs
             totalcomps = sum cclengths
-            
+
         log$ "\n--------------------------------------------------------------------------------"
         logT$ "Running all benchmarks for all settings ..."
         logT$ "Compiling: "++show totalcomps++" total configurations of "++ show (length cutlist) ++" benchmarks"
@@ -694,24 +695,24 @@ defaultMainModifyConfig modConfig = do
                 Nothing -> log$ indent 4$ show$ doc configs
                 Just trg0 -> log$ "   ...same config space as "++show trg0
               printloop (M.insertWith (\ _ x -> x) configs target mp) tl
---        log$ "Benchmarks/compile options: "++show (doc benches')              
+--        log$ "Benchmarks/compile options: "++show (doc benches')
         printloop M.empty benchlist
         log$ "--------------------------------------------------------------------------------"
 
         if parBench then do
             unless rtsSupportsBoundThreads $ error (this_prog_name++" was NOT compiled with -threaded.  Can't do --par.")
-     {-            
+     {-
         --------------------------------------------------------------------------------
         -- Parallel version:
             numProcs <- liftIO getNumProcessors
             lift$ putStrLn$ "[!!!] Compiling in Parallel, numProcessors="++show numProcs++" ... "
-               
-            when recomp $ liftIO$ do 
+
+            when recomp $ liftIO$ do
               when hasCabalFile (error "Currently, cabalized build does not support parallelism!")
-            
+
               (strms,barrier) <- parForM numProcs (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                  outStrm' <- Strm.unlines outStrm
-                 let conf' = conf { stdOut = outStrm' } 
+                 let conf' = conf { stdOut = outStrm' }
                  runReaderT (compileOne bench (confnum,length pruned)) conf'
                  return ()
               catParallelOutput strms stdOut
@@ -720,7 +721,7 @@ defaultMainModifyConfig modConfig = do
 
             Config{shortrun,doFusionUpload} <- ask
 	    if shortrun && not doFusionUpload then liftIO$ do
-               putStrLn$ "[!!!] Running in Parallel..."              
+               putStrLn$ "[!!!] Running in Parallel..."
                (strms,barrier) <- parForM numProcs (zip [1..] pruned) $ \ outStrm (confnum,bench) -> do
                   outStrm' <- Strm.unlines outStrm
                   let conf' = conf { stdOut = outStrm' }
@@ -730,7 +731,7 @@ defaultMainModifyConfig modConfig = do
                return ()
 	     else do
                -- Non-shortrun's NEVER run multiple benchmarks at once:
-	       forM_ (zip [1..] allruns) $ \ (confnum,bench) -> 
+	       forM_ (zip [1..] allruns) $ \ (confnum,bench) ->
 		    runOne bench (confnum,totalcomps)
                return ()
 -}
@@ -748,9 +749,9 @@ defaultMainModifyConfig modConfig = do
               allruns = map (enumerateBenchSpace . configs) benchlist
               allrunsLens = map length allruns
               totalruns = sum allrunsLens
-          let 
+          let
               -- Here we lazily compile benchmarks as they become required by run configurations.
-              runloop :: Int 
+              runloop :: Int
                       -> M.Map BuildID (Int, Maybe BuildResult)
                       -> M.Map FilePath BuildID -- (S.Set ParamSetting)
                       -> [(Benchmark DefaultParamMeaning, [(DefaultParamMeaning,ParamSetting)])]
@@ -761,12 +762,12 @@ defaultMainModifyConfig modConfig = do
                 -- a directory that is used for `RunInPlace` builds.
                 let (bench,params) = nextrun
                     ccflags = toCompileFlags params
-                    env   = compileTimeEnvVars params 
+                    env   = compileTimeEnvVars params
                     bid = makeBuildID (target bench) ccflags env
-                case M.lookup bid board of 
+                case M.lookup bid board of
                   Nothing -> error$ "HSBencher: Internal error: Cannot find entry in map for build ID: "++show bid
-                  Just (ccnum, Nothing) -> do 
-                    res  <- compileOne (ccnum,totalcomps) bench params                    
+                  Just (ccnum, Nothing) -> do
+                    res  <- compileOne (ccnum,totalcomps) bench params
                     let board' = M.insert bid (ccnum, Just res) board
                         lastC' = M.insert (target bench) bid lastConfigured
 
@@ -774,35 +775,35 @@ defaultMainModifyConfig modConfig = do
                     b <- runOne (iter,totalruns) bid res bench params
                     runloop (iter+1) board' lastC' rest (allpassed && b)
 
-                  Just (ccnum, Just bldres) -> 
+                  Just (ccnum, Just bldres) ->
                     let proceed = do b <- runOne (iter,totalruns) bid bldres bench params
                                      runloop (iter+1) board lastConfigured rest (allpassed && b)
                     in
-                    case bldres of 
+                    case bldres of
                       StandAloneBinary _ -> proceed
-                      RunInPlace _ -> 
+                      RunInPlace _ ->
                         -- Here we know that some previous compile with the same BuildID inserted this here.
                         -- But the relevant question is whether some other config has stomped on it in the meantime.
-                        case M.lookup (target bench) lastConfigured of 
+                        case M.lookup (target bench) lastConfigured of
                           Nothing -> error$"HSBencher: Internal error, RunInPlace in the board but not lastConfigured!: "
                                        ++(target bench)++ " build id "++show bid
                           Just bid2 ->
-                           if bid == bid2 
+                           if bid == bid2
                            then do logT$ "Skipping rebuild of in-place benchmark: "++bid
-                                   proceed 
-                           else runloop iter (M.insert bid (ccnum,Nothing) board) 
+                                   proceed
+                           else runloop iter (M.insert bid (ccnum,Nothing) board)
                                         lastConfigured (nextrun:rest) allpassed
 
               -- Keeps track of what's compiled.
-              initBoard _ [] acc = acc 
-              initBoard !iter ((bench,params):rest) acc = 
-                let bid = makeBuildID (target bench) (toCompileFlags params) (compileTimeEnvVars params) 
+              initBoard _ [] acc = acc
+              initBoard !iter ((bench,params):rest) acc =
+                let bid = makeBuildID (target bench) (toCompileFlags params) (compileTimeEnvVars params)
                     base = fetchBaseName (target bench)
                     dfltdest = globalBinDir </> base ++"_"++bid in
                 case M.lookup bid acc of
                   Just _  -> initBoard iter rest acc
-                  Nothing -> 
-                    let elm = if recomp 
+                  Nothing ->
+                    let elm = if recomp
                               then (iter, Nothing)
                               else (iter, Just (StandAloneBinary dfltdest))
                     in
@@ -815,16 +816,16 @@ defaultMainModifyConfig modConfig = do
           unless recomp $ logT$ "Recompilation disabled, assuming standalone binaries are in the expected places!"
           let startBoard = initBoard 1 zippedruns M.empty
           Config{skipTo, runOnly} <- ask
-          (ix,runs') <- case skipTo of 
+          (ix,runs') <- case skipTo of
                           Nothing -> return (1,zippedruns)
                           Just ix -> do logT$" !!! WARNING: SKIPPING AHEAD in configuration space; jumping to: "++show ix
                                         return (ix, drop (ix-1) zippedruns)
-          runs'' <- case runOnly of 
+          runs'' <- case runOnly of
                       Nothing  -> return runs'
                       Just num -> do logT$" !!! WARNING: TRUNCATING config space to only run "++show num++" configs."
                                      return (take num runs')
-          win <- runloop ix startBoard M.empty runs'' True                                
-  	  unless win $ do 
+          win <- runloop ix startBoard M.empty runs'' True
+  	  unless win $ do
              log$ "\n--------------------------------------------------------------------------------"
              log "  Finished benchmarks, but some errored out, marking this job as a failure."
              log$ "--------------------------------------------------------------------------------"
@@ -832,8 +833,8 @@ defaultMainModifyConfig modConfig = do
           return ()
 {-
         do Config{logOut, resultsOut, stdOut} <- ask
-           liftIO$ Strm.write Nothing logOut 
-           liftIO$ Strm.write Nothing resultsOut 
+           liftIO$ Strm.write Nothing logOut
+           liftIO$ Strm.write Nothing resultsOut
 -}
         log$ "\n--------------------------------------------------------------------------------"
         log "  Finished with all benchmark configurations.  Success."
@@ -844,12 +845,12 @@ defaultMainModifyConfig modConfig = do
 
 
 -- Currently unused but needs to be revived with along with parallel builds:
--- 
+--
 -- | Several different options for how to display output in parallel.
 _catParallelOutput :: [Strm.InputStream B.ByteString] -> Strm.OutputStream B.ByteString -> IO ()
-_catParallelOutput strms stdOut = do 
+_catParallelOutput strms stdOut = do
  case 4::Int of
-#ifdef USE_HYDRAPRINT   
+#ifdef USE_HYDRAPRINT
    -- First option is to create N window panes immediately.
    1 -> do
            hydraPrintStatic defaultHydraConf (zip (map show [1..]) strms)
@@ -858,11 +859,11 @@ _catParallelOutput strms stdOut = do
            hydraPrint defaultHydraConf{deleteWhen=Never} srcs
 #endif
    -- This version interleaves their output lines (ugly):
-   3 -> do 
+   3 -> do
            strms2 <- mapM Strm.lines strms
            interleaved <- Strm.concurrentMerge strms2
            Strm.connect interleaved stdOut
-   -- This version serializes the output one worker at a time:           
+   -- This version serializes the output one worker at a time:
    4 -> do
            strms2 <- mapM Strm.lines strms
            merged <- Strm.concatInputStreams strms2
@@ -871,7 +872,7 @@ _catParallelOutput strms stdOut = do
    _ -> error "this is impossible"
 
 ----------------------------------------------------------------------------------------------------
--- *                                 GENERIC HELPER ROUTINES                                      
+-- *                                 GENERIC HELPER ROUTINES
 ----------------------------------------------------------------------------------------------------
 
 -- These should go in another module.......
@@ -918,7 +919,7 @@ accumulateCustomTags = M.toList . foldr (foldResults . custom) M.empty
 -- expected to run and do something quick if they are invoked with no
 -- arguments.  (A proper benchmarking run, therefore, requires larger
 -- numeric arguments be supplied.)
--- 
+--
 shortArgs :: [String] -> [String]
 shortArgs _ls = []
 
@@ -934,7 +935,7 @@ shortArgs _ls = []
 ----------------------------------------------------------------------------------------------------
 
 nest :: Int -> String -> String
-nest n str = remlastNewline $ unlines $ 
+nest n str = remlastNewline $ unlines $
              map (replicate n ' ' ++) $
              lines str
  where

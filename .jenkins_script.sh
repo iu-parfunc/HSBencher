@@ -16,7 +16,9 @@ ghc --version
 
 if [ "NOSETUP" != "1" ]; then
   git submodule update --init
-  $CABAL sandbox init
+  if ! [ -e ./cabal.sandbox.config ]; then
+      $CABAL sandbox init
+  fi
   # for pkg in $PKGS; do
   #     cd "$pkg"
   #     $CABAL sandbox init --sandbox=../.cabal-sandbox/

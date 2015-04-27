@@ -246,6 +246,7 @@ Test-suite hsbencher-unit-tests
   -- Additional deps for testing:
   build-depends: test-framework >= 0.8,
                  test-framework-hunit >= 0.3,
+                 data-default >= 0.5.3,
                  HUnit, time, text
   ghc-options: -threaded
   default-language:  Haskell2010

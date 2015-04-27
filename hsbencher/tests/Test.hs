@@ -5,12 +5,13 @@ module Main where
 
 import Data.List
 import Data.Maybe
+import Data.Default
 import HSBencher.Types
 import HSBencher.Internal.Config (getConfig)
 import HSBencher.Internal.MeasureProcess ()
 import qualified Data.ByteString.Char8 as B
 
-import Test.Framework.Providers.HUnit 
+import Test.Framework.Providers.HUnit
 import Test.Framework (Test, defaultMain, testGroup)
 -- import Test.Framework.TH (testGroupGenerator) -- [2014.05.23] Disabling because of haskell-src-exts dependency and its very slow compiles.
 import Test.HUnit (Assertion, assertEqual, assertBool, Counts(..))
@@ -18,7 +19,7 @@ import Test.HUnit (Assertion, assertEqual, assertBool, Counts(..))
 --------------------------------------------------------------------------------
 
 exampleOuptut :: [String]
-exampleOuptut = 
+exampleOuptut =
  [ "SELFTIMED 3.3",
    "  14,956,751,416 bytes allocated in the heap",
    "       2,576,264 bytes copied during GC",
@@ -61,7 +62,7 @@ case_harvest = do
 --  mapM_ print $ map (\x -> (x, fn (B.pack x))) exampleOuptut
   let hits = filter ((==True) . snd) $ map (fn . B.pack) exampleOuptut
   putStrLn$ "Lines harvested: "++show (length hits)
-  let result = foldl' (\ r (f,_) -> f r) emptyRunResult hits
+  let result = foldl' (\ r (f,_) -> f r) (def :: RunResult) hits
   let expected = RunCompleted {realtime = 3.3, productivity = Just 73.8,
                                allocRate = Just 1855954977, memFootprint = Just 5372024,
                                jittime = Nothing,

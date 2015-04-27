@@ -19,6 +19,7 @@ import Network.Google.FusionTables(CellType(..))
 -- Standard:
 import Control.Monad
 import Control.Monad.Reader
+import Data.Default
 import Data.List as L
 import Data.Maybe (fromJust)
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
@@ -52,11 +53,11 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
 
                      , Option ['o'] ["out"] (ReqArg OutFile "FILE")
                        "Write the augmented CSV data out to FILE."
-                                              
+
                      , Option [] ["noupload"] (NoArg NoUpload)
                        "Don't actually upload to the fusion table (but still possible write to disk)."
                      , Option [] ["matchserver"] (NoArg MatchServerOrder)
-                       "Even if not uploading, retrieve the order of columns from the server and use it."                       
+                       "Even if not uploading, retrieve the order of columns from the server and use it."
                      ]
 plug :: FusionPlug
 plug = defaultFusionPlugin
@@ -68,8 +69,8 @@ main = do
 
    let (opts1,plainargs,unrec,errs1) = getOpt' Permute extra_cli_options cli_args
    let (opts2,_,errs2) = getOpt Permute fusion_cli_options unrec
-   let errs = errs1 ++ errs2   
-   when (L.elem PrintHelp opts1 || not (null errs)) $ do 
+   let errs = errs1 ++ errs2
+   when (L.elem PrintHelp opts1 || not (null errs)) $ do
      putStrLn $
        this_progname++": "++showVersion  version++"\n"++
        "USAGE: "++this_progname++" [options] CSVFILE\n\n"++
@@ -91,14 +92,14 @@ main = do
    let gconf1 = gconf0 { benchsetName = Just name }
    let fconf0 = getMyConf plug gconf1
    let fconf1 = foldFlags plug opts2 fconf0
-   let gconf2 = setMyConf plug fconf1 gconf1       
+   let gconf2 = setMyConf plug fconf1 gconf1
    gconf3 <- if L.elem NoUpload opts1 &&
                 not (L.elem MatchServerOrder opts1)
              then return gconf2
-             else plugInitialize plug gconf2 
+             else plugInitialize plug gconf2
 
    let outFiles = [ f | OutFile f <- opts1 ]
-  
+
    ------------------------------------------------------------
    case plainargs of
      [] -> error "No file given to upload!"
@@ -109,7 +110,7 @@ main = do
            distinctHeaders = S.fromList headers
            combined = head headers : (L.concatMap tail allFiles)
        unless (S.size distinctHeaders == 1) $
-         error $ unlines ("Not all the headers in CSV files matched: " : 
+         error $ unlines ("Not all the headers in CSV files matched: " :
                           (L.map show (S.toList distinctHeaders)))
 
        putStrLn$ " ["++this_progname++"] File lengths: "++show (map length allFiles)
@@ -131,9 +132,9 @@ main = do
        if L.elem NoUpload opts1
          then putStrLn$ " ["++this_progname++"] Skipping fusion table upload due to --noupload "
          else doupload gconf3 combined
-       
+
        -- case (reports, outFiles) of
-       --   (_,[]) -> forM_ reports $ \f -> loadCSV f >>= doupload gconf3 
+       --   (_,[]) -> forM_ reports $ \f -> loadCSV f >>= doupload gconf3
        --   ([inp],[out]) ->
        --      do c <- loadCSV inp
        --         writeOutFile gconf3 out c
@@ -144,21 +145,21 @@ main = do
 writeOutFile :: Config -> [String] -> FilePath -> CSV -> IO ()
 writeOutFile _ _ _ [] = error $ "Bad CSV file, not even a header line."
 writeOutFile confs serverSchema path (hdr:rst) = do
-  augmented <- augmentRows confs serverSchema hdr rst  
+  augmented <- augmentRows confs serverSchema hdr rst
   putStrLn$ " ["++this_progname++"] Writing out CSV with schema:\n "++show serverSchema
   let untuple :: [[(String,String)]] -> [[String]]
 --      untuple tups = map fst (head tups) : map (map snd) tups
 
       -- Convert while using the ordering from serverSchema:
-      untuple tups = serverSchema : 
+      untuple tups = serverSchema :
                      [ [ fJ (lookup k tup)
                        | k <- serverSchema
                        , let fJ (Just x) = x
                              fJ Nothing = "" -- Custom fields!
                                -- error$ "field "++k++" in server schema missing in tuple:\n"++unlines (map show tup)
                        ]
-                     | tup <- tups ] 
-  writeFile path $ printCSV $ 
+                     | tup <- tups ]
+  writeFile path $ printCSV $
     untuple $ map resultToTuple augmented
   putStrLn$ " ["++this_progname++"] Successfully wrote file: "++path
 
@@ -169,11 +170,11 @@ goodLine _ = True
 
 loadCSV :: FilePath -> IO CSV
 loadCSV f = do
-  x <- parseCSVFromFile f 
-  case x of 
+  x <- parseCSVFromFile f
+  case x of
     Left err -> error $ "Failed to read CSV file: \n"++show err
     Right [] -> error $ "Bad CSV file, not even a header line: "++ f
-    Right v  -> return v    
+    Right v  -> return v
 
 doupload :: Config -> CSV -> IO ()
 doupload confs x = do
@@ -199,14 +200,14 @@ doupload confs x = do
 -- uprows :: Config -> [String] -> [String] -> [[String]] -> Uploader -> IO ()
 augmentRows :: Config -> [String] -> [String] -> [[String]] -> IO [BenchmarkResult]
 augmentRows confs serverSchema hdr rst = do
-      let missing = S.difference (S.fromList serverSchema) (S.fromList hdr)  
+      let missing = S.difference (S.fromList serverSchema) (S.fromList hdr)
       -- Compute a base benchResult to fill in our missing fields:
       base <- if S.null missing then
-                return emptyBenchmarkResult -- Don't bother computing it, nothing missing.
+                return def -- Don't bother computing it, nothing missing.
               else do
                 putStrLn $ "\n\n ["++this_progname++"] Fields missing, filling in defaults: "++show (S.toList missing)
                 -- Start with the empty tuple, augmented with environmental info:
-                x <- augmentResultWithConfig confs emptyBenchmarkResult
+                x <- augmentResultWithConfig confs def
                 return $ x { _WHO = "" } -- Don't use who output from the point in time where we run THIS command.
 
       let tuples = map (zip hdr) rst
@@ -221,7 +222,7 @@ prepRows serverSchema augmented = do
     return prepped
 
 fusionUploader :: [PreppedTuple] -> Config -> IO ()
-fusionUploader prepped confs = do 
+fusionUploader prepped confs = do
       flg <- runReaderT (uploadRows prepped) confs
       unless flg $ error $ this_progname++"/uprows: failed to upload rows."
 
@@ -261,4 +262,3 @@ checkHeader :: Record -> IO ()
 checkHeader hdr
   | L.elem "PROGNAME" hdr = return ()
   | otherwise = error $ "Bad HEADER line on CSV file.  Expecting at least PROGNAME to be present: "++show hdr
-

@@ -27,6 +27,7 @@ import Control.Monad.Reader
 import Data.List as L
 import Data.List.Split (splitOn)
 import Data.Char (isSpace)
+import Data.Default
 import System.Console.GetOpt (getOpt, getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getProgName)
 import System.Exit
@@ -45,7 +46,7 @@ data ExtraFlag = TableName String
                  -- TODO: this should include MOST of the schema's
                  -- fields... we need a scalable way to do this.
                  -- Applicative options would help...
---               | SetHostname  String 
+--               | SetHostname  String
                | SetCustom String String
 
                | WriteCSV     FilePath
@@ -66,10 +67,10 @@ extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                        "Set the THREADS column in the uploaded data."
                      , Option [] ["custom"] (ReqArg (uncurry SetCustom . parsePair) "STR")
                        "Given STR=COL,VAL, set custom column COL to value VAL."
-                       
+
                      , Option [] ["runflags"] (ReqArg SetRunTimeFlags "STR")
                        "Set the RUNTIME_FLAGS column in the uploaded data."
-                       
+
                      , Option [] ["csv"] (ReqArg WriteCSV "PATH")
                        "Write the Criterion report data into a CSV file using the HSBencher schema."
                      , Option [] ["noupload"] (NoArg NoUpload)
@@ -95,7 +96,7 @@ mkResult s =
   case reads (trim s) of
     (d,[]):_ -> DoubleResult d
     _        -> StringResult s
-    
+
 -- | For now this application is hardcoded to use a particular
 -- separator in both rename files and command line arguments.
 universalSeparator :: String
@@ -117,11 +118,11 @@ main = do
    let (opts2,_,errs2) = getOpt Permute fusion_cli_options unrec
    let errs = errs1 ++ errs2
    progName <- getProgName
-   when (L.elem PrintHelp opts1 || not (null errs)) $ do 
+   when (L.elem PrintHelp opts1 || not (null errs)) $ do
      putStrLn $
        "USAGE: "++progName++" [options] REPORTFILE\n"++
-       "Version: "++ showVersion version++"\n\n"++       
-       
+       "Version: "++ showVersion version++"\n\n"++
+
        "Upload a pre-existing Criterion report benchmarked on the CURRENT machine.\n"++
        "This restriction is due to the Report not containing system information.  Rather,\n"++
        "'fusion-upload-criterion' gathers information about the platform at the time of upload.\n"++
@@ -140,7 +141,7 @@ main = do
                [n] -> n
                ls  -> error $ "Multiple table names supplied!: "++show ls
 
-   let presets1 = emptyBenchmarkResult
+   let presets1 = def :: BenchmarkResult
    let presets2 = case [ n | SetVariant n <- opts1 ] of
                   []  -> presets1
                   [n] -> presets1 { _VARIANT = n }
@@ -152,7 +153,7 @@ main = do
    let presets4 = case [ s | SetRunTimeFlags s <- opts1 ] of
                   []  -> presets3
                   [s] -> presets3 { _RUNTIME_FLAGS = s }
-                  ls  -> error $ "Multiple RUNTIME_FLAGS settings supplied!: "++show ls                  
+                  ls  -> error $ "Multiple RUNTIME_FLAGS settings supplied!: "++show ls
    let presets5 = case [ n | SetThreads n <- opts1 ] of
                   []  -> presets4
                   [n] -> presets4 { _THREADS = n }
@@ -160,11 +161,11 @@ main = do
    let customs = [ (a,mkResult b) | SetCustom a b <- opts1 ]
        presets6 = presets5
                   {
-                     _CUSTOM = _CUSTOM presets5 ++ customs                               
+                     _CUSTOM = _CUSTOM presets5 ++ customs
                   }
 
    unless (null customs) $ putStrLn $ "Adding custom fields: "++show customs
-   
+
    -- This bit could be abstracted nicely by the HSBencher lib:
    ------------------------------------------------------------
    -- Gather info about the benchmark platform:
@@ -172,7 +173,7 @@ main = do
    let gconf1 = gconf0 { benchsetName = Just name }
    let fconf0 = getMyConf plug gconf1
    let fconf1 = foldFlags plug opts2 fconf0
-   let gconf2 = setMyConf plug fconf1 gconf1       
+   let gconf2 = setMyConf plug fconf1 gconf1
    gconf3 <- if noup then return gconf2 else plugInitialize plug gconf2
 
    ------------------------------------------------------------
@@ -212,7 +213,7 @@ upreport gconf presets report = do
   runReaderT (uploadBenchResult br') gconf
 
 printReport :: Report -> IO ()
-printReport Report{..} = do 
+printReport Report{..} = do
   putStrLn ("Found report with keys: "++show reportKeys)
   let SampleAnalysis{..} = reportAnalysis
   forM_ anRegress $ \Regression{..} -> do
@@ -231,34 +232,34 @@ addReport Report{..} BenchmarkResult{..} =
 
   , _MEDIANTIME_PRODUCTIVITY =
     do ms <- Map.lookup ("mutatorWallSeconds","iters") ests
-       gs <- Map.lookup ("gcWallSeconds","iters") ests       
+       gs <- Map.lookup ("gcWallSeconds","iters") ests
        return (estPoint ms / (estPoint ms + estPoint gs))
-    
+
   , _MEDIANTIME_ALLOCRATE =
     do e <- Map.lookup ("allocated","iters") ests
        -- Use time to extrapolate the alloc rate / second:
        return (round(estPoint e * (1.0 / medtime)))
 
-  , _CUSTOM = _CUSTOM ++ 
+  , _CUSTOM = _CUSTOM ++
     (maybe [] (\ e -> [("BYTES_ALLOC",DoubleResult (estPoint e))])
               (Map.lookup ("allocated","iters") ests)) ++
 
     (maybe [] (\ e -> [("BYTES_COPIED",DoubleResult (estPoint e))])
-              (Map.lookup ("bytesCopied","iters") ests)) ++ 
+              (Map.lookup ("bytesCopied","iters") ests)) ++
 
     (maybe [] (\ e -> [("NUMGC",DoubleResult (estPoint e))])
-              (Map.lookup ("numGcs","iters") ests)) ++ 
+              (Map.lookup ("numGcs","iters") ests)) ++
 
     (maybe [] (\ e -> [("CPUTIME",DoubleResult (estPoint e))])
-              (Map.lookup ("cpuTime","iters") ests)) ++ 
-        
+              (Map.lookup ("cpuTime","iters") ests)) ++
+
     (maybe [] (\ e -> [("CYCLES",DoubleResult (estPoint e))])
               (Map.lookup ("cycles","iters") ests))
   , ..
   }
   where
     medtime = estPoint $ fetch "time" "iters"
-    
+
     SampleAnalysis{..} = reportAnalysis
     ests = Map.fromList $
              [ ((regResponder,p), e) | Regression{..} <- anRegress
