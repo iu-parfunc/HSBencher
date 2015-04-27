@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.20.0.5
+version:             1.20.1
 ----------------------------------------
 -- Detailed CHANGELOG:
 ----------------------------------------
@@ -139,6 +139,8 @@ description: Benchmark frameworks are usually very specific to the
  * (1.20)   Add "--bindir" command line argument.
  .
  * (1.20.0.5) : GHC 7.10 support
+ .
+ * (1.20.0.6) : Deprecate emptyBenchmarkResult and emptyRunResult
 
 
  -- * (1.9)

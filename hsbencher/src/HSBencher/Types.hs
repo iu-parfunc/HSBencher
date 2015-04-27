@@ -15,27 +15,27 @@ module HSBencher.Types
          -- * Benchmark building
          -- | The basic types for describing a single benchmark.
          mkBenchmark, canonicalBenchName, prettyBenchName,
-         Benchmark(..),          
+         Benchmark(..),
          RunFlags, CompileFlags,
 
          -- * Build method interface and applicability
          -- | A build method is applicable to a subset of target files
          -- (`FilePredicate`) and has a particular interface that HSbencher relies
          -- upon.
-         BuildMethod(..), BuildResult(..),         
+         BuildMethod(..), BuildResult(..),
          FilePredicate(..), filePredCheck,
-         
+
          -- * Benchmark configuration spaces
          -- | Describe how many different ways you want to run your
-         -- benchmarks.           
+         -- benchmarks.
          BenchSpace(..), ParamSetting(..), CPUAffinity(..),
-         andAddParam, 
+         andAddParam,
          compileOptsOnly, isCompileTime,
          toCompileFlags, toEnvVars, toCmdPaths,
          compileTimeEnvVars,
          BuildID, makeBuildID,
          DefaultParamMeaning(..),
-         
+
          -- * HSBencher Driver Configuration
          Config(..), BenchM, CleanupAction(..),
 
@@ -52,8 +52,8 @@ module HSBencher.Types
 
          SomeResult(..), Tag,
          -- Environment Variables
-         EnvVars, 
-         
+         EnvVars,
+
          -- * For convenience -- large records demand pretty-printing
          doc
        )
@@ -97,7 +97,7 @@ type PathRegistry = M.Map String String
 
 -- | A description of a set of files.  The description may take one of multiple
 -- forms.
-data FilePredicate = 
+data FilePredicate =
     WithExtension String -- ^ E.g. ".hs", WITH the dot.
   | IsExactly     String -- ^ E.g. "Makefile"
 --   | SatisfiesPredicate (String -> Bool)
@@ -112,14 +112,14 @@ data FilePredicate =
   -- TODO: Allow arbitrary function predicates also.
  deriving (Show, Generic, Ord, Eq)
 -- instance Show FilePredicate where
---   show (WithExtension s) = "<FilePredicate: *."++s++">"    
+--   show (WithExtension s) = "<FilePredicate: *."++s++">"
 
 
 -- | This function gives meaning to the `FilePred` type.
 --   It returns a filepath to signal "True" and Nothing otherwise.
 filePredCheck :: FilePredicate -> FilePath -> IO (Maybe FilePath)
 filePredCheck pred path =
-  let filename = takeFileName path in 
+  let filename = takeFileName path in
   case pred of
     AnyFile           -> return (Just path)
     IsExactly str     -> return$ if str == filename
@@ -140,7 +140,7 @@ filePredCheck pred path =
         _   -> return Nothing
 
 -- instance Show FilePredicate where
---   show (WithExtension s) = "<FilePredicate: *."++s++">"  
+--   show (WithExtension s) = "<FilePredicate: *."++s++">"
 
 -- | The result of doing a build.  Note that `compile` can will throw an exception if compilation fails.
 data BuildResult =
@@ -185,16 +185,16 @@ type BenchM a = ReaderT Config IO a
 
 -- | The global configuration for benchmarking.  WARNING! This is an internal data
 -- structure.  You shouldn't really use it.
-data Config = Config 
+data Config = Config
  { benchlist      :: [Benchmark DefaultParamMeaning]
  , extraParams    :: [ParamSetting] -- ^ Extra parameter settings to fold into EVERY benchmark we run.
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?
                      -- In some upload backends this is the name of the dataset or table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
 -- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
- , runTimeOut     :: Maybe Double -- ^ Timeout in seconds for running benchmarks 
+ , runTimeOut     :: Maybe Double -- ^ Timeout in seconds for running benchmarks
                                   -- (if not specified by the benchmark specifically)
- , maxthreads     :: Int  -- ^ In parallel compile/run phases use at most this many threads.  
+ , maxthreads     :: Int  -- ^ In parallel compile/run phases use at most this many threads.
                           -- Defaults to `getNumProcessors`.
  , trials         :: Int  -- ^ number of runs of each configuration
  , skipTo         :: Maybe Int -- ^ Where to start in the config space.
@@ -209,11 +209,11 @@ data Config = Config
  , doLSPCI        :: Bool  -- ^ Use the "lspci" command to gather more machine details on each run.
  , keepgoing      :: Bool  -- ^ Keep going after error.
  , pathRegistry   :: PathRegistry -- ^ Paths to executables
- , hostname       :: String  -- ^ Manually override the machine hostname.  
+ , hostname       :: String  -- ^ Manually override the machine hostname.
                              --   Defaults to the output of the `hostname` command.
  , defTopology    :: String -- ^ The default for the TOPOLOGY field, if a benchmark does not specify.
                             --   Usually, what cores we run on is fixed for a whole run of hsbencher.
- , startTime      :: Integer -- ^ Seconds since Epoch. 
+ , startTime      :: Integer -- ^ Seconds since Epoch.
  , resultsFile    :: String -- ^ Where to put timing results.
  , logFile        :: String -- ^ Where to put full, verbose testing output.
 
@@ -227,7 +227,7 @@ data Config = Config
                     -- ^ An optional action to run between benchmark runs to make sure the system is clean.
                     -- For example, this could kill off zombie processes if any were left by previous
                     -- benchmark trials.
-   
+
  -- These are all LINES-streams (implicit newlines).
  , logOut         :: Strm.OutputStream B.ByteString -- ^ Internal use only
  , resultsOut     :: Strm.OutputStream B.ByteString -- ^ Internal use only
@@ -240,7 +240,7 @@ data Config = Config
                            -- This is here because some executables don't use proper command line parsing.
  , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
 
- , plugIns         :: [SomePlugin] -- ^ Each plugin, and, if configured, its configuration. 
+ , plugIns         :: [SomePlugin] -- ^ Each plugin, and, if configured, its configuration.
  , plugInConfs     :: M.Map String SomePluginConf -- ^ Maps the `plugName` to its config.
  }
  deriving Show
@@ -279,8 +279,8 @@ data Benchmark a = Benchmark
 
 -- TODO: We could allow arbitrary shell scripts in lieu of the "target" file:
 -- data BenchTarget
---   = PathTarget FilePath 
---   | ShellCmd String -- ^ A shell script to run the benchmark.  
+--   = PathTarget FilePath
+--   | ShellCmd String -- ^ A shell script to run the benchmark.
 
 -- | The canonical name of a benchmark that is entered in results
 -- tables and used in messages printed to the user.
@@ -289,8 +289,8 @@ data Benchmark a = Benchmark
 -- That may be used in the future to ensure this canonical name is
 -- unique.
 canonicalBenchName :: [Benchmark a] -> Benchmark a -> String
-canonicalBenchName _benchList Benchmark{progname,target} = 
-  case progname of 
+canonicalBenchName _benchList Benchmark{progname,target} =
+  case progname of
     Nothing -> target
     Just s  -> s
 
@@ -302,8 +302,8 @@ prettyBenchName = canonicalBenchName
 
 -- | Make a Benchmark data structure given the core, required set of fields, and uses
 -- defaults to fill in the rest.  Takes target, cmdargs, configs.
-mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a 
-mkBenchmark  target  cmdargs configs = 
+mkBenchmark :: FilePath -> [String] -> BenchSpace a -> Benchmark a
+mkBenchmark  target  cmdargs configs =
   Benchmark {target, cmdargs, configs, progname=Nothing, benchTimeOut=Nothing, overrideMethod=Nothing }
 
 
@@ -318,7 +318,7 @@ mkBenchmark  target  cmdargs configs =
 --   the number of threads.
 data BenchSpace meaning = And [BenchSpace meaning]
                         | Or  [BenchSpace meaning]
-                        | Set meaning ParamSetting 
+                        | Set meaning ParamSetting
  deriving (Show,Eq,Ord,Read, Generic)
 
 -- | A default notion of what extra benchmark arguments actually *mean*.
@@ -376,7 +376,7 @@ compileTimeEnvVars [] = []
 compileTimeEnvVars ((_,CompileEnv s1 s2)
            : tl) = (s1,s2) : compileTimeEnvVars tl
 compileTimeEnvVars (_ : tl)                =           compileTimeEnvVars tl
- 
+
 
 -- | A BuildID should uniquely identify a particular (compile-time) configuration,
 -- but consist only of characters that would be reasonable to put in a filename.
@@ -388,11 +388,11 @@ type BuildID = String
 -- append the target path.
 makeBuildID :: FilePath -> CompileFlags -> EnvVars -> BuildID
 makeBuildID target strs buildenv =
-  encodedTarget ++ 
+  encodedTarget ++
   (intercalate "_" $
    map (filter charAllowed) strs) ++
   (intercalate "_" $
-   map (filter charAllowed) (envstr buildenv)) 
+   map (filter charAllowed) (envstr buildenv))
  where
   charAllowed = isAlphaNum
   encodedTarget = map (\ c -> if charAllowed c then c else '_') target
@@ -403,13 +403,13 @@ makeBuildID target strs buildenv =
 
 -- | Strip all runtime options, leaving only compile-time options.  This is useful
 --   for figuring out how many separate compiles need to happen.
-compileOptsOnly :: BenchSpace a -> BenchSpace a 
+compileOptsOnly :: BenchSpace a -> BenchSpace a
 compileOptsOnly x =
   case loop x of
     Nothing -> And []
     Just b  -> b
  where
-   loop bs = 
+   loop bs =
      case bs of
        And ls -> mayb$ And$ catMaybes$ map loop ls
        Or  ls -> mayb$ Or $ catMaybes$ map loop ls
@@ -431,9 +431,9 @@ test3 :: BenchSpace ()
 test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
-data ParamSetting 
+data ParamSetting
   = RuntimeParam String -- ^ String contains runtime options, expanded and tokenized by the shell.
-  | RuntimeArg   String -- ^ Runtime "args" are like runtime params but are more prominent.  
+  | RuntimeArg   String -- ^ Runtime "args" are like runtime params but are more prominent.
                         --   They typically are part of the "key" of the benchmark.
   | CompileParam String -- ^ String contains compile-time options, expanded and tokenized by the shell.
   | CompileEnv   String String -- ^ Establish an environment variable binding during compile time.
@@ -468,16 +468,16 @@ data CommandDescr =
   , timeout :: Maybe Double       -- ^ Optional timeout in seconds.
   , workingDir :: Maybe FilePath  -- ^ Optional working directory to switch to before
                                   --   running command.
-  , tolerateError :: Bool         -- ^ Does a crash of the process mean we throw away any 
+  , tolerateError :: Bool         -- ^ Does a crash of the process mean we throw away any
                                   --   data the program already printed?  Usually False.
   }
  deriving (Show,Eq,Ord,Read,Generic)
 
 -- Umm... these should be defined in base:
-deriving instance Eq   CmdSpec   
+deriving instance Eq   CmdSpec
 deriving instance Show CmdSpec
 deriving instance Ord  CmdSpec
-deriving instance Read CmdSpec   
+deriving instance Read CmdSpec
 
 -- | Measured results from running a subprocess (benchmark).
 data RunResult =
@@ -486,7 +486,7 @@ data RunResult =
                  , allocRate    :: Maybe Word64 -- ^ Bytes allocated per mutator-second
                  , memFootprint :: Maybe Word64 -- ^ High water mark of allocated memory, in bytes.
                  , jittime      :: Maybe Double -- ^ Time to JIT compile the benchmark, counted separately from realtime.
-                    -- 
+                    --
                  , custom       :: [(Tag,SomeResult)]
                  }
   | RunTimeOut
@@ -497,12 +497,15 @@ data RunResult =
 -- fields.  (This way, one remains robust to additional fields that are added in the
 -- future.)
 emptyRunResult :: RunResult
-emptyRunResult = RunCompleted { realtime = (-1.0)
-                              , productivity = Nothing 
-                              , allocRate = Nothing 
-                              , memFootprint = Nothing
-                              , jittime = Nothing
-                              , custom = []}
+emptyRunResult = def
+
+instance Default RunResult where
+  def = RunCompleted { realtime = (-1.0)
+                     , productivity = Nothing
+                     , allocRate = Nothing
+                     , memFootprint = Nothing
+                     , jittime = Nothing
+                     , custom = []}
 
 -- | A running subprocess.
 data SubProcess =
@@ -524,12 +527,12 @@ instance Out a => Out (Benchmark a)
 
 instance (Out k, Out v) => Out (M.Map k v) where
   docPrec n m = docPrec n $ M.toList m
-  doc         = docPrec 0 
+  doc         = docPrec 0
 
 
 -- | A line harvester takes a single line of input and possible extracts data from it
 -- which it can then add to a RunResult.
--- 
+--
 -- The boolean result indicates whether the line was used or not.
 newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, Bool))
 -- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe (RunResult -> RunResult))
@@ -538,7 +541,7 @@ newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, 
 instance Monoid LineHarvester where
   mempty = LineHarvester (\ _ -> (id,False))
   mappend (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
-    let (f,b1) = lh1 ln 
+    let (f,b1) = lh1 ln
         (g,b2) = lh2 ln in
     (f . g, b1 || b2)
 
@@ -547,7 +550,7 @@ orHarvest :: LineHarvester -> LineHarvester -> LineHarvester
 orHarvest (LineHarvester lh1) (LineHarvester lh2) = LineHarvester $ \ ln ->
   case lh1 ln of
     x@(_,True) -> x
-    (_,False) -> lh2 ln 
+    (_,False) -> lh2 ln
 
 instance Show LineHarvester where
   show _ = "<LineHarvester>"
@@ -560,7 +563,7 @@ data SomeResult = IntResult Int
                 | DoubleResult Double
                 | StringResult String
                 | AccumResult [SomeResult]
-                  -- expand here 
+                  -- expand here
                 deriving (Eq, Read, Ord)
 instance Show SomeResult where
   show (IntResult i)        = show i
@@ -580,7 +583,7 @@ data BenchmarkResult =
   , _HOSTNAME :: String    -- ^ Which machine did we run on?
   , _RUNID    :: String    -- ^ A unique identifier for the full hsbencher that included this benchmark.
   , _CI_BUILD_ID :: String -- ^ When launched from Jenkins or Travis, it can help to record where we came from.
-  , _THREADS  :: Int       -- ^ If multithreaded, how many CPU threads did this benchmark run with, zero otherwise.       
+  , _THREADS  :: Int       -- ^ If multithreaded, how many CPU threads did this benchmark run with, zero otherwise.
   , _DATETIME :: String -- Datetime
   , _MINTIME    ::  Double -- ^ Time of the fastest run
   , _MEDIANTIME ::  Double -- ^ Time of the median run
@@ -590,12 +593,12 @@ data BenchmarkResult =
   , _MAXTIME_PRODUCTIVITY    ::  Maybe Double  -- ^ GC productivity (if recorded) for the maxtime run.
   , _ALLTIMES      ::  String -- ^ Space separated list of numbers, should be one number for each TRIAL
   , _TRIALS        ::  Int    -- ^ How many times to [re]run each benchmark.
-  , _COMPILER      :: String  
+  , _COMPILER      :: String
   , _COMPILE_FLAGS :: String  -- ^ Flags used during compilation
   , _RUNTIME_FLAGS :: String  -- ^ Flags passed at runtime, possibly in addition to ARGS
   , _ENV_VARS      :: String  -- ^ Environment variables set for this benchmark run
   , _BENCH_VERSION ::  String -- ^ If the benchmark *suite* tracks its version number, put it here.
-  , _BENCH_FILE ::  String    
+  , _BENCH_FILE ::  String
   , _UNAME      :: String     -- ^ Information about the host machine that ran the benchmark.
   , _PROCESSOR  :: String
   , _TOPOLOGY   :: String     -- ^ Some freeform indication of what cores we ran on
@@ -606,31 +609,35 @@ data BenchmarkResult =
   , _ETC_ISSUE  :: String     -- ^ Information about the host machine from /etc/issue
   , _LSPCI      :: String     -- ^ Information about the host machine from the lspci command
   , _FULL_LOG   :: String     -- ^ Optionally record the full stdout from the benchmarking process.
-    
+
   , _MEDIANTIME_ALLOCRATE    ::  Maybe Word64  -- ^ If recorded, the allocation rate of the median run.
   , _MEDIANTIME_MEMFOOTPRINT ::  Maybe Word64  -- ^ If recorded, the memory footprint (high water mark) of the median run
   , _ALLJITTIMES   ::  String -- ^ Space separated list of numbers, JIT compile times
                               -- (if applicable), with a 1-1 correspondence to the exec times in ALLTIMES.
                               -- Time should not be double counted as JIT and exec time; these should be disjoint.
   , _RETRIES :: Int -- ^ The number of times any trial of the benchmark was reexecuted because of failure.
-                        
+
   , _CUSTOM :: [(Tag, SomeResult)]
                -- ^ A List of custom results
                -- The tag corresponds to column "title"
   }
   deriving (Show,Read,Ord,Eq)
 
+{- DEPRECATED emptyBenchmarkResult "Use Data.Default.def instead" -}
 -- | A default value, useful for filling in only the fields that are relevant to a particular benchmark.
 emptyBenchmarkResult :: BenchmarkResult
-emptyBenchmarkResult = BenchmarkResult
+emptyBenchmarkResult = def
+
+instance Default BenchmarkResult where
+ def = BenchmarkResult
   { _PROGNAME = ""
   , _VARIANT  = ""
   , _ARGS     = []
   , _HOSTNAME = ""
   , _RUNID    = ""
-  , _CI_BUILD_ID = ""                
+  , _CI_BUILD_ID = ""
   , _THREADS  = 0
-  , _DATETIME = "" 
+  , _DATETIME = ""
   , _MINTIME    =  0.0
   , _MEDIANTIME =  0.0
   , _MAXTIME    =  0.0
@@ -659,7 +666,7 @@ emptyBenchmarkResult = BenchmarkResult
   , _MEDIANTIME_MEMFOOTPRINT = Nothing
   , _ALLJITTIMES = ""
   , _RETRIES = 0
-  , _CUSTOM = [] 
+  , _CUSTOM = []
   }
 
 -- | Convert the Haskell representation of a benchmark result into a tuple for upload
@@ -668,10 +675,10 @@ resultToTuple :: BenchmarkResult -> [(String,String)]
 resultToTuple r =
   [ ("PROGNAME", _PROGNAME r)
   , ("VARIANT",  _VARIANT r)
-  , ("ARGS",     unwords$ _ARGS r)    
+  , ("ARGS",     unwords$ _ARGS r)
   , ("HOSTNAME", _HOSTNAME r)
   , ("RUNID",    _RUNID r)
-  , ("CI_BUILD_ID", _CI_BUILD_ID r)    
+  , ("CI_BUILD_ID", _CI_BUILD_ID r)
   , ("THREADS",  show$ _THREADS r)
   , ("DATETIME", _DATETIME r)
   , ("MINTIME",     show$ _MINTIME r)
@@ -696,10 +703,10 @@ resultToTuple r =
   , ("GIT_DEPTH", show$ _GIT_DEPTH r)
   , ("WHO",            _WHO r)
   , ("ETC_ISSUE", _ETC_ISSUE r)
-  , ("LSPCI", _LSPCI r)    
+  , ("LSPCI", _LSPCI r)
   , ("FULL_LOG", _FULL_LOG r)
   , ("MEDIANTIME_ALLOCRATE",    fromMaybe "" $ fmap show $ _MEDIANTIME_ALLOCRATE r)
-  , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)    
+  , ("MEDIANTIME_MEMFOOTPRINT", fromMaybe "" $ fmap show $ _MEDIANTIME_MEMFOOTPRINT r)
   , ("ALLJITTIMES", _ALLJITTIMES r)
   , ("RETRIES", show (_RETRIES r))
   ] ++ map (\ (t,s) -> (t, show s)) (_CUSTOM r)
@@ -708,7 +715,7 @@ resultToTuple r =
 tupleToResult :: [(String,String)] -> BenchmarkResult
 tupleToResult tuple = BenchmarkResult
   { _PROGNAME = get "PROGNAME"
-  , _VARIANT  = get "VARIANT" 
+  , _VARIANT  = get "VARIANT"
   , _ARGS     = words (get "ARGS")
   , _HOSTNAME = get "HOSTNAME"
   , _RUNID    = get "RUNID"
@@ -742,7 +749,7 @@ tupleToResult tuple = BenchmarkResult
   , _FULL_LOG   = get "FULL_LOG"
   , _ALLJITTIMES = get "ALLJITTIMES"
   , _RETRIES     = s2i "RETRIES" (get "RETRIES")
-                     
+
   -- , _ALLTIMES      = try "ALLTIMES" ""
   -- , _COMPILER      = try "COMPILER" ""
   -- , _COMPILE_FLAGS = try "COMPILE_FLAGS" ""
@@ -762,7 +769,7 @@ tupleToResult tuple = BenchmarkResult
   -- , _FULL_LOG   = try "FULL_LOG" ""
   -- , _ALLJITTIMES = try "ALLJITTIMES" ""
   -- , _RETRIES = s2i (try "RETRIES" "0")
-               
+
   , _MEDIANTIME_ALLOCRATE    = Nothing
   , _MEDIANTIME_MEMFOOTPRINT = Nothing
   , _CUSTOM = map parsecustom custom
@@ -775,11 +782,11 @@ tupleToResult tuple = BenchmarkResult
         [] -> case reads s of
                ((x,_):_) -> (k, DoubleResult x)
                []        -> (k,StringResult s)
-    
-    custom = filter (\(k,_) -> not (S.member k schema)) tuple 
-    
+
+    custom = filter (\(k,_) -> not (S.member k schema)) tuple
+
     schema = S.fromList (map fst (resultToTuple emptyBenchmarkResult))
-    
+
     s2i :: String -> String -> Int
     s2i who s = case reads s of
                   [] -> error$ "tupleToResult: expected "++who++" field to contain a parsable Int, got: "++show s
@@ -793,7 +800,7 @@ tupleToResult tuple = BenchmarkResult
                        Nothing -> Nothing
                        Just "" -> Nothing
                        Just x  -> Just (s2d key x)
-    
+
     try key df = case M.lookup key tupleM of
                    Nothing -> df
                    Just "" -> df
@@ -808,12 +815,12 @@ tupleToResult tuple = BenchmarkResult
 
 #if !MIN_VERSION_base(4,7,0)
 instance Functor OptDescr where
-  fmap fn (Option shrt long args str) = 
+  fmap fn (Option shrt long args str) =
     Option shrt long (fmap fn args) str
 
 instance Functor ArgDescr where
-  fmap fn x = 
-    case x of 
+  fmap fn x =
+    case x of
       NoArg x ->  NoArg (fn x)
       ReqArg fn2 str -> ReqArg (fn . fn2) str
       OptArg fn2 str -> OptArg (fn . fn2) str
@@ -824,21 +831,21 @@ instance Functor ArgDescr where
 -- | An interface for plugins provided in separate packages.  These plugins provide
 -- new backends for uploading benchmark data.
 class (Show p, Eq p, Ord p,
-       Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p), 
+       Show (PlugFlag p), Ord (PlugFlag p), Typeable (PlugFlag p),
        Show (PlugConf p), Ord (PlugConf p), Typeable (PlugConf p),
-       Default p, Default (PlugConf p)) => 
+       Default p, Default (PlugConf p)) =>
       Plugin p where
   -- | A configuration flag for the plugin (parsed from the command line)
-  type PlugFlag p 
+  type PlugFlag p
   -- | The full configuration record for the plugin.
-  type PlugConf p 
+  type PlugConf p
 
   -- | Each plugin must have a unique name.
   plugName  :: p -> String
 
   -- | Options for command line parsing.  These should probably be disjoint from the
   --   options used by other plugins; so use very specific names.
-  -- 
+  --
   --   Finally, note that the String returned here is a header line that is printed
   --   before the usage documentation when the benchmark executable is invoked with `-h`.
   plugCmdOpts :: p -> (String, [OptDescr (PlugFlag p)])
@@ -854,20 +861,20 @@ class (Show p, Eq p, Ord p,
   plugInitialize :: p -> Config -> IO Config
 
   -- | This is the raison d'etre for the class.  Upload a single row of benchmark data.
-  plugUploadRow  :: p -> Config -> BenchmarkResult -> IO () 
+  plugUploadRow  :: p -> Config -> BenchmarkResult -> IO ()
 
 
-data SomePlugin  = forall p . Plugin p => SomePlugin p 
+data SomePlugin  = forall p . Plugin p => SomePlugin p
 
 -- | Keep a single flag together with the plugin it goes with.
-data SomePluginFlag = 
---  forall p . (Plugin p, Typeable (PlugFlag p), Show (PlugFlag p)) => 
+data SomePluginFlag =
+--  forall p . (Plugin p, Typeable (PlugFlag p), Show (PlugFlag p)) =>
   forall p . (Plugin p) =>
   SomePluginFlag p (PlugFlag p)
 
 -- | Keep a full plugin configuration together with the plugin it goes with.
-data SomePluginConf = 
---  forall p . (Plugin p, Typeable (PlugConf p), Show (PlugConf p)) => 
+data SomePluginConf =
+--  forall p . (Plugin p, Typeable (PlugConf p), Show (PlugConf p)) =>
   forall p . (Plugin p) =>
   SomePluginConf p (PlugConf p)
 
@@ -877,13 +884,13 @@ data SomePluginConf =
 instance Show SomePlugin where
   show (SomePlugin p) = show p
 
-instance Eq SomePlugin where 
-  (SomePlugin p1) == (SomePlugin p2) = 
+instance Eq SomePlugin where
+  (SomePlugin p1) == (SomePlugin p2) =
 --    show p1 == show p2
     plugName p1 == plugName p2
 
-instance Ord SomePlugin where 
-  compare (SomePlugin p1) (SomePlugin p2) = 
+instance Ord SomePlugin where
+  compare (SomePlugin p1) (SomePlugin p2) =
     compare (plugName p1) (plugName p2)
 
 instance Show SomePluginConf where
@@ -898,21 +905,21 @@ instance Show SomePluginFlag where
 -- mixed together with other plugins options.
 genericCmdOpts :: Plugin p => p -> [OptDescr SomePluginFlag]
 genericCmdOpts p = map (fmap lift) (snd (plugCmdOpts p))
- where 
+ where
  lift pf = SomePluginFlag p pf
 
 -- | Retrieve our own Plugin's configuration from the global config.
 --   This involves a dynamic type cast.
--- 
+--
 --   If there is no configuration for this plugin currently
 --   registered, the default configuration for that plugin is
 --   returned.
-getMyConf :: forall p . Plugin p => p -> Config -> PlugConf p 
-getMyConf p Config{plugInConfs} = 
-  case M.lookup (plugName p) plugInConfs of 
+getMyConf :: forall p . Plugin p => p -> Config -> PlugConf p
+getMyConf p Config{plugInConfs} =
+  case M.lookup (plugName p) plugInConfs of
 --   Nothing -> error$ "getMyConf: expected to find plugin config for "++show p
    Nothing -> def :: (PlugConf p)
-   Just (SomePluginConf p2 pc) -> 
+   Just (SomePluginConf p2 pc) ->
      case (fromDynamic (toDyn pc)) :: Maybe (PlugConf p) of
        Nothing -> error $ "getMyConf: internal failure.  Performed lookup for plugin conf "
                           ++show p++" got back a conf for a different plugin " ++ show p2
@@ -920,10 +927,9 @@ getMyConf p Config{plugInConfs} =
 
 -- | Encapsulate the policy for where/how to inject the Plugin's conf into the global
 -- Config.
-setMyConf :: forall p . Plugin p => p -> PlugConf p -> Config -> Config 
-setMyConf p new cfg@Config{plugInConfs} = 
+setMyConf :: forall p . Plugin p => p -> PlugConf p -> Config -> Config
+setMyConf p new cfg@Config{plugInConfs} =
   cfg { plugInConfs= (M.insert (plugName p) (SomePluginConf p new) plugInConfs) }
 
 ----------------------------------------
 -- Small convenience functions
-
