@@ -1,19 +1,19 @@
 
 name:                hsbencher-fusion-fetch
 version:             0.1.1
-synopsis:            Command line tool for fetching HSBencher data. 
+synopsis:            Command line tool for fetching HSBencher data.
 description:
   Once benchmark data is uploaded to a backend, it is necessary
-  to retrieve it in order to analyze and plot it.  This command 
-  is currently specific to the fusion table backend and allows 
+  to retrieve it in order to analyze and plot it.  This command
+  is currently specific to the fusion table backend and allows
   querying it with SQL expressions.
 
 license:             MIT
 -- license-file:        LICENSE
 author:              Ryan Newton, Joel Svensson
 maintainer:          rrnewton@gmail.com
--- copyright:           
--- category:            
+-- copyright:
+-- category:
 build-type:          Simple
 cabal-version:       >=1.10
 
@@ -21,9 +21,12 @@ cabal-version:       >=1.10
 executable hsbencher-fusion-fetch
   main-is: Main.hs
   default-language: Haskell2010
-  build-depends: base >=4.5 && < 4.8
+  build-depends: base >=4.5
                , hsbencher >= 1.8.0.13
-               , hsbencher-fusion >= 0.1.0.3 
-               , simple-sql-parser >= 0.4.0 && < 0.5
-               , split 
+               , hsbencher-fusion >= 0.1.0.3
+-- There appears to be a PVP violation at simple-sql-parser 0.4.1.
+-- Upgrading 0.4.0->0.4.1 yields a bunch of type errors:
+--               , simple-sql-parser >= 0.4.0 && < 0.5
+               , simple-sql-parser >= 0.4.1
+               , split
                , MissingH >= 1.2.1.0 && < 1.3

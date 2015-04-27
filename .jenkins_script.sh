@@ -6,7 +6,7 @@ if [ "$CABAL" == "" ]; then
  CABAL=cabal-1.22
 fi
 
-PKGS=" ./hsbencher/ ./hsbencher-fusion/ ./hsbencher-codespeed ./hsbencher-analytics "
+PKGS=" ./hsbencher/ ./hsbencher-fusion/ ./hsbencher-codespeed ./hsbencher-analytics ./hsbencher-tool "
 
 $CABAL --version
 TOP=`pwd`
