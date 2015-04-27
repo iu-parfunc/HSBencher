@@ -1,3 +1,0 @@
-[submodule "hgdata"]
-	path = hgdata
-	url = git@github.com:rrnewton/hgdata.git
