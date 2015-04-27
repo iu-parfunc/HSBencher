@@ -2,6 +2,12 @@
 HSBencher: A flexible benchmarking framework
 ============================================
 
+Build/test Status:
+
+ * Travis: [![Build Status](https://travis-ci.org/rrnewton/HSBencher.svg?branch=master)](https://travis-ci.org/rrnewton/HSBencher)
+ * Jenkins: [![Build Status](http://tester-lin.soic.indiana.edu:8080/buildStatus/icon?job=HSBencher)](http://tester-lin.soic.indiana.edu:8080/job/HSBencher)
+
+
 Overview
 --------
 
@@ -28,7 +34,7 @@ end user obey the following conventions:
    overridden by having the benchmark print out a line such as
    `SELFTIMED 3.3` on stdout , which would indicate a 3.3 second runtime.
 
- * Coming soon -- compile time timing and multi-phase timing (e.g. for Accelerate) 
+ * Coming soon -- compile time timing and multi-phase timing (e.g. for Accelerate)
 
  * "shortrun" -- all benchmarks should run and do SOMETHING even if
    given no runtime arguments.  The convention is for quick tests
@@ -61,7 +67,6 @@ end user obey the following conventions:
  * It should build by running `ghc --make` on the target file; any
    include directories beyond the one containing the target file must
    be added explicitly (as CompileParam's)
- * compile time arguments are formatted for ghc command line 
+ * compile time arguments are formatted for ghc command line
  * runtime arguments are provided to the resulting executable, raw
    (i.e. you need to include `+RTS -RTS` yourself)
-
