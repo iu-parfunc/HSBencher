@@ -185,7 +185,7 @@ Source-repository head
   location: https://github.com/rrnewton/HSBencher
 
 Library
-
+  hs-source-dirs: src/
   -- First, modules for the end user:
   exposed-modules: HSBencher
                    HSBencher.Backend.Dribble
@@ -220,6 +220,7 @@ Library
 -----------------------------------------------------------------------------------------------
 -- Executable hsbencher
 --   main-is: Main.hs
+--  hs-source-dirs: src/
 --   -- other-modules:
 --   build-depends:
 --       -- <DUPLICATED from above>
