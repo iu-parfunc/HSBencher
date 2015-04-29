@@ -21,28 +21,31 @@ module HSBencher.Internal.App
 
 ----------------------------
 -- Standard library imports
-import Control.Concurrent
+import           Control.Concurrent
 import qualified Control.Concurrent.Async as A
-import Control.Exception (SomeException, try, catch)
-import Control.Monad.Reader
+import           Control.Exception (SomeException, try, catch)
+import           Control.Monad.Reader
 import qualified Data.ByteString.Char8 as B
-import Data.IORef
-import Data.Default
-import Data.List (intercalate, sortBy, intersperse, isInfixOf)
+import           Data.Default
+import           Data.Function (on)
+import           Data.IORef
+import           Data.List (intercalate, sortBy, intersperse, isInfixOf)
 import qualified Data.List as L
 import qualified Data.Map as M
-import Data.Maybe (isJust, fromJust, fromMaybe)
-import Data.Version (versionBranch)
-import Data.Word (Word64)
-import Numeric (showFFloat)
-import Prelude hiding (log, id)
-import System.Console.GetOpt (getOpt', ArgOrder(Permute), usageInfo)
-import System.Directory
-import System.Environment (getArgs, getEnv, getProgName)
-import System.Exit
-import System.FilePath (splitFileName, (</>))
-import System.Process (CmdSpec(..))
-import Text.Printf
+import           Data.Maybe (isJust, fromJust, fromMaybe)
+import qualified Data.Set as S
+import           Data.Version (versionBranch)
+import           Data.Word (Word64)
+import           Numeric (showFFloat)
+import           Prelude hiding (log, id)
+import           System.Console.GetOpt (getOpt', ArgOrder(Permute), usageInfo)
+import           System.Directory
+import           System.Environment (getArgs, getEnv, getProgName)
+import           System.Exit
+import           System.FilePath (splitFileName, (</>))
+import           System.Process (CmdSpec(..))
+import           Text.Printf
+
 
 ----------------------------
 -- Additional libraries:
@@ -50,20 +53,20 @@ import qualified System.IO.Streams as Strm
 import qualified System.IO.Streams.Concurrent as Strm
 
 #ifdef USE_HYDRAPRINT
-import UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydraConf, hydraPrintStatic)
-import Scripting.Parallel.ThreadPool (parForM)
+import           UI.HydraPrint (hydraPrint, HydraConf(..), DeleteWinWhen(..), defaultHydraConf, hydraPrintStatic)
+import           Scripting.Parallel.ThreadPool (parForM)
 #endif
 
 ----------------------------
 -- Self imports:
 
-import HSBencher.Types
-import HSBencher.Internal.Utils
-import HSBencher.Internal.Logging
-import HSBencher.Internal.Config
-import HSBencher.Internal.MeasureProcess  (measureProcess,measureProcessDBG)
-import HSBencher.Internal.BenchSpace (enumerateBenchSpace, filterBenchmark, benchSpaceSize)
-import Paths_hsbencher (version) -- Thanks, cabal!
+import           HSBencher.Types
+import           HSBencher.Internal.Utils
+import           HSBencher.Internal.Logging
+import           HSBencher.Internal.Config
+import           HSBencher.Internal.MeasureProcess (runSubprocess)
+import           HSBencher.Internal.BenchSpace (enumerateBenchSpace, filterBenchmark, benchSpaceSize)
+import           Paths_hsbencher (version) -- Thanks, cabal!
 
 ----------------------------------------------------------------------------------------------------
 
@@ -116,9 +119,9 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
                filterM (fmap isJust . (`filePredCheck` testPath) . canBuild) buildMethods
     Just m -> return [m]
   when (null matches) $ do
-       logT$ "ERROR, no build method matches path: "++testPath
-       logT$ "  Tried methods: "++show(map methodName buildMethods)
-       logT$ "  With file preds: "
+       logT $ "ERROR, no build method matches path: "++testPath
+       logT $ "  Tried methods: "++show(map methodName buildMethods)
+       logT $ "  With file preds: "
        forM_ buildMethods $ \ meth ->
          logT$ "    "++ show (canBuild meth)
        lift exitFailure
@@ -149,11 +152,13 @@ compileOne (iterNum,totalIters) Benchmark{target=testPath,cmdargs, overrideMetho
 -- Running Benchmarks
 --------------------------------------------------------------------------------
 
--- If the benchmark has already been compiled doCompile=False can be
+-- | If the benchmark has already been compiled doCompile=False can be
 -- used to skip straight to the execution.
 --
 -- runconfig contains both compile time and runtime parameters.  All
 -- the params that affect this run.
+--
+-- runOne returns a bool where True means the benchmark job overall is still a "success".
 runOne :: (Int,Int) -> BuildID -> BuildResult
        -> Benchmark DefaultParamMeaning
        -> [(DefaultParamMeaning,ParamSetting)] -> BenchM Bool
@@ -163,7 +168,7 @@ runOne (iterNum, totalIters) _bldid bldres
 
   log$ "\n--------------------------------------------------------------------------------"
   log$ "  Running Config "++show iterNum++" of "++show totalIters ++": "++testPath++" "++unwords cmdargs
---       "  threads "++show numthreads++" (Env="++show envVars++")"
+       --       "  threads "++show numthreads++" (Env="++show envVars++")"
 
   -- (1) Gather contextual information
   ----------------------------------------
@@ -176,11 +181,45 @@ runOne (iterNum, totalIters) _bldid bldres
   -- takes a long time we don't bother doing more trials.)
   (retries,nruns) <- runB_runTrials fullargs benchTimeOut bldres runconfig
 
-  -- (3) Produce output to the right places:
-  ------------------------------------------
+  -- (3) Augment with contextual information gathered from the
+  -- environment to produce our seed result configuration which is
+  -- then modified by ingesting tags produced by the benchmarks run.
+  ----------------------------------------
   Config{benchlist} <- ask
-  let thename = canonicalBenchName benchlist thebench
-  runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig
+  defSettings <- let thename = canonicalBenchName benchlist thebench in
+                 augmentBenchmarkResult runconfig (def { _PROGNAME = thename
+                                                       , _ARGS     = args
+                                                       , _RETRIES  = retries })
+
+  -- (4) Parse process output, populating BenchmarkResults
+  ----------------------------------------
+  -- For now we only count stderr/stdout from successfully exited processes
+  Config{ harvesters } <- ask
+  let goodruns = [ r | r@(RunCompleted {}) <- nruns ]
+      parsed   = map (parseRun defSettings harvesters) goodruns
+
+  -- (5) Zip together benchmarks from trials
+  ----------------------------------------
+  collapsedBenches <- zipMatching parsed
+
+  -- (6) Produce output to the right places:
+  ------------------------------------------
+  when False $ -- TODO: Delete me.
+    do let thename = canonicalBenchName benchlist thebench
+       _ <- runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig
+       return ()
+  mapM_ runC_outputBenchmarkResult collapsedBenches
+
+  -- (7) Finally, compute return status
+  ----------------------------------------
+  Config{ keepgoing } <- ask
+  when (any isError nruns && not keepgoing) $ do
+    log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
+    liftIO exitFailure
+  if keepgoing
+     -- Even with --keepgoing, the job still fails if we get no data:
+     then return (not (all isError nruns))
+     else return True
 
 
 ------------------------------------------------------------
@@ -209,6 +248,10 @@ runA_gatherContext testPath cmdargs runconfig = do
   return (args,fullargs,testRoot)
 
 
+-- REMOVE ME: these have been disconnected:
+measureProcess :: t
+measureProcess = error "refactor in progress"
+
 ------------------------------------------------------------
 runB_runTrials :: [String] -> Maybe Double -> BuildResult
                -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO (Int,[RunResult])
@@ -233,6 +276,7 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
     let envVars = toEnvVars  runconfig
     let affinity = getAffinity runconfig
 
+    -- Deadcode: update me to use runSubprocessWithTimeOut:
     let _doMeasure1 cmddescr = do
           SubProcess {wait,process_out,process_err} <-
             lift$ measureProcess affinity harvesters cmddescr
@@ -243,18 +287,16 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
           lift$ A.wait mv
           logT$ " Subprocess finished and echo thread done.\n"
           return x
-
     -- I'm having problems currently [2014.07.04], where after about
     -- 50 benchmarks (* 3 trials), all runs fail but there is NO
     -- echo'd output. So here we try something simpler as a test.
     let doMeasure2 cmddescr = do
-          (lnes,result) <- lift$ measureProcessDBG affinity harvesters cmddescr
-          mapM_ (logT . B.unpack) lnes
-          logT $ "Subprocess completed with "++show(length lnes)++" of output."
+          result <- lift$ runSubprocess affinity cmddescr
+          mapM_ (logT . B.unpack . fromLineOut) (linesOut result)
+          logT $ "Subprocess completed with "++show(length$ linesOut result)++" of output."
           return result
 
         doMeasure = doMeasure2  -- TEMP / Toggle me back later.
-        --doMeasure = doMeasure1  -- TEMP / Toggle me back later.
 
     this <- case bldres of
       StandAloneBinary binpath -> do
@@ -269,11 +311,9 @@ runB_runTrials fullargs benchTimeOut bldres runconfig = do
           Nothing -> return ()
         doMeasure CommandDescr{ command=ShellCommand command, envVars, timeout, workingDir=Nothing, tolerateError=False }
       RunInPlace fn -> do
---        logT$ " Executing in-place benchmark run."
         let cmd = fn fullargs envVars
         logT$ " Generated in-place run command: "++show cmd
         doMeasure cmd
-
     if isError this
      then if retries > 0
           then do logT$ " Failed Trial!  Retrying config, repeating trial "++
@@ -299,6 +339,170 @@ getNumThreads = foldl (\ acc (x,_) ->
                    0
 
 ------------------------------------------------------------
+
+-- | Parse the stdout/stderr from a subprocess run, accumulating the
+-- tagged lines into one or more benchmark results.
+parseRun :: BenchmarkResult -> LineHarvester -> RunResult -> [BenchmarkResult]
+parseRun seedRes (LineHarvester fn) rr =
+    case (gogo errlines, gogo outlines) of
+      ([],[]) -> []
+      (a,[])  -> a
+      ([],b)  -> b
+      -- Special case: allow tagged output on both stderr & stdout if there is no START/END delimination
+      ([a],[_b]) | isOpen errlines && isOpen outlines -> naked a False outlines
+      (_,_) -> error $ "parseRun: HSBencher allows tagged output on the subprocess's \n"++
+             "stdout OR stderr, but it is currently an error to have tagged output on BOTH.\n"++
+             "\nOn stdout:\n---------\n"++ (unlines $ map B.unpack $ filter isTagged outlines) ++
+             "\nOn stderr:\n---------\n"++ (unlines $ map B.unpack $ filter isTagged errlines)
+  where
+
+  isOpen = not . any (=="START_BENCHMARK")
+
+  errlines = [ l | ErrLine l <- linesOut rr ]
+  outlines = [ l | OutLine l <- linesOut rr ]
+
+  isTagged ln = case fn ln of (_,bl) -> bl
+
+  gogo = naked seedRes False
+
+  -- Here is where we deal with the protocol of START_BENCHMARK / END_BENCHMARK
+  -- We start off in the "naked" state, not inside a START/END pair.
+  naked :: BenchmarkResult -> Bool -> [B.ByteString] -> [BenchmarkResult]
+  naked acc gotAHit lns =
+    case lns of
+      [] -> if gotAHit -- If we received some tagged lines,
+                       -- then there is something to return in the acc.
+               then [acc]
+               else []
+      ("START_BENCHMARK":tl) ->
+         if gotAHit
+            then error $ "error: encountered START_BENCHMARK tag, but also saw tagged "++
+                         "lines OUTSIDE of delimited START/END blocks."
+            else closed seedRes tl
+
+      (hd:tl) -> case fn hd of
+                   (modder,flg) -> naked (modder acc) (gotAHit || flg) tl
+
+  closed :: BenchmarkResult -> [B.ByteString] -> [BenchmarkResult]
+  closed _ [] = error "inside START_BENCHMARK block, but no matching END_BENCHMARK tag"
+  closed acc ("END_BENCHMARK":tl) = acc : naked seedRes False tl
+  closed acc (hd:tl) = let (modder,_) = fn hd
+                       in closed (modder acc) tl
+
+
+------------------------------------------------------------
+
+zipMatching :: [[BenchmarkResult]] -> ReaderT Config IO [BenchmarkResult]
+zipMatching [] = error "zipMatching: got empty list of trials"
+zipMatching batches =
+  -- TODO: implement reordering, for now expect them to match:
+  case S.toList $ S.fromList lens of
+    [1] -> do logT "One benchmark result per trial."
+              return [aggregateTrials (map head batches)]
+
+    [len] -> do logT $ "Zipping together trials that each produced "++show len++" benchmark results."
+                let matchedUp = L.transpose batches
+                case allIndependentBenchVars of
+                  BenchKey fn ->
+                   forM matchedUp $ \trials ->
+                    let fingerprints = map fn trials in
+                    if allSame fingerprints
+                       then return (aggregateTrials trials)
+                       else error $ "zipMatching: mismatched benchmark fingerprints: "++show
+                              (S.toList $ S.fromList fingerprints)
+
+    ls -> error $ "Mismatched number of benchmark results per trial: "++show ls
+  where
+  lens = map length batches
+
+allSame :: (Ord a) => [a] -> Bool
+allSame ls =
+  case S.toList $ S.fromList ls of
+    [_] -> True
+    _   -> False
+
+-- | Collapse a list of trials into a single result that summarizes
+-- those trials.
+--
+-- POLICY: currently this leaves trials in the order they were run.
+-- An alternate policy is to sort them from min to max execution time.
+aggregateTrials :: [BenchmarkResult] -> BenchmarkResult
+aggregateTrials [] = error "aggregateTrials: given empty list of benchmarks"
+aggregateTrials benches =
+    medianRun { _TRIALS = numTrials
+              , _MINTIME = _MEDIANTIME minRun -- ugly business..
+              , _MAXTIME = _MEDIANTIME maxRun
+              , _MINTIME_PRODUCTIVITY = _MEDIANTIME_PRODUCTIVITY minRun
+              , _MAXTIME_PRODUCTIVITY = _MEDIANTIME_PRODUCTIVITY maxRun
+              , _ALLTIMES = unwords $ map show alltimes
+              , _ALLJITTIMES = alljittimes
+              , _RETRIES = sum (map _RETRIES benches)
+              -- Policy: we take scalar tags directly from the medianRun,
+              -- wheras accumalating tags are aggregated from all runs in order.
+              , _CUSTOM = filter (not . isAccum) (_CUSTOM medianRun) ++
+                          accumulateCustomTags benches
+              }
+  where
+  -- Sorted by time
+  sorted   = sortBy (compare `on` _MEDIANTIME) benches
+  canonicalOrder = benches -- `sorted` or `benches` is fine.
+  alltimes    = map _MEDIANTIME canonicalOrder -- Warning: IGNORES original ALLTIMES fields.
+  alljittimes = unwords $ map _ALLJITTIMES canonicalOrder
+
+  isAccum (_,AccumResult _) = True
+  isAccum _                 = False
+
+  numTrials = length benches
+  minRun    = head sorted
+  medianRun = sorted !! (numTrials `quot` 2)
+  maxRun    = last sorted
+
+
+------------------------------------------------------------
+
+augmentBenchmarkResult :: [(DefaultParamMeaning, ParamSetting)]
+                       -> BenchmarkResult
+                       -> ReaderT Config IO BenchmarkResult
+augmentBenchmarkResult runconfig result = do
+  conf <- ask
+  -- First: fill in information about the evalution platform:
+  result' <- liftIO $ augmentResultWithConfig conf result
+  -- Second, fill in independent variables based on `runconfig`:
+  -- Affinity is set for the whole process run, applies to all benchmarks
+  return $ result' { _THREADS       = getNumThreads runconfig
+                   , _RUNTIME_FLAGS = unwords [ s | (_,RuntimeParam s) <- runconfig ]
+                   , _COMPILE_FLAGS = unwords (toCompileFlags runconfig)
+                   , _TOPOLOGY      = show $ getAffinity runconfig
+                   }
+
+------------------------------------------------------------
+
+-- Output/upload a benchmark result to everywhere it needs to go.
+runC_outputBenchmarkResult :: BenchmarkResult -> ReaderT Config IO ()
+runC_outputBenchmarkResult result =
+  case allIndependentBenchVars of
+    BenchKey fn -> do
+     logT $ "Recording output from successful benchmark trial with fingerprint: "++show (fn result)
+     outputToPlugs result
+     return ()
+
+-- Upload results to plugin backends:
+outputToPlugs :: BenchmarkResult -> ReaderT Config IO ()
+outputToPlugs result = do
+  conf2@Config{ plugIns } <- ask
+  forM_ plugIns $ \ (SomePlugin p) -> do
+    -- JS: May 21 2014, added try and case on result.
+    result3 <- liftIO$ try (plugUploadRow p conf2 result) :: ReaderT Config IO (Either SomeException ())
+    case result3 of
+      Left err -> logT$("plugUploadRow:Failed, error: \n"++
+                        "------------------begin-error----------------------\n"++
+                        show err ++
+                        "\n-------------------end-error-----------------------\n"
+                        )
+      Right () -> return ()
+    return ()
+
+------------------------------------------------------------
 runC_produceOutput :: ([String], [String]) -> (Int,[RunResult]) -> String -> String
                    -> [(DefaultParamMeaning, ParamSetting)] -> ReaderT Config IO Bool
 runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig = do
@@ -317,7 +521,6 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
   let exitCheck = when (any isError nruns && not keepgoing) $ do
                     log $ "\n Some runs were ERRORS; --keepgoing not used, so exiting now."
                     liftIO exitFailure
-
   -- FIXME: this old output format can be factored out into a plugin or discarded:
   --------------------------------------------------------------------------------
   (_t1,_t2,_t3,_p1,_p2,_p3) <-
@@ -394,7 +597,7 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
                                -- be reduced. Currently we take the first,
                                -- or accumulate them all depending on harvester
                                -- type.
-            , _CUSTOM        = accumulateCustomTags goodruns
+            , _CUSTOM        = accumulateCustomTags (error "broken by refactor") -- goodruns
             }
       conf <- ask
       result' <- liftIO$ augmentResultWithConfig conf result
@@ -402,7 +605,6 @@ runC_produceOutput (args,fullargs) (retries,nruns) _testRoot thename runconfig =
       -- Upload results to plugin backends:
       conf2@Config{ plugIns } <- ask
       forM_ plugIns $ \ (SomePlugin p) -> do
-
         --JS: May 21 2014, added try and case on result.
         result3 <- liftIO$ try (plugUploadRow p conf2 result') :: ReaderT Config IO (Either SomeException ())
         case result3 of
@@ -882,16 +1084,16 @@ isError ExitError{} = True
 isError _           = False
 
 getprod :: RunResult -> Maybe Double
-getprod RunCompleted{productivity} = productivity
+getprod RunCompleted{} = error "FINISHME"
 getprod RunTimeOut{}               = Nothing
 getprod x                          = error$"Cannot get productivity from: "++show x
 
 getallocrate :: RunResult -> Maybe Word64
-getallocrate RunCompleted{allocRate} = allocRate
+getallocrate RunCompleted{} = error "FINISHME"
 getallocrate _                       = Nothing
 
 getmemfootprint :: RunResult -> Maybe Word64
-getmemfootprint RunCompleted{memFootprint} = memFootprint
+getmemfootprint RunCompleted{} = error "FINISHME"
 getmemfootprint _                          = Nothing
 
 gettime :: RunResult -> Double
@@ -900,21 +1102,22 @@ gettime RunTimeOut{}           = posInf
 gettime x                      = error$"Cannot get realtime from: "++show x
 
 getjittime :: RunResult -> Maybe Double
-getjittime RunCompleted{jittime}  = jittime
+getjittime RunCompleted{}  = error "FINISHME"
 getjittime _                      = Nothing
 
 posInf :: Double
 posInf = 1/0
 
-accumulateCustomTags :: [RunResult] -> [(Tag, SomeResult)]
-accumulateCustomTags = M.toList . foldr (foldResults . custom) M.empty
+-- | Collapse the custom fields from a list of benchmark results into one
+--   This has a "fold left" behavior where later entries in the input list
+--   can overwrite earlier ones if there are duplicates.
+accumulateCustomTags :: [BenchmarkResult] -> [(Tag, SomeResult)]
+accumulateCustomTags = M.toList . foldr (foldResults . _CUSTOM) M.empty
        where foldResults res accum = foldr foldCustom accum res
              foldCustom (t,v) acc  =
                case t `M.lookup` acc of
                 Just (AccumResult a) -> M.insert t (AccumResult (v:a)) acc
-                _ -> M.insert t v acc
-
--- Compute a cut-down version of a benchmark's args list that will do
+                _ -> M.insert t v acc-- Compute a cut-down version of a benchmark's args list that will do
 -- a short (quick) run.  The way this works is that benchmarks are
 -- expected to run and do something quick if they are invoked with no
 -- arguments.  (A proper benchmarking run, therefore, requires larger

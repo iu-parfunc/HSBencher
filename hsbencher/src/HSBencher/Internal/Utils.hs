@@ -2,11 +2,19 @@
 
 -- | Misc Small Helpers
 
-module HSBencher.Internal.Utils 
-  ( defaultTimeout, backupResults, 
+module HSBencher.Internal.Utils
+  ( -- * Global parameters
+    defaultTimeout,
+
+    -- * Subprocess execution
     runLogged, runSL, runLines,
+
+    -- * Misc
+    backupResults,
+
     trim, fetchBaseName, echoStream,
-    my_name, main_threadid, 
+    my_name, main_threadid,
+    fromLineOut
   )
   where
 
@@ -25,7 +33,7 @@ import qualified System.IO.Streams.Concurrent as Strm
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (waitForProcess, getProcessExitCode, createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 
-import HSBencher.Types 
+import HSBencher.Types
 import HSBencher.Internal.Logging (log,logOn, LogDest(StdOut, LogFile))
 import HSBencher.Internal.MeasureProcess
 
@@ -54,10 +62,10 @@ trim = f . f
 
 -- -- | Parse a simple "benchlist.txt" file.
 -- parseBenchList :: String -> [Benchmark]
--- parseBenchList str = 
+-- parseBenchList str =
 --   map parseBench $                 -- separate operator, operands
 --   filter (not . null) $            -- discard empty lines
---   map words $ 
+--   map words $
 --   filter (not . isPrefixOf "#") $  -- filter comments
 --   map trim $
 --   lines str
@@ -78,49 +86,46 @@ echoStream echoStdout outS = do
   conf <- ask
   lift$ A.async (runReaderT echoloop conf)
  where
-   echoloop = 
+   echoloop =
      do x <- lift$ Strm.read outS
         case x of
           Nothing -> return () -- Thread dies.
           Just ln -> do
             logOn (if echoStdout then [LogFile, StdOut] else [LogFile]) (B.unpack ln)
---            lift$ B.hPutStrLn stderr (B.append "TMPDBG: " ln) -- TEMP: make sure it gets output 
-            echoloop 
+--            lift$ B.hPutStrLn stderr (B.append "TMPDBG: " ln) -- TEMP: make sure it gets output
+            echoloop
+
 
 -- | Run a command and wait for all output.  Log output to the appropriate places.
 --   The first argument is a "tag" to append to each output line to make things
 --   clearer.
 runLogged :: String -> String -> [(String,String)]-> BenchM (RunResult, [B.ByteString])
-runLogged tag cmd env = do 
+runLogged tag cmd env = do
   log$ " * Executing command: " ++ cmd
-  Config{ harvesters } <- ask
-  SubProcess {wait,process_out,process_err} <-
-    lift$ measureProcess Nothing harvesters
-            --- BJS: There is a hardcoded timeout for IO streams here. (USED TO BE 150) 
+  -- SubProcess {wait,process_out,process_err} <-
+  result <-
+    lift$ runSubprocess Nothing
+            --- BJS: There is a hardcoded timeout for IO streams here. (USED TO BE 150)
             -- RRN: Setting this to no timeout for now... could maybe do 10 hrs or something.
-            CommandDescr{ command=ShellCommand cmd, envVars=env, timeout=Nothing, 
-                          workingDir=Nothing, tolerateError=False }
-  err2 <- lift$ Strm.map (B.append (B.pack "[stderr] ")) process_err
-  both <- lift$ Strm.concurrentMerge [process_out, err2]
-  both' <- lift$ Strm.map (B.append$ B.pack tag) both
-  -- Synchronous: gobble up and echo all the input:
-  let loop acc = do
-        x <- lift$ Strm.read both'
-        case x of
-          Nothing -> return (reverse acc)
-          Just ln -> do log (B.unpack ln)
-                        loop (ln:acc)
-  lnes <- loop []
-  res  <- lift$ wait
+            CommandDescr{ command=ShellCommand cmd, envVars=env, timeout=Nothing,
+                                workingDir=Nothing, tolerateError=False }
+
+  let lnes = map ((B.append $ B.pack tag) . fromLineOut) (linesOut result)
+  mapM_ (log . B.unpack) lnes
   log$ " * Command completed with "++show(length lnes)++" lines of output." -- ++show res
-  return (res,lnes)
+  return (result,lnes)
+
+fromLineOut :: LineOut -> B.ByteString
+fromLineOut (ErrLine b) = " [stderr] " `B.append` b
+fromLineOut (OutLine b) = b
+-- fromLineOut (OutLine b) = " [stdout] " `B.append` b
 
 -- | Runs a command through the OS shell and returns stdout split into
 -- lines.  (Ignore exit code and stderr.)
 runLines :: String -> IO [String]
 runLines cmd = do
-  putStr$ "   * Executing: " ++ cmd 
-  (Nothing, Just outH, Just _, ph) <- createProcess 
+  putStr$ "   * Executing: " ++ cmd
+  (Nothing, Just outH, Just _, ph) <- createProcess
      CreateProcess {
        cmdspec = ShellCommand cmd,
        env = Nothing,
@@ -132,8 +137,8 @@ runLines cmd = do
        create_group = False,
        delegate_ctlc = False
      }
-  _ <- waitForProcess ph  
-  Just _code <- getProcessExitCode ph  
+  _ <- waitForProcess ph
+  Just _code <- getProcessExitCode ph
   str <- hGetContents outH
   let lns = lines str
   putStrLn$ " -->   "++show (length lns)++" line(s)"
@@ -154,7 +159,7 @@ runSL cmd = do
 
 
 -- | Unused: an attempt to snapshot CPU load:
---    
+--
 -- TODO: the "sar" command is another way to do this...
 _getCPULoad :: IO (Maybe Double)
 _getCPULoad = do
@@ -182,7 +187,7 @@ _getCPULoad = do
                    _       -> Nothing
 
 
-  -- This is very fragile: 
+  -- This is very fragile:
   -- "mpstat | grep -A 5 \"%idle\" | tail -n 1 | xargs -n1 echo | tail -n 1 | awk -F \" \" '{print 100 - $1}'"
 
 
@@ -198,7 +203,7 @@ fetchBaseName path =
 
 -- | Create a backup copy of existing results_HOST.dat files.
 backupResults :: String -> String -> IO ()
-backupResults resultsFile logFile = do 
+backupResults resultsFile logFile = do
   e    <- doesFileExist resultsFile
   date <- runSL "date +%Y%m%d_%s"
   when e $ do

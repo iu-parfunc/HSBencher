@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.20.1
+version:             1.30
 ----------------------------------------
 -- Detailed CHANGELOG:
 ----------------------------------------
@@ -141,7 +141,8 @@ description: Benchmark frameworks are usually very specific to the
  * (1.20.0.5) : GHC 7.10 support
  .
  * (1.20.0.6) : Deprecate emptyBenchmarkResult and emptyRunResult
-
+ .
+ * (1.30): Major overhaul of LineHarvester type.  Now multiple benchmarks per subprocess.
 
  -- * (1.9)
  -- .
@@ -240,7 +241,7 @@ Test-suite hsbencher-unit-tests
   type: exitcode-stdio-1.0
   hs-source-dirs: tests/
   -- Self dependency:
-  build-depends: hsbencher
+  build-depends: hsbencher >= 1.21
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10
   -- Additional deps for testing:
@@ -259,7 +260,7 @@ Test-suite hsbencher-test1
   hs-source-dirs: example/cabal/
   type: exitcode-stdio-1.0
   -- Self dependency:
-  build-depends: hsbencher
+  build-depends: hsbencher >= 1.21
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
   ghc-options: -threaded
@@ -273,7 +274,7 @@ Test-suite hsbencher-test2
   hs-source-dirs: example/make_and_ghc/
   type: exitcode-stdio-1.0
   -- Self dependency:
-  build-depends: hsbencher
+  build-depends: hsbencher >= 1.21
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
   ghc-options: -threaded
@@ -288,7 +289,7 @@ Test-suite hsbencher-test3
   hs-source-dirs: example/compiletime_env/
   type: exitcode-stdio-1.0
   -- Self dependency:
-  build-depends: hsbencher
+  build-depends: hsbencher >= 1.21
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
   ghc-options: -threaded

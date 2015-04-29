@@ -4,7 +4,7 @@
 -- package.  They are relatively unsophisticated.
 
 module HSBencher.Methods.Builtin
-       (makeMethod, ghcMethod, cabalMethod,        
+       (makeMethod, ghcMethod, cabalMethod,
         )
        where
 
@@ -36,7 +36,7 @@ import HSBencher.Internal.Utils (runLogged)
 --   binaries reside.  One effect of that is that this simple build method can never
 --   be used for PARALLEL compiles, because it cannot manage where the
 --   build-intermediates are stored.
--- 
+--
 makeMethod :: BuildMethod
 makeMethod = BuildMethod
   { methodName = "make"
@@ -55,7 +55,7 @@ makeMethod = BuildMethod
        _ <- runSuccessful subtag (makePath++" COMPILE_ARGS='"++ unwords flags ++"'") buildenv
        log$ tag++"Done building with Make, assuming this benchmark needs to run in-place..."
        -- Creating a runit function, that can be used to run
-       -- the now compiled benchmark. 
+       -- the now compiled benchmark.
        let runit args envVars =
              CommandDescr
              { command = ShellCommand (makePath++" run RUN_ARGS='"++ unwords args ++"'")
@@ -79,7 +79,7 @@ makeMethod = BuildMethod
 
 -- | Build with GHC directly.  This assumes that all dependencies are installed and a
 -- single call to @ghc@ can build the file.
--- 
+--
 -- Compile-time arguments go directly to GHC, and runtime arguments directly to the
 -- resulting binary.
 ghcMethod :: BuildMethod
@@ -100,15 +100,15 @@ ghcMethod = BuildMethod
          file = takeBaseName target
          suffix = "_"++bldid
          ghcPath = M.findWithDefault "ghc" "ghc" pathRegistry
-     log$ tag++" Building target with GHC method: "++show target  
+     log$ tag++" Building target with GHC method: "++show target
      inDirectory dir $ do
        let buildD = "buildoutput_" ++ bldid
        liftIO$ createDirectoryIfMissing True buildD
        let dest = buildD </> file ++ suffix
-       _ <- runSuccessful " [ghc] "  
+       _ <- runSuccessful " [ghc] "
          (printf "%s %s -outputdir ./%s -o %s %s"
             ghcPath file buildD dest (unwords flags)) buildEnv
-       -- Consider... -fforce-recomp  
+       -- Consider... -fforce-recomp
        return (StandAloneBinary$ dir </> dest)
   }
  where
@@ -117,7 +117,7 @@ ghcMethod = BuildMethod
 
 -- | Build with cabal.
 --   Specifically, this uses "cabal install".
--- 
+--
 -- This build method attempts to choose reasonable defaults for benchmarking.  It
 -- takes control of the output program suffix and directory (setting it to BENCHROOT/bin).
 -- It passes compile-time arguments directly to cabal.  Likewise, runtime arguments
@@ -142,16 +142,16 @@ cabalMethod = BuildMethod
      liftIO$ createDirectoryIfMissing True binD
 
      dir <- liftIO$ getDir target -- Where the indiv benchmark lives.
-     inDirectory dir $ do 
+     inDirectory dir $ do
        let tmpdir = benchroot </> dir </> "temp"++suffix
-       -- Env should not matter here 
-       _ <- runSuccessful tag ("rm -rf "++tmpdir) [] 
-       _ <- runSuccessful tag ("mkdir "++tmpdir)  [] 
+       -- Env should not matter here
+       _ <- runSuccessful tag ("rm -rf "++tmpdir) []
+       _ <- runSuccessful tag ("mkdir "++tmpdir)  []
 
        -- Ugh... how could we separate out args to the different phases of cabal?
        log$ tag++" Switched to "++dir++", and cleared temporary directory."
-       
-       -- some extra printing (debugging Obsidian benchmarks) 
+
+       -- some extra printing (debugging Obsidian benchmarks)
        curr_dir <- liftIO$ getCurrentDirectory
        log$ tag++" Curently in directory: " ++ curr_dir
        let cmd0 = cabalPath++" install "++" "++unwords flags
@@ -169,7 +169,7 @@ cabalMethod = BuildMethod
          []  -> error$"No binaries were produced from building cabal file! In: "++show dir
          _   -> error$"Multiple binaries were produced from building cabal file!:"
                        ++show ls ++" In: "++show dir
-                       
+
   }
  where
    dotcab = WithExtension ".cabal"
@@ -196,7 +196,7 @@ getDir path = do
          else error$ "getDir: benchmark target path does not exist at all: "++path
 
 inDirectory :: (MonadIO m) => FilePath -> m a -> m a
-inDirectory dir act = do 
+inDirectory dir act = do
   orig <- liftIO$ getCurrentDirectory
   liftIO$ setCurrentDirectory dir
   x <- act
@@ -208,7 +208,7 @@ inDirectory dir act = do
   --             return o)
   --         (\orig -> liftIO$ setCurrentDirectory orig)
   --         (\_ -> act)
-  
+
 -- Returns actual files only
 filesInDir :: FilePath -> IO [FilePath]
 filesInDir d = do
@@ -224,6 +224,7 @@ runSuccessful :: String -> String -> EnvVars -> BenchM [B.ByteString]
 runSuccessful tag cmd env = do
   (res,lns) <- runLogged tag cmd env
   case res of
-    ExitError code  -> error$ "expected this command to succeed! But it exited with code "++show code++ ":\n  "++ cmd
+    ExitError { errcode} -> error$ "expected this command to succeed! But it exited with code "
+                            ++show errcode++ ":\n  "++ cmd
     RunTimeOut {}   -> error$ "Methods.hs/runSuccessful - error! The following command timed out:\n  "++show cmd
     RunCompleted {} -> return lns

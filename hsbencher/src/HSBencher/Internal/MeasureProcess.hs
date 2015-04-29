@@ -5,10 +5,15 @@
 -- overhead for GHC-compiled programs.
 
 module HSBencher.Internal.MeasureProcess
-       (measureProcess, measureProcessDBG,
+       ( -- measureProcess, measureProcessDBG,
+        runSubprocessWithTimeOut, runSubprocess,
+
+        -- * Builtin harvesters
         selftimedHarvester, jittimeHarvester,
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
         taggedLineHarvester,
+
+        -- * A utility for controlling CPU affinity
         setCPUAffinity
         )
        where
@@ -38,6 +43,27 @@ import Prelude hiding (fail)
 
 --------------------------------------------------------------------------------
 
+
+-- | This runs a sub-process, obeying the timout option specified in the CommandDescr.
+--
+--  This procedure does not parse the output of the program.  Rather,
+--  it accumulates all process output in memory, waits until the
+--  subprocess, and returns a RunResult containing the stdout/stderr
+--  output plus the final status of the process.
+--
+--
+--
+--  This procedure is currently not threadsafe, because it changes the current working
+--  directory.
+runSubprocessWithTimeOut :: Maybe (Int,CPUAffinity)
+                         -> CommandDescr
+                         -> IO SubProcess
+runSubprocessWithTimeOut = undefined
+
+
+
+{-
+
 -- | This runs a sub-process and tries to determine how long it took (real time) and
 -- how much of that time was spent in the mutator vs. the garbage collector.
 --
@@ -53,12 +79,10 @@ import Prelude hiding (fail)
 -- non-haskell processes to report garbage collector overhead.
 --
 -- This procedure is currently not threadsafe, because it changes the current working
--- directory.
-measureProcess :: Maybe (Int,CPUAffinity)
+-- directory.measureProcess :: Maybe (Int,CPUAffinity)
                -> LineHarvester -- ^ Stack of harvesters
                -> CommandDescr
-               -> IO SubProcess
-measureProcess (Just aff) hrv descr =
+               -> IO SubProcessmeasureProcess (Just aff) hrv descr =
   -- The way we do things here is we set it before launching the
   -- subprocess and we don't worry about unsetting it.  The child
   -- process will inherit the affinity.
@@ -82,8 +106,8 @@ measureProcess Nothing (LineHarvester harvest)
 
   setCurrentDirectory origDir  -- Threadsafety!?!
 
-  out'  <- Strm.map OutLine =<< Strm.lines out
-  err'  <- Strm.map ErrLine =<< Strm.lines errout
+  out'  <- Strm.map (Output . OutLine) =<< Strm.lines out
+  err'  <- Strm.map (Output . ErrLine) =<< Strm.lines errout
   timeEvt <- case timeout of
                Nothing -> Strm.nullInput
                Just t  -> Strm.map (\_ -> TimerFire) =<< timeOutStream t
@@ -158,22 +182,27 @@ measureProcess Nothing (LineHarvester harvest)
   fut <- A.async (loop def)
   return$ SubProcess {wait=A.wait fut, process_out, process_err}
 
--- | A simpler and SINGLE-THREADED alternative to `measureProcess`.
---   This is part of the process of trying to debug the HSBencher zombie state (Issue #32).
-measureProcessDBG :: Maybe (Int,CPUAffinity)
-                  -> LineHarvester -- ^ Stack of harvesters
-                  -> CommandDescr
-                  -> IO ([B.ByteString], RunResult)
+-}
 
-measureProcessDBG (Just aff) hrv descr =
+-- | This is a simpler version of runSubprocessWithTimeOut that
+-- ignores the timeout.  It is simpler because it is single threaded.
+-- That is, it does not need to use additional Haskell IO threads to
+-- implement the timeout behavior.
+--
+-- This variant is intended for debugging.  (It was originally part of
+-- the process of trying to debug the HSBencher zombie state (Issue
+-- #32).)
+runSubprocess :: Maybe (Int,CPUAffinity)
+              -> CommandDescr
+              -> IO RunResult
+runSubprocess (Just aff) descr =
   -- The way we do things here is we set it before launching the
   -- subprocess and we don't worry about unsetting it.  The child
   -- process will inherit the affinity.
   do setCPUAffinity aff
-     measureProcessDBG Nothing hrv descr
+     runSubprocess Nothing descr
 
-measureProcessDBG Nothing (LineHarvester harvest)
-               CommandDescr{command, envVars, timeout=_, workingDir, tolerateError} = do
+runSubprocess Nothing CommandDescr{command, envVars, timeout=_, workingDir, tolerateError} = do
   curEnv <- getEnvironment
   -- Create the subprocess:
   startTime <- getCurrentTime
@@ -201,20 +230,21 @@ measureProcessDBG Nothing (LineHarvester harvest)
   let outl, errl :: [B.ByteString]
       outl = B.lines out
       errl = B.lines err
-      tagged = map (B.append " [stderr] ") errl ++
-               map (B.append " [stdout] ") outl
-      result = foldr (fst . harvest) def (errl++outl)
+      tagged =  map OutLine outl ++ map ErrLine errl
+--      result = foldr (fst . harvest) def (outl++errl)
 
-  let retTime =
-       if realtime result /= realtime def  -- Is it set to anything?
-       then return (tagged,result)
-       else -- If there's no self-reported time, we measure it ourselves:
-            let d = diffUTCTime endtime startTime in
-            return (tagged, result { realtime = fromRational$ toRational d })
-  case code of
-   ExitSuccess                   -> retTime
-   ExitFailure c | tolerateError -> retTime
-                 | otherwise     -> return (tagged, ExitError c)
+  time <-
+   -- if _MEDIANTIME result /= _MEDIANTIME def  -- Is it set to anything?
+   -- then return (_MEDIANTIME result)
+   -- else -- If there's no self-reported time, we measure it ourselves:
+        let d = diffUTCTime endtime startTime in
+        return (fromRational$ toRational d)
+  return $ case code of
+            ExitSuccess                   -> RunCompleted time tagged
+            -- Here we tolerate errors but we do NOT use process time:
+            ExitFailure c | tolerateError -> RunCompleted (-1.0) tagged
+                          | otherwise     -> ExitError c tagged
+
 
 -- Dump the rest of an IOStream until we reach the end
 dumpRest :: Strm.InputStream a -> IO ()
@@ -225,8 +255,7 @@ dumpRest strm = do
     Just _  -> dumpRest strm
 
 -- | Internal data type.
-data ProcessEvt = ErrLine B.ByteString
-                | OutLine B.ByteString
+data ProcessEvt = Output LineOut
                 | ProcessClosed
                 | TimerFire
   deriving (Show,Eq,Read)
@@ -286,14 +315,18 @@ readInt = read
 
 -- | Check for a SELFTIMED line of output.
 selftimedHarvester :: LineHarvester
-selftimedHarvester = taggedLineHarvester "SELFTIMED" (\d r -> r{realtime=d})
+-- Ugly hack: line harvesters act on singleton trials, so MINTIME/MAXTIME make no sense.
+-- But it's too convenient NOT to reuse the BenchmarkResult type here.
+-- Thus we just set MEDIANTIME and ignore MINTIME/MAXTIME.
+selftimedHarvester = taggedLineHarvester "SELFTIMED" (\d r -> r{ _MEDIANTIME = d
+                                                               , _ALLTIMES = show d })
 
 jittimeHarvester :: LineHarvester
-jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{jittime=Just d})
+jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{ _ALLJITTIMES = show (d::Double) })
 
 -- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
 --   Take a function that puts the result into place (the write half of a lens).
-taggedLineHarvester :: Read a => B.ByteString -> (a -> RunResult -> RunResult) -> LineHarvester
+taggedLineHarvester :: Read a => B.ByteString -> (a -> BenchmarkResult -> BenchmarkResult) -> LineHarvester
 taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
   let fail = (id, False) in
   case B.words ln of
@@ -307,6 +340,8 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
             _ -> error$ "[taggedLineHarvester] Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
         _ -> error$ "[taggedLineHarvester] Error: tagged line followed by more than one token: "++B.unpack ln
     _ -> fail
+
+
 
 
 --------------------------------------------------------------------------------
@@ -323,7 +358,8 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
 ghcProductivityHarvester :: LineHarvester
 ghcProductivityHarvester =
   -- This variant is our own manually produced productivity tag (like SELFTIMED):
-  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{productivity=Just d})) `orHarvest`
+  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{ _MEDIANTIME_PRODUCTIVITY = Just d})) `orHarvest`
+  -- Otherwise we try to hack out the GHC "+RTS -s" output:
   (LineHarvester $ \ ln ->
    let nope = (id,False) in
    case words (B.unpack ln) of
@@ -331,7 +367,7 @@ ghcProductivityHarvester =
      -- EGAD: This is NOT really meant to be machine read:
      ("Productivity": prod: "of": "total": "user," : _) ->
        case reads (filter (/= '%') prod) of
-          ((prodN,_):_) -> (\r -> r{productivity=Just prodN}, True)
+          ((prodN,_):_) -> (\r -> r{ _MEDIANTIME_PRODUCTIVITY = Just prodN }, True)
           _ -> nope
     -- TODO: Support  "+RTS -t --machine-readable" as well...
      _ -> nope)
@@ -345,7 +381,7 @@ ghcAllocRateHarvester =
      -- EGAD: This is NOT really meant to be machine read:
      ("Alloc":"rate": rate: "bytes":"per":_) ->
        case reads (filter (/= ',') rate) of
-          ((n,_):_) -> (\r -> r{allocRate=Just n}, True)
+          ((n,_):_) -> (\r -> r{ _MEDIANTIME_ALLOCRATE = Just n }, True)
           _ -> nope
      _ -> nope)
 
@@ -359,7 +395,7 @@ ghcMemFootprintHarvester =
 --   "       5,372,024 bytes maximum residency (6 sample(s))",
      (sz:"bytes":"maximum":"residency":_) ->
        case reads (filter (/= ',') sz) of
-          ((n,_):_) -> (\r -> r{memFootprint=Just n}, True)
+          ((n,_):_) -> (\r -> r{ _MEDIANTIME_MEMFOOTPRINT = Just n}, True)
           _ -> nope
      _ -> nope)
 

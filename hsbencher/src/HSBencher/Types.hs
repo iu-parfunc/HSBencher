@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
-
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | All the core types used by the rest of the HSBencher codebase.
 
@@ -40,12 +40,17 @@ module HSBencher.Types
          Config(..), BenchM, CleanupAction(..),
 
          -- * Subprocesses and system commands
-         CommandDescr(..), RunResult(..), emptyRunResult,
+         CommandDescr(..), RunResult(..), emptyRunResult, LineOut(..),
          SubProcess(..), LineHarvester(..), orHarvest,
 
          -- * Benchmark outputs for upload
          BenchmarkResult(..), emptyBenchmarkResult, resultToTuple, tupleToResult,
 --         Uploader(..), Plugin(..),
+
+         -- * Identifying information about Benchmarks
+         BenchKey (BenchKey), allIndependentBenchVars, showBenchKey,
+
+         -- * Plugins
          SomePlugin(..), SomePluginConf(..), SomePluginFlag(..),
 
          Plugin(..), genericCmdOpts, getMyConf, setMyConf,
@@ -70,7 +75,8 @@ import Data.Default (Default(..))
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe (catMaybes)
-import System.Console.GetOpt (getOpt, ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
+import Prelude hiding (pred)
+import System.Console.GetOpt (OptDescr())
 import System.FilePath
 import System.Directory
 import System.Process (CmdSpec(..))
@@ -151,8 +157,7 @@ data BuildResult =
 
 instance Show BuildResult where
   show (StandAloneBinary p) = "StandAloneBinary "++p
---  show (RunInPlace fn)      = "RunInPlace "++show (fn [] [])
-  show (RunInPlace fn)      = "RunInPlace <fn>"
+  show (RunInPlace _)       = "RunInPlace <fn>"
 
 -- | A completely encapsulated method of building benchmarks.  Cabal and Makefiles
 -- are two examples of this.  The user may extend it with their own methods.
@@ -183,15 +188,15 @@ instance Show BuildMethod where
 -- really, its main purpose is enabling logging.
 type BenchM a = ReaderT Config IO a
 
--- | The global configuration for benchmarking.  WARNING! This is an internal data
--- structure.  You shouldn't really use it.
+-- | The global configuration for benchmarking.  WARNING! This is also
+-- an internal data structure and likely to change.
 data Config = Config
  { benchlist      :: [Benchmark DefaultParamMeaning]
  , extraParams    :: [ParamSetting] -- ^ Extra parameter settings to fold into EVERY benchmark we run.
  , benchsetName   :: Maybe String -- ^ What identifies this set of benchmarks?
                      -- In some upload backends this is the name of the dataset or table.
  , benchversion   :: (String, Double) -- ^ benchlist file name and version number (e.g. X.Y)
--- , threadsettings :: [Int]  -- ^ A list of #threads to test.  0 signifies non-threaded mode.
+
  , runTimeOut     :: Maybe Double -- ^ Timeout in seconds for running benchmarks
                                   -- (if not specified by the benchmark specifically)
  , maxthreads     :: Int  -- ^ In parallel compile/run phases use at most this many threads.
@@ -220,7 +225,7 @@ data Config = Config
  , gitInfo        :: (String,String,Int) -- ^ Branch, revision hash, depth.
 
  , buildMethods   :: [BuildMethod] -- ^ Known methods for building benchmark targets.
-                                   -- Starts with cabal/make/ghc, can be extended by user.
+                                   -- Starts with cabal/make/ghc by default; can be extended by user.
  , binDir         :: FilePath -- ^ The path for build products that is managed (and cleared)
                               -- by HSBencher.  Usually a relative path.
  , systemCleaner  :: CleanupAction
@@ -238,12 +243,67 @@ data Config = Config
  , argsBeforeFlags :: Bool -- ^ A global setting to control whether executables are given
                            -- their 'flags/params' after their regular arguments.
                            -- This is here because some executables don't use proper command line parsing.
- , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather RunResult details.
+
+ , harvesters      :: LineHarvester -- ^ A stack of line harvesters that gather BenchmarkResult details.
 
  , plugIns         :: [SomePlugin] -- ^ Each plugin, and, if configured, its configuration.
  , plugInConfs     :: M.Map String SomePluginConf -- ^ Maps the `plugName` to its config.
  }
  deriving Show
+-- DEPRECATED: doLSPCI,
+
+-- | A means of extracting some identifying information from a benchmark result.
+--   It doesn't matter WHAT the information is, as long as it can be compared.
+--
+--   Typically the record accessors themselves are used, e.g. `Benchkey _PROGNAME`.
+data BenchKey = forall a . (Ord a, Eq a, Show a) =>
+     BenchKey (BenchmarkResult -> a )
+
+-- | Benchmarks are typically identified by multiple fields.  For
+--   example, typically two benchmarks with the same (_PROGNAME,_ARGS)
+--   signifies that they perform the *same work*, albeit with
+--   different implementation strategies.  All the other (independent
+--   variable) fields correspond to the knobs that select
+--   implementation strategies.
+keyList :: [BenchKey] -> BenchKey
+keyList [] = BenchKey (\_ -> ())
+keyList (BenchKey hd : tl) =
+  case keyList tl of
+    BenchKey fn ->
+      BenchKey $ \br ->
+      (hd br, fn br)
+
+-- | A BenchKey that extracts a benchresult fingerprint containing all
+-- builtin *independent* variables, i.e. inputs to the benchmarking
+-- process such as `_PROGNAME` and `_ARGS`, rather than dependent
+-- variables such as `_MEDIANTIME`, `_ALLTIMES`, and `_WHO`.
+allIndependentBenchVars :: BenchKey
+allIndependentBenchVars =
+  keyList [ BenchKey _PROGNAME
+          , BenchKey _VARIANT
+          , BenchKey _ARGS
+          , BenchKey _HOSTNAME
+          , BenchKey _THREADS
+          , BenchKey _COMPILER
+          , BenchKey _COMPILE_FLAGS
+          , BenchKey _RUNTIME_FLAGS
+          , BenchKey _ENV_VARS
+          , BenchKey _BENCH_VERSION
+          , BenchKey _BENCH_FILE
+          , BenchKey _TOPOLOGY
+          ]
+  -- TODO: What about _GIT_HASH?
+  --
+  -- Note: CUSTOM are not handled here.  They are effectively assumed
+  -- to be dependent variables.
+
+-- | Convenience function for extracting a BenchKey, applying it, and
+-- printing the result.
+showBenchKey :: BenchKey -> BenchmarkResult -> String
+showBenchKey (BenchKey fn) br = show (fn br)
+
+instance Show BenchKey where
+  show _ = "<BenchKey>"
 
 -- ^ This is isomorphic to `Maybe (IO ())` but it has a `Show` instance.
 data CleanupAction = NoCleanup
@@ -281,6 +341,7 @@ data Benchmark a = Benchmark
 -- data BenchTarget
 --   = PathTarget FilePath
 --   | ShellCmd String -- ^ A shell script to run the benchmark.
+
 
 -- | The canonical name of a benchmark that is entered in results
 -- tables and used in messages printed to the user.
@@ -413,22 +474,22 @@ compileOptsOnly x =
      case bs of
        And ls -> mayb$ And$ catMaybes$ map loop ls
        Or  ls -> mayb$ Or $ catMaybes$ map loop ls
-       Set m (CompileParam {}) -> Just bs
-       Set m (CompileEnv _ _)  -> Just bs
-       Set m (CmdPath      {}) -> Just bs -- These affect compilation also...
+       Set _ (CompileParam {}) -> Just bs
+       Set _ (CompileEnv _ _)  -> Just bs
+       Set _ (CmdPath      {}) -> Just bs -- These affect compilation also...
        Set _ _                 -> Nothing
    mayb (And []) = Nothing
    mayb (Or  []) = Nothing
-   mayb x        = Just x
+   mayb y        = Just y
 
 test1 :: BenchSpace ()
-test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32])
+test1 = Or (map (Set () . RuntimeEnv "CILK_NPROCS" . show) [1..32::Int])
 
 test2 :: BenchSpace ()
 test2 = Or$ map (Set () . RuntimeParam . ("-A"++)) ["1M", "2M"]
 
-test3 :: BenchSpace ()
-test3 = And [test1, test2]
+_test3 :: BenchSpace ()
+_test3 = And [test1, test2]
 
 -- | Different types of parameters that may be set or varied.
 data ParamSetting
@@ -479,20 +540,32 @@ deriving instance Show CmdSpec
 deriving instance Ord  CmdSpec
 deriving instance Read CmdSpec
 
--- | Measured results from running a subprocess (benchmark).
+-- | Output from a completed subprocess (running one or more benchmarks).
 data RunResult =
     RunCompleted { realtime     :: Double       -- ^ Benchmark time in seconds, may be different than total process time.
-                 , productivity :: Maybe Double -- ^ Seconds
-                 , allocRate    :: Maybe Word64 -- ^ Bytes allocated per mutator-second
-                 , memFootprint :: Maybe Word64 -- ^ High water mark of allocated memory, in bytes.
-                 , jittime      :: Maybe Double -- ^ Time to JIT compile the benchmark, counted separately from realtime.
-                    --
-                 , custom       :: [(Tag,SomeResult)]
+                 , linesOut     :: [LineOut]
+                 -- , productivity :: Maybe Double -- ^ Seconds
+                 -- , allocRate    :: Maybe Word64 -- ^ Bytes allocated per mutator-second
+                 -- , memFootprint :: Maybe Word64 -- ^ High water mark of allocated memory, in bytes.
+                 -- , jittime      :: Maybe Double -- ^ Time to JIT compile the benchmark, counted separately from realtime.
+                 --    --
+                 -- , custom       :: [(Tag,SomeResult)]
                  }
-  | RunTimeOut
-  | ExitError Int -- ^ Contains the returned error code.
+  | RunTimeOut { linesOut     :: [LineOut] }
+  | ExitError  { errcode :: Int
+               , linesOut     :: [LineOut]
+               } -- ^ Contains the returned error code.
  deriving (Eq,Show)
 
+-- | A single line of output on either stderr or stdout.  Typically,
+-- we want to keep these interleaved so that we do not lose relative
+-- timing information that was present in the original process output.
+data LineOut = ErrLine B.ByteString
+             | OutLine B.ByteString
+                       deriving (Eq,Show,Read,Ord)
+
+
+{-# DEPRECATED emptyRunResult "Use Data.Default.def instead" #-}
 -- | A default `RunResult` that is a good starting point for filling in desired
 -- fields.  (This way, one remains robust to additional fields that are added in the
 -- future.)
@@ -501,11 +574,13 @@ emptyRunResult = def
 
 instance Default RunResult where
   def = RunCompleted { realtime = (-1.0)
-                     , productivity = Nothing
-                     , allocRate = Nothing
-                     , memFootprint = Nothing
-                     , jittime = Nothing
-                     , custom = []}
+                     , linesOut = []
+                     -- , productivity = Nothing
+                     -- , allocRate = Nothing
+                     -- , memFootprint = Nothing
+                     -- , jittime = Nothing
+                     -- , custom = []
+                     }
 
 -- | A running subprocess.
 data SubProcess =
@@ -534,8 +609,8 @@ instance (Out k, Out v) => Out (M.Map k v) where
 -- which it can then add to a RunResult.
 --
 -- The boolean result indicates whether the line was used or not.
-newtype LineHarvester = LineHarvester (B.ByteString -> (RunResult -> RunResult, Bool))
--- newtype LineHarvester = LineHarvester (B.ByteString -> Maybe (RunResult -> RunResult))
+newtype LineHarvester =
+        LineHarvester (B.ByteString -> (BenchmarkResult -> BenchmarkResult, Bool))
 
 -- | We can stack up line harvesters.  ALL of them get to run on each line.
 instance Monoid LineHarvester where
@@ -558,12 +633,19 @@ instance Show LineHarvester where
 ----------------------------------------------------------------------------------------------------
 -- Benchmark Results Upload
 ----------------------------------------------------------------------------------------------------
+
+-- | The identifying key for a key/value pair produced by a benchmark run.
+--   When tagged lines of benchmark output are produced, such as
+--   "SELFTIMED: 3.3", "SELFTIMED" is the `Tag`.
 type Tag = String
+
+
 data SomeResult = IntResult Int
                 | DoubleResult Double
                 | StringResult String
                 | AccumResult [SomeResult]
-                  -- expand here
+                  -- ^ A result from multiple trials.
+                  -- These will be reported in the same order as _ALLTIMES.
                 deriving (Eq, Read, Ord)
 instance Show SomeResult where
   show (IntResult i)        = show i
@@ -618,12 +700,14 @@ data BenchmarkResult =
   , _RETRIES :: Int -- ^ The number of times any trial of the benchmark was reexecuted because of failure.
 
   , _CUSTOM :: [(Tag, SomeResult)]
-               -- ^ A List of custom results
-               -- The tag corresponds to column "title"
+               -- ^ A List of custom results.
+               -- The tag corresponds to column "title".
+               -- Note that these custom fields are currently assumed to be
+               -- DEPENDENT VARIABLES, that is outputs of a benchmark run.
   }
   deriving (Show,Read,Ord,Eq)
 
-{- DEPRECATED emptyBenchmarkResult "Use Data.Default.def instead" -}
+{-# DEPRECATED emptyBenchmarkResult "Use Data.Default.def instead" #-}
 -- | A default value, useful for filling in only the fields that are relevant to a particular benchmark.
 emptyBenchmarkResult :: BenchmarkResult
 emptyBenchmarkResult = def
@@ -638,9 +722,9 @@ instance Default BenchmarkResult where
   , _CI_BUILD_ID = ""
   , _THREADS  = 0
   , _DATETIME = ""
-  , _MINTIME    =  0.0
-  , _MEDIANTIME =  0.0
-  , _MAXTIME    =  0.0
+  , _MINTIME    =  -1.0
+  , _MEDIANTIME =  -1.0
+  , _MAXTIME    =  -1.0
   , _MINTIME_PRODUCTIVITY    =  Nothing
   , _MEDIANTIME_PRODUCTIVITY =  Nothing
   , _MAXTIME_PRODUCTIVITY    =  Nothing
@@ -770,8 +854,8 @@ tupleToResult tuple = BenchmarkResult
   -- , _ALLJITTIMES = try "ALLJITTIMES" ""
   -- , _RETRIES = s2i (try "RETRIES" "0")
 
-  , _MEDIANTIME_ALLOCRATE    = Nothing
-  , _MEDIANTIME_MEMFOOTPRINT = Nothing
+  , _MEDIANTIME_ALLOCRATE    = (tryMaybWrd "MAXTIME_PRODUCTIVITY")
+  , _MEDIANTIME_MEMFOOTPRINT = (tryMaybWrd "MAXTIME_PRODUCTIVITY")
   , _CUSTOM = map parsecustom custom
   }
   where
@@ -795,11 +879,22 @@ tupleToResult tuple = BenchmarkResult
     s2d who s = case reads s of
                   [] -> error$ "tupleToResult: expected "++who++" field to contain a parsable Double, got: "++show s
                   ((x,_):_) -> x
+
+    s2w :: String -> String -> Word64
+    s2w who s = case reads s of
+                  [] -> error$ "tupleToResult: expected "++who++" field to contain a parsable Word64, got: "++show s
+                  ((x,_):_) -> x
+
     tupleM = M.fromList tuple
     tryMaybDbl key = case M.lookup key tupleM of
                        Nothing -> Nothing
                        Just "" -> Nothing
                        Just x  -> Just (s2d key x)
+
+    tryMaybWrd key = case M.lookup key tupleM of
+                       Nothing -> Nothing
+                       Just "" -> Nothing
+                       Just x  -> Just (s2w key x)
 
     try key df = case M.lookup key tupleM of
                    Nothing -> df
@@ -894,19 +989,19 @@ instance Ord SomePlugin where
     compare (plugName p1) (plugName p2)
 
 instance Show SomePluginConf where
-  show (SomePluginConf p pc) = show pc
+  show (SomePluginConf _ pc) = show pc
 
 instance Show SomePluginFlag where
-  show (SomePluginFlag p f) = show f
+  show (SomePluginFlag _ f) = show f
 
 ------------------------------------------------------------
 
 -- | Make the command line flags for a particular plugin generic so that they can be
 -- mixed together with other plugins options.
 genericCmdOpts :: Plugin p => p -> [OptDescr SomePluginFlag]
-genericCmdOpts p = map (fmap lift) (snd (plugCmdOpts p))
+genericCmdOpts p = map (fmap lft) (snd (plugCmdOpts p))
  where
- lift pf = SomePluginFlag p pf
+ lft pf = SomePluginFlag p pf
 
 -- | Retrieve our own Plugin's configuration from the global config.
 --   This involves a dynamic type cast.

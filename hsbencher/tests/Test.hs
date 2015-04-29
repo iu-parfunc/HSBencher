@@ -62,11 +62,14 @@ case_harvest = do
 --  mapM_ print $ map (\x -> (x, fn (B.pack x))) exampleOuptut
   let hits = filter ((==True) . snd) $ map (fn . B.pack) exampleOuptut
   putStrLn$ "Lines harvested: "++show (length hits)
-  let result = foldl' (\ r (f,_) -> f r) (def :: RunResult) hits
-  let expected = RunCompleted {realtime = 3.3, productivity = Just 73.8,
-                               allocRate = Just 1855954977, memFootprint = Just 5372024,
-                               jittime = Nothing,
-                               custom = []}
+  let result = foldl' (\ r (f,_) -> f r) (def :: BenchmarkResult) hits
+  let expected = def { _MEDIANTIME = 3.3
+                     , _ALLTIMES = "3.3"
+                     , _MEDIANTIME_PRODUCTIVITY = Just 73.8
+                     , _MEDIANTIME_ALLOCRATE = Just 1855954977
+                     , _MEDIANTIME_MEMFOOTPRINT = Just 5372024
+                     , _ALLJITTIMES = []
+                     , _CUSTOM = [] }
 
   assertEqual "Test harvesters" expected result
 
