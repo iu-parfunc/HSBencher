@@ -76,7 +76,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe (catMaybes)
 import Prelude hiding (pred)
-import System.Console.GetOpt (OptDescr())
+import System.Console.GetOpt (OptDescr(..), ArgDescr(..))
 import System.FilePath
 import System.Directory
 import System.Process (CmdSpec(..))
@@ -908,6 +908,7 @@ tupleToResult tuple = BenchmarkResult
 -- Generic uploader interface
 --------------------------------------------------------------------------------
 
+-- Only for GHC 7.6 and earlier:
 #if !MIN_VERSION_base(4,7,0)
 instance Functor OptDescr where
   fmap fn (Option shrt long args str) =
