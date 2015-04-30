@@ -8,7 +8,13 @@ module HSBencher.Harvesters
        (
         -- * Built-in harvesters
         selftimedHarvester, jittimeHarvester,
+        harvest_PROGNAME,
+        harvest_VARIANT,
+
+        -- * Non-standard GHC harvesters
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
+
+        -- * Utilities for constructing more harvesters
         taggedLineHarvester,
 
         -- * Custom tags, which have an expected type
@@ -47,6 +53,15 @@ selftimedHarvester = taggedLineHarvester "SELFTIMED" (\d r -> r{ _MEDIANTIME = d
 jittimeHarvester :: LineHarvester
 jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{ _ALLJITTIMES = show (d::Double) })
 
+harvest_PROGNAME :: LineHarvester
+harvest_PROGNAME = (taggedLineHarvester "PROGNAME" (\d r -> r{ _PROGNAME = d }))
+
+harvest_VARIANT :: LineHarvester
+harvest_VARIANT = (taggedLineHarvester "VARIANT" (\d r -> r{ _VARIANT = d }))
+
+
+--------------------------------------------------------------------------------
+
 -- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
 --   Take a function that puts the result into place (the write half of a lens).
 taggedLineHarvester :: Read a => B.ByteString -> (a -> BenchmarkResult -> BenchmarkResult) -> LineHarvester
@@ -78,8 +93,7 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
 ghcProductivityHarvester :: LineHarvester
 ghcProductivityHarvester =
   -- This variant is our own manually produced productivity tag (like SELFTIMED):
-  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{ _MEDIANTIME_PRODUCTIVITY = Just d})) `orHarvest`
-  -- Otherwise we try to hack out the GHC "+RTS -s" output:
+  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{ _MEDIANTIME_PRODUCTIVITY = Just d})) `orHarvest`  -- Otherwise we try to hack out the GHC "+RTS -s" output:
   (LineHarvester $ \ ln ->
    let nope = (id,False) in
    case L.words (B.unpack ln) of
@@ -91,7 +105,6 @@ ghcProductivityHarvester =
           _ -> nope
     -- TODO: Support  "+RTS -t --machine-readable" as well...
      _ -> nope)
-
 ghcAllocRateHarvester :: LineHarvester
 ghcAllocRateHarvester =
   (LineHarvester $ \ ln ->   let nope = (id,False) in

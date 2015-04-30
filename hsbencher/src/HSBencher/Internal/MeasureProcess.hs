@@ -13,21 +13,21 @@ module HSBencher.Internal.MeasureProcess
         )
        where
 
-import qualified Control.Concurrent.Async as A
+-- import qualified Control.Concurrent.Async as A
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Chan
-import qualified Control.Exception as E
+-- import Control.Concurrent.Chan
+-- import qualified Control.Exception as E
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.IORef
-import Data.Default
+-- import Data.Default
 import System.Exit
-import System.Directory
+-- import System.Directory
 import System.IO (hClose, stderr, hPutStrLn)
-import System.Process (system, waitForProcess, terminateProcess)
+import System.Process (system, waitForProcess)
 import System.Process (createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
 import System.Posix.Process (getProcessID)
 import qualified System.IO.Streams as Strm
-import qualified System.IO.Streams.Concurrent as Strm
+-- import qualified System.IO.Streams.Concurrent as Strm
 import qualified Data.ByteString.Char8 as B
 import qualified Data.List as L
 import qualified Data.Set as S
@@ -242,12 +242,12 @@ runSubprocess Nothing CommandDescr{command, envVars, timeout=_, workingDir, tole
 
 
 -- Dump the rest of an IOStream until we reach the end
-dumpRest :: Strm.InputStream a -> IO ()
-dumpRest strm = do
+_dumpRest :: Strm.InputStream a -> IO ()
+_dumpRest strm = do
   x <- Strm.read strm
   case x of
     Nothing -> return ()
-    Just _  -> dumpRest strm
+    Just _  -> _dumpRest strm
 
 -- | Internal data type.
 data ProcessEvt = Output LineOut
@@ -307,8 +307,8 @@ readInt = read
 --------------------------------------------------------------------------------
 
 -- | Fire a single event after a time interval, then end the stream.
-timeOutStream :: Double -> IO (Strm.InputStream ())
-timeOutStream time = do
+_timeOutStream :: Double -> IO (Strm.InputStream ())
+_timeOutStream time = do
   s1 <- Strm.makeInputStream $ do
          threadDelay (round$ time * 1000 * 1000)
          return$ Just ()
@@ -318,8 +318,8 @@ timeOutStream time = do
 -- | This makes the EOS into an /explicit/, penultimate message. This way it survives
 -- `concurrentMerge`.  It represents this end of stream by Nothing, but beware the
 -- doubly-nested `Maybe` type.
-reifyEOS :: Strm.InputStream a -> IO (Strm.InputStream (Maybe a))
-reifyEOS ins =
+_reifyEOS :: Strm.InputStream a -> IO (Strm.InputStream (Maybe a))
+_reifyEOS ins =
   do flag <- newIORef True
      Strm.makeInputStream $ do
        x   <- Strm.read ins
@@ -332,13 +332,13 @@ reifyEOS ins =
 
 -- | Alternatioe to the io-streams version which does not allow setting the
 -- environment.
-runInteractiveCommandWithEnv :: String
+_runInteractiveCommandWithEnv :: String
                       -> [(String,String)]
                       -> IO (Strm.OutputStream B.ByteString,
                              Strm.InputStream  B.ByteString,
                              Strm.InputStream  B.ByteString,
                              ProcessHandle)
-runInteractiveCommandWithEnv scmd env = do
+_runInteractiveCommandWithEnv scmd env = do
     (Just hin, Just hout, Just herr, ph) <- createProcess
        CreateProcess {
          cmdspec = ShellCommand scmd,
