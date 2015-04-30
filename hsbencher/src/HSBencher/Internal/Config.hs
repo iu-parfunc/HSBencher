@@ -7,9 +7,9 @@
 #define DISABLED
 
 module HSBencher.Internal.Config
-       ( -- * Configurations
+       ( -- * Configurations`
          getConfig, augmentResultWithConfig,
-         addPlugin, 
+         addPlugin,
 
          -- * Command line options
          Flag(..), all_cli_options
@@ -29,19 +29,20 @@ import qualified System.IO.Streams as Strm
 import HSBencher.Types
 import HSBencher.Internal.Utils
 import HSBencher.Methods.Builtin
-import HSBencher.Internal.MeasureProcess
+-- import HSBencher.Internal.MeasureProcess
+import HSBencher.Harvesters
 
 ----------------------------------------------------------------------------------------------------
 
 -- | Command line flags to the benchmarking executable.
-data Flag = ParBench 
+data Flag = ParBench
           | BenchsetName (String)
           | BinDir FilePath
           | NoRecomp | NoCabal | NoClean
           | ShortRun | KeepGoing | NumTrials String
           | SkipTo String | RunOnly Int | RetryFailed Int
           | RunID String | CIBuildID String | ForceHostName String
-          | CabalPath String | GHCPath String                               
+          | CabalPath String | GHCPath String
           | ShowHelp | ShowVersion | ShowBenchmarks
           | DisablePlug String
           | AddLSPCI
@@ -54,15 +55,15 @@ readParam :: String -> ParamSetting
 readParam s =
   case reads s of
     []  -> error$ "Could not read this string as a ParamSetting: "++show s
-    (x,_):_ -> x 
+    (x,_):_ -> x
 
 -- | Command line options.
 core_cli_options :: (String, [OptDescr Flag])
-core_cli_options = 
+core_cli_options =
      ("\n Command Line Options:",
       [
-#ifndef DISABLED        
-        Option ['p'] ["par"] (NoArg ParBench) 
+#ifndef DISABLED
+        Option ['p'] ["par"] (NoArg ParBench)
         "Build benchmarks in parallel (run in parallel too if SHORTRUN=1)."
 #endif
         Option [] ["no-recomp"] (NoArg NoRecomp)
@@ -73,7 +74,7 @@ core_cli_options =
         "Elide command line args to benchmarks to perform a testing rather than benchmarking run."
       , Option ['k'] ["keepgoing"] (NoArg KeepGoing)
         "Keep executing even after a build or run fails (default false)"
-#ifndef DISABLED 
+#ifndef DISABLED
       , Option [] ["no-cabal"] (NoArg NoCabal)
         "A shortcut to remove Cabal from the BuildMethods"
 #endif
@@ -113,8 +114,8 @@ core_cli_options =
       , Option [] ["retry"] (ReqArg (mkPosIntFlag RetryFailed) "NUM")
         "Counter nondeterminism while debugging.  Retry failed tests NUM times."
 
-      , Option [] ["lspci"] (NoArg AddLSPCI) 
-        "Add the output of lspci to each benchmark result in the LSPCI column" 
+      , Option [] ["lspci"] (NoArg AddLSPCI)
+        "Add the output of lspci to each benchmark result in the LSPCI column"
 
       , Option ['h'] ["help"] (NoArg ShowHelp)
         "Show this help message and exit."
@@ -132,7 +133,7 @@ core_cli_options =
 
 -- | Check that the flag setting is valid.
 mkPosIntFlag :: (Read a, Ord a, Num a) => (a -> Flag) -> String -> Flag
-mkPosIntFlag constructor str = 
+mkPosIntFlag constructor str =
   case reads str of
     (n,_):_ | n >= 1    -> constructor n
             | otherwise -> error$ "--runonly must be positive: "++str
@@ -151,13 +152,13 @@ augmentResultWithConfig Config{..} base = do
   -- let ghcVer' = collapsePrefix "The Glorious Glasgow Haskell Compilation System," "GHC" ghcVer
   datetime <- getCurrentTime
   uname    <- runSL "uname -a"
-  lspci    <- case doLSPCI of 
+  lspci    <- case doLSPCI of
                 True  -> runLines "lspci"
                 False -> return []
   whos     <- runLines "who"
-  
+
   let newRunID = (hostname ++ "_" ++ show startTime)
-  let (branch,revision,depth) = gitInfo      
+  let (branch,revision,depth) = gitInfo
   return $
     base
     { _HOSTNAME      = hostname
@@ -169,7 +170,7 @@ augmentResultWithConfig Config{..} base = do
                         Nothing -> ""
     , _DATETIME      = show datetime
     , _TRIALS        = trials
-    , _ENV_VARS      = show envs 
+    , _ENV_VARS      = show envs
     , _BENCH_VERSION = show$ snd benchversion
     , _BENCH_FILE    = fst benchversion
     , _UNAME         = uname
@@ -177,8 +178,8 @@ augmentResultWithConfig Config{..} base = do
                        then defTopology -- FIXME: need a "TOPOLOGY:" harvester.
                        else _TOPOLOGY base
     , _LSPCI         = unlines lspci
-    , _GIT_BRANCH    = branch   
-    , _GIT_HASH      = revision 
+    , _GIT_BRANCH    = branch
+    , _GIT_HASH      = revision
     , _GIT_DEPTH     = depth
     , _WHO           = unlines whos
     }
@@ -186,9 +187,9 @@ augmentResultWithConfig Config{..} base = do
 -- | This abstracts over the actions we need to take to properly add
 -- an additional plugin to the `Config`.
 addPlugin :: Plugin p => p -> PlugConf p -> Config -> Config
-addPlugin plug pconf conf = 
+addPlugin plug pconf conf =
   conf { plugIns = SomePlugin plug : plugIns conf
-       , plugInConfs = M.insert (plugName plug) (SomePluginConf plug pconf) $ 
+       , plugInConfs = M.insert (plugName plug) (SomePluginConf plug pconf) $
                        plugInConfs conf }
 
 -- | Retrieve the (default) configuration from the environment, it may
@@ -209,15 +210,15 @@ getConfig cmd_line_options benches = do
   -- Note that this will NOT be newline-terminated:
   hashes   <- runLines "git log --pretty=format:''"
 
-  let       
+  let
       -- Read an ENV var with default:
-      get v x = case lookup v env of 
+      get v x = case lookup v env of
 		  Nothing -> x
 		  Just  s -> s
       logFile = "bench_" ++ hostname ++ ".log"
-      resultsFile = "results_" ++ hostname ++ ".dat"      
+      resultsFile = "results_" ++ hostname ++ ".dat"
 
-  case get "GENERIC" "" of 
+  case get "GENERIC" "" of
     "" -> return ()
     s  -> error$ "GENERIC env variable not handled yet.  Set to: " ++ show s
 
@@ -235,22 +236,22 @@ getConfig cmd_line_options benches = do
   -- into a plugin or eliminated:
   backupResults resultsFile logFile
 
-  rhnd <- openFile resultsFile WriteMode 
+  rhnd <- openFile resultsFile WriteMode
   lhnd <- openFile logFile     WriteMode
 
   hSetBuffering rhnd NoBuffering
-  hSetBuffering lhnd NoBuffering  
-  
+  hSetBuffering lhnd NoBuffering
+
   resultsOut <- Strm.unlines =<< Strm.handleToOutputStream rhnd
   logOut     <- Strm.unlines =<< Strm.handleToOutputStream lhnd
   stdOut     <- Strm.unlines Strm.stdout
 
   let -- Messy way to extract the benchlist version:
-      -- ver = case filter (isInfixOf "ersion") (liines benchstr) of 
+      -- ver = case filter (isInfixOf "ersion") (liines benchstr) of
       --         (h:_t) -> read $ (\ (h:_)->h) $ filter isNumber (words h)
       --         []    -> 0
       -- This is our starting point BEFORE processing command line flags:
-      base_conf = Config 
+      base_conf = Config
            { hostname, startTime, defTopology
            , shortrun       = False
            , doClean        = True
@@ -262,7 +263,7 @@ getConfig cmd_line_options benches = do
 	   , runOnly        = Nothing
 	   , retryFailed    = Nothing
 	   , runID          = Nothing
-	   , ciBuildID      = Nothing                              
+	   , ciBuildID      = Nothing
            , pathRegistry   = M.empty
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
@@ -273,11 +274,11 @@ getConfig cmd_line_options benches = do
 --	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
            , runTimeOut     = Just defaultTimeout
 	   , keepgoing      = False
-	   , resultsFile, logFile, logOut, resultsOut, stdOut         
+	   , resultsFile, logFile, logOut, resultsOut, stdOut
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
            , gitInfo        = (trim branch, trim revision, length hashes)
-           -- This is in priority order:                   
+           -- This is in priority order:
            , buildMethods   = [cabalMethod, makeMethod, ghcMethod]
            , binDir         = "./hsbencher_bin/"
            , systemCleaner  = NoCleanup
@@ -286,13 +287,13 @@ getConfig cmd_line_options benches = do
                           ghcProductivityHarvester `mappend`
                           ghcMemFootprintHarvester `mappend`
                           ghcAllocRateHarvester    `mappend`
-                          jittimeHarvester           
+                          jittimeHarvester
            , plugIns = []
            , plugInConfs = M.empty
 	   }
 
   -- Process command line arguments to add extra cofiguration information:
-  let 
+  let
       doFlag (BenchsetName name) r = r { benchsetName= Just name }
       doFlag (CabalPath p) r = r { pathRegistry= M.insert "cabal" p (pathRegistry r) }
       doFlag (GHCPath   p) r = r { pathRegistry= M.insert "ghc"   p (pathRegistry r) }
@@ -312,11 +313,11 @@ getConfig cmd_line_options benches = do
       doFlag (ExtraParam p) r = r { extraParams = p : extraParams r }
       doFlag SetAffinitySpreadOut r = r { extraParams = CPUSet SpreadOut : extraParams r }
       doFlag SetAffinityPacked    r = r { extraParams = CPUSet Packed    : extraParams r }
-  
+
       doFlag (RunOnly n) r = r { runOnly= Just n }
       doFlag (RetryFailed n) r = r { retryFailed= Just n }
       doFlag (RunID s)  r = r { runID= Just s }
-      doFlag (BinDir s) r = r { binDir = s } 
+      doFlag (BinDir s) r = r { binDir = s }
       doFlag (ForceHostName s) r = r { hostname= s }
       doFlag (CIBuildID s) r = r { ciBuildID= Just s }
 

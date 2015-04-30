@@ -1,4 +1,4 @@
-{-# LANGUAGE NamedFieldPuns, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE NamedFieldPuns, ScopedTypeVariables #-}
 
 -- | This module provides tools to time a sub-process (benchmark), including a
 -- facility for self-reporting execution time and reporting garbage collector
@@ -7,11 +7,6 @@
 module HSBencher.Internal.MeasureProcess
        ( -- measureProcess, measureProcessDBG,
         runSubprocessWithTimeOut, runSubprocess,
-
-        -- * Builtin harvesters
-        selftimedHarvester, jittimeHarvester,
-        ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
-        taggedLineHarvester,
 
         -- * A utility for controlling CPU affinity
         setCPUAffinity
@@ -308,96 +303,6 @@ setCPUAffinity (numthreads,aff) = do
 readInt :: String -> Int
 readInt = read
 
-
--------------------------------------------------------------------
--- Hacks for looking for particular bits of text in process output:
--------------------------------------------------------------------
-
--- | Check for a SELFTIMED line of output.
-selftimedHarvester :: LineHarvester
--- Ugly hack: line harvesters act on singleton trials, so MINTIME/MAXTIME make no sense.
--- But it's too convenient NOT to reuse the BenchmarkResult type here.
--- Thus we just set MEDIANTIME and ignore MINTIME/MAXTIME.
-selftimedHarvester = taggedLineHarvester "SELFTIMED" (\d r -> r{ _MEDIANTIME = d
-                                                               , _ALLTIMES = show d })
-
-jittimeHarvester :: LineHarvester
-jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{ _ALLJITTIMES = show (d::Double) })
-
--- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
---   Take a function that puts the result into place (the write half of a lens).
-taggedLineHarvester :: Read a => B.ByteString -> (a -> BenchmarkResult -> BenchmarkResult) -> LineHarvester
-taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
-  let fail = (id, False) in
-  case B.words ln of
-    [] -> fail
-    -- Match either "TAG" or "TAG:"
-    hd:tl | hd == tag || hd == (tag `B.append` ":") ->
-      case tl of
-        [time] ->
-          case reads (B.unpack time) of
-            (dbl,_):_ -> (stickit dbl, True)
-            _ -> error$ "[taggedLineHarvester] Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
-        _ -> error$ "[taggedLineHarvester] Error: tagged line followed by more than one token: "++B.unpack ln
-    _ -> fail
-
-
-
-
---------------------------------------------------------------------------------
--- GHC-specific Harvesters:
---
--- All three of these are currently using the human-readable "+RTS -s" output format.
--- We should switch them to "--machine-readable -s", but that would require combining
--- information harvested from multiple lines, because GHC breaks up the statistics.
--- (Which is actually kind of weird since its specifically a machine readable format.)
-
--- | Retrieve productivity (i.e. percent time NOT garbage collecting) as output from
--- a Haskell program with "+RTS -s".  Productivity is a percentage (double between
--- 0.0 and 100.0, inclusive).
-ghcProductivityHarvester :: LineHarvester
-ghcProductivityHarvester =
-  -- This variant is our own manually produced productivity tag (like SELFTIMED):
-  (taggedLineHarvester "PRODUCTIVITY" (\d r -> r{ _MEDIANTIME_PRODUCTIVITY = Just d})) `orHarvest`
-  -- Otherwise we try to hack out the GHC "+RTS -s" output:
-  (LineHarvester $ \ ln ->
-   let nope = (id,False) in
-   case words (B.unpack ln) of
-     [] -> nope
-     -- EGAD: This is NOT really meant to be machine read:
-     ("Productivity": prod: "of": "total": "user," : _) ->
-       case reads (filter (/= '%') prod) of
-          ((prodN,_):_) -> (\r -> r{ _MEDIANTIME_PRODUCTIVITY = Just prodN }, True)
-          _ -> nope
-    -- TODO: Support  "+RTS -t --machine-readable" as well...
-     _ -> nope)
-
-ghcAllocRateHarvester :: LineHarvester
-ghcAllocRateHarvester =
-  (LineHarvester $ \ ln ->
-   let nope = (id,False) in
-   case words (B.unpack ln) of
-     [] -> nope
-     -- EGAD: This is NOT really meant to be machine read:
-     ("Alloc":"rate": rate: "bytes":"per":_) ->
-       case reads (filter (/= ',') rate) of
-          ((n,_):_) -> (\r -> r{ _MEDIANTIME_ALLOCRATE = Just n }, True)
-          _ -> nope
-     _ -> nope)
-
-ghcMemFootprintHarvester :: LineHarvester
-ghcMemFootprintHarvester =
-  (LineHarvester $ \ ln ->
-   let nope = (id,False) in
-   case words (B.unpack ln) of
-     [] -> nope
-     -- EGAD: This is NOT really meant to be machine read:
---   "       5,372,024 bytes maximum residency (6 sample(s))",
-     (sz:"bytes":"maximum":"residency":_) ->
-       case reads (filter (/= ',') sz) of
-          ((n,_):_) -> (\r -> r{ _MEDIANTIME_MEMFOOTPRINT = Just n}, True)
-          _ -> nope
-     _ -> nope)
 
 --------------------------------------------------------------------------------
 
