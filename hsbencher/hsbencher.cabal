@@ -243,15 +243,15 @@ Test-suite hsbencher-unit-tests
   type: exitcode-stdio-1.0
   hs-source-dirs: tests/
   -- Self dependency:
-  build-depends: hsbencher >= 1.21
+  build-depends: hsbencher
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10
   -- Additional deps for testing:
   build-depends: test-framework >= 0.8,
                  test-framework-hunit >= 0.3,
                  data-default >= 0.5.3,
-                 HUnit, time, text
---                 quickcheck >= 2.8, test-framework-quickcheck2
+                 HUnit, time, text,
+                 QuickCheck >= 2.8, test-framework-quickcheck2
   ghc-options: -threaded
   default-language:  Haskell2010
   if flag(hydra) {
@@ -263,7 +263,7 @@ Test-suite hsbencher-test1
   hs-source-dirs: example/cabal/
   type: exitcode-stdio-1.0
   -- Self dependency:
-  build-depends: hsbencher >= 1.21
+  build-depends: hsbencher
   -- Standard stuff:
   build-depends: base >= 4.5, containers >= 0.5, bytestring >= 0.10, directory
   ghc-options: -threaded

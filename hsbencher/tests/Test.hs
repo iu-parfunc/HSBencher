@@ -1,19 +1,26 @@
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Unit testing for functions in the HSBencher implementation.
 
 module Main where
 
-import           Data.List
-import           Data.Maybe
+import           Control.Monad
+import qualified Data.ByteString.Char8 as B
 import           Data.Default
-import           HSBencher.Types
+import qualified Data.List as L
+import           Data.List hiding ((++))
+import           Data.Maybe
+import           HSBencher.Harvesters (fromTaggedLine)
 import           HSBencher.Internal.Config (getConfig)
 import           HSBencher.Internal.MeasureProcess ()
-import           HSBencher.Harvesters (fromTaggedLine)
-import qualified Data.ByteString.Char8 as B
+import           HSBencher.Types
+import           Prelude hiding ((++))
 
-import           Test.Framework.Providers.HUnit
 import           Test.Framework (Test, defaultMain, testGroup)
+import           Test.Framework.Providers.HUnit
+import           Test.Framework.Providers.QuickCheck2 (testProperty)
+-- import           Test.QuickCheck.Arbitrary (Arbitrary(..))
+import           Test.QuickCheck
 -- import Test.Framework.TH (testGroupGenerator) -- [2014.05.23] Disabling because of haskell-src-exts dependency and its very slow compiles.
 import           Test.HUnit (Assertion, assertEqual, assertBool, Counts(..))
 
@@ -64,7 +71,7 @@ case_harvest = do
   let LineHarvester fn = harvesters config
 --  mapM_ print $ map (\x -> (x, fn (B.pack x))) exampleOuptut
   let hits = filter ((==True) . snd) $ map (fn . B.pack) exampleOuptut
-  putStrLn$ "Lines harvested: "++show (length hits)
+  putStrLn$ "Lines harvested: " L.++ show (length hits)
   let result = foldl' (\ r (f,_) -> f r) (def :: BenchmarkResult) hits
   let expected = def { _MEDIANTIME = 3.3
                      , _ALLTIMES = "3.3"
@@ -76,10 +83,35 @@ case_harvest = do
 
   assertEqual "Test harvesters" expected result
 
+--------------------------------------------------------------------------------
+
+prop_fromTaggedLine :: RandomWhiteSpace -> RandomWhiteSpace -> RandomWhiteSpace -> Bool
+prop_fromTaggedLine (RandomWhiteSpace x) (RandomWhiteSpace y) (RandomWhiteSpace z) =
+  fromTaggedLine (x ++ "TAG" ++ y ++ ":" ++ z ++ "VAL1 VAL2 VAL3  ") ==
+  Just ("TAG","VAL1 VAL2 VAL3  ")
+
+(++) :: B.ByteString -> B.ByteString -> B.ByteString
+(++) = B.append
+
+newtype RandomWhiteSpace = RandomWhiteSpace B.ByteString
+  deriving (Show,Eq,Ord,Read)
+
+instance Arbitrary RandomWhiteSpace where
+  arbitrary = do count <- arbitrary :: Gen Int
+                 let trunc = count `mod` 500
+                     whitespace = [' ','\t']
+                 str <- forM [1..trunc] $ \_ ->
+                         do i <- arbitrary :: Gen Int
+                            return $ whitespace !! (i `mod` length whitespace)
+                 return $ RandomWhiteSpace $ B.pack str
+
+--------------------------------------------------------------------------------
+
 tests :: Test
 tests = -- $(testGroupGenerator)
   testGroup "HSBencher-unit-tests"
   [ testCase "harvest" case_harvest
+  , testProperty "fromTaggedLine" prop_fromTaggedLine
   ]
 
 main :: IO ()
