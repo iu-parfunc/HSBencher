@@ -3,24 +3,27 @@
 
 module Main where
 
-import Data.List
-import Data.Maybe
-import Data.Default
-import HSBencher.Types
-import HSBencher.Internal.Config (getConfig)
-import HSBencher.Internal.MeasureProcess ()
+import           Data.List
+import           Data.Maybe
+import           Data.Default
+import           HSBencher.Types
+import           HSBencher.Internal.Config (getConfig)
+import           HSBencher.Internal.MeasureProcess ()
+import           HSBencher.Harvesters (fromTaggedLine)
 import qualified Data.ByteString.Char8 as B
 
-import Test.Framework.Providers.HUnit
-import Test.Framework (Test, defaultMain, testGroup)
+import           Test.Framework.Providers.HUnit
+import           Test.Framework (Test, defaultMain, testGroup)
 -- import Test.Framework.TH (testGroupGenerator) -- [2014.05.23] Disabling because of haskell-src-exts dependency and its very slow compiles.
-import Test.HUnit (Assertion, assertEqual, assertBool, Counts(..))
+import           Test.HUnit (Assertion, assertEqual, assertBool, Counts(..))
+
+-- import           Test.QuickCheck ()
 
 --------------------------------------------------------------------------------
 
 exampleOuptut :: [String]
 exampleOuptut =
- [ "SELFTIMED 3.3",
+ [ "SELFTIMED: 3.3",
    "  14,956,751,416 bytes allocated in the heap",
    "       2,576,264 bytes copied during GC",
    "       5,372,024 bytes maximum residency (6 sample(s))",

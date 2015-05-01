@@ -8,8 +8,8 @@ module HSBencher.Harvesters
        (
         -- * Built-in harvesters
         selftimedHarvester, jittimeHarvester,
-        harvest_PROGNAME,
-        harvest_VARIANT,
+        -- harvest_PROGNAME, harvest_VARIANT,
+        allBuiltinHarvesters,
 
         -- * Non-standard GHC harvesters
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
@@ -32,11 +32,13 @@ module HSBencher.Harvesters
         ) where
 
 import           Data.ByteString.Char8 as B
-import           Data.Char (isAlpha, isAlphaNum)
+import           Data.Char (isAlpha, isAlphaNum, isSpace)
 import qualified Data.List as L
 -- import           HSBencher.Internal.MeasureProcess
 import           HSBencher.Types
 import           Prelude hiding (fail)
+
+import Data.Monoid
 
 -------------------------------------------------------------------
 -- LineHarvesters: Hacks for looking for particular bits of text in process output:
@@ -53,31 +55,185 @@ selftimedHarvester = taggedLineHarvester "SELFTIMED" (\d r -> r{ _MEDIANTIME = d
 jittimeHarvester :: LineHarvester
 jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{ _ALLJITTIMES = show (d::Double) })
 
+-- TODO: Generate these somehow:
+
+allBuiltinHarvesters :: LineHarvester
+allBuiltinHarvesters =
+  harvest_PROGNAME `mappend`
+  harvest_VARIANT  `mappend`
+  harvest_ARGS     `mappend`
+  harvest_HOSTNAME `mappend`
+  harvest_RUNID    `mappend`
+  harvest_CI_BUILD_ID `mappend`
+  harvest_THREADS     `mappend`
+  harvest_DATETIME    `mappend`
+  harvest_MINTIME     `mappend`
+  harvest_MEDIANTIME  `mappend`
+  harvest_MAXTIME     `mappend`
+  harvest_MINTIME_PRODUCTIVITY    `mappend`
+  harvest_MEDIANTIME_PRODUCTIVITY `mappend`
+  harvest_MAXTIME_PRODUCTIVITY    `mappend`
+  harvest_ALLTIMES      `mappend`
+  harvest_TRIALS        `mappend`
+  harvest_COMPILER      `mappend`
+  harvest_COMPILE_FLAGS `mappend`
+  harvest_RUNTIME_FLAGS `mappend`
+  harvest_ENV_VARS      `mappend`
+  harvest_BENCH_VERSION `mappend`
+  harvest_BENCH_FILE   `mappend`
+  harvest_UNAME        `mappend`
+  harvest_PROCESSOR    `mappend`
+  harvest_TOPOLOGY     `mappend`
+  harvest_GIT_BRANCH   `mappend`
+  harvest_GIT_HASH     `mappend`
+  harvest_GIT_DEPTH    `mappend`
+  harvest_WHO       `mappend`
+  harvest_ETC_ISSUE `mappend`
+  harvest_LSPCI     `mappend`
+  harvest_FULL_LOG  `mappend`
+  harvest_MEDIANTIME_ALLOCRATE     `mappend`
+  harvest_MEDIANTIME_MEMFOOTPRINT  `mappend`
+  harvest_ALLJITTIMES     `mappend`
+  harvest_RETRIES
+
+
 harvest_PROGNAME :: LineHarvester
 harvest_PROGNAME = (taggedLineHarvester "PROGNAME" (\d r -> r{ _PROGNAME = d }))
 
 harvest_VARIANT :: LineHarvester
 harvest_VARIANT = (taggedLineHarvester "VARIANT" (\d r -> r{ _VARIANT = d }))
 
+-- | Note, this harvester expects the ARGS to be written as a Haskell
+-- datatype, compatible with the Read instance for `[String]`.
+harvest_ARGS :: LineHarvester
+harvest_ARGS = (taggedLineHarvester "ARGS" (\d r -> r{ _ARGS = d }))
 
---------------------------------------------------------------------------------
+harvest_HOSTNAME :: LineHarvester
+harvest_HOSTNAME = (taggedLineHarvester "HOSTNAME" (\d r -> r{ _HOSTNAME = d }))
 
--- | Check for a line of output of the form "TAG NUM" or "TAG: NUM".
---   Take a function that puts the result into place (the write half of a lens).
+harvest_RUNID :: LineHarvester
+harvest_RUNID = (taggedLineHarvester "RUNID" (\d r -> r{ _RUNID = d }))
+
+harvest_CI_BUILD_ID :: LineHarvester
+harvest_CI_BUILD_ID = (taggedLineHarvester "CI_BUILD_ID" (\d r -> r{ _CI_BUILD_ID = d }))
+
+harvest_THREADS :: LineHarvester
+harvest_THREADS = (taggedLineHarvester "THREADS" (\d r -> r{ _THREADS = d }))
+
+harvest_DATETIME :: LineHarvester
+harvest_DATETIME = (taggedLineHarvester "DATETIME" (\d r -> r{ _DATETIME = d }))
+
+harvest_MINTIME :: LineHarvester
+harvest_MINTIME = (taggedLineHarvester "MINTIME" (\d r -> r{ _MINTIME = d }))
+
+harvest_MEDIANTIME :: LineHarvester
+harvest_MEDIANTIME = (taggedLineHarvester "MEDIANTIME" (\d r -> r{ _MEDIANTIME = d }))
+
+harvest_MAXTIME :: LineHarvester
+harvest_MAXTIME = (taggedLineHarvester "MAXTIME" (\d r -> r{ _MAXTIME = d }))
+
+harvest_MINTIME_PRODUCTIVITY :: LineHarvester
+harvest_MINTIME_PRODUCTIVITY = (taggedLineHarvester "MINTIME_PRODUCTIVITY" (\d r -> r{ _MINTIME_PRODUCTIVITY = d }))
+
+harvest_MEDIANTIME_PRODUCTIVITY :: LineHarvester
+harvest_MEDIANTIME_PRODUCTIVITY = (taggedLineHarvester "MEDIANTIME_PRODUCTIVITY" (\d r -> r{ _MEDIANTIME_PRODUCTIVITY = d }))
+
+harvest_MAXTIME_PRODUCTIVITY :: LineHarvester
+harvest_MAXTIME_PRODUCTIVITY = (taggedLineHarvester "MAXTIME_PRODUCTIVITY" (\d r -> r{ _MAXTIME_PRODUCTIVITY = d }))
+
+-- | ALLTIMES is read in as a single string of space separated numbers.
+harvest_ALLTIMES :: LineHarvester
+harvest_ALLTIMES = (taggedLineHarvester "ALLTIMES" (\d r -> r{ _ALLTIMES = d }))
+
+harvest_TRIALS :: LineHarvester
+harvest_TRIALS = (taggedLineHarvester "TRIALS" (\d r -> r{ _TRIALS = d }))
+
+harvest_COMPILER :: LineHarvester
+harvest_COMPILER = (taggedLineHarvester "COMPILER" (\d r -> r{ _COMPILER = d }))
+
+harvest_COMPILE_FLAGS :: LineHarvester
+harvest_COMPILE_FLAGS = (taggedLineHarvester "COMPILE_FLAGS" (\d r -> r{ _COMPILE_FLAGS = d }))
+
+harvest_RUNTIME_FLAGS :: LineHarvester
+harvest_RUNTIME_FLAGS = (taggedLineHarvester "RUNTIME_FLAGS" (\d r -> r{ _RUNTIME_FLAGS = d }))
+
+harvest_ENV_VARS :: LineHarvester
+harvest_ENV_VARS = (taggedLineHarvester "ENV_VARS" (\d r -> r{ _ENV_VARS = d }))
+
+harvest_BENCH_VERSION :: LineHarvester
+harvest_BENCH_VERSION = (taggedLineHarvester "BENCH_VERSION" (\d r -> r{ _BENCH_VERSION = d }))
+
+harvest_BENCH_FILE :: LineHarvester
+harvest_BENCH_FILE = (taggedLineHarvester "BENCH_FILE" (\d r -> r{ _BENCH_FILE = d }))
+
+harvest_UNAME :: LineHarvester
+harvest_UNAME = (taggedLineHarvester "UNAME" (\d r -> r{ _UNAME = d }))
+
+harvest_PROCESSOR :: LineHarvester
+harvest_PROCESSOR = (taggedLineHarvester "PROCESSOR" (\d r -> r{ _PROCESSOR = d }))
+
+harvest_TOPOLOGY :: LineHarvester
+harvest_TOPOLOGY = (taggedLineHarvester "TOPOLOGY" (\d r -> r{ _TOPOLOGY = d }))
+
+harvest_GIT_BRANCH :: LineHarvester
+harvest_GIT_BRANCH = (taggedLineHarvester "GIT_BRANCH" (\d r -> r{ _GIT_BRANCH = d }))
+
+harvest_GIT_HASH :: LineHarvester
+harvest_GIT_HASH = (taggedLineHarvester "GIT_HASH" (\d r -> r{ _GIT_HASH = d }))
+
+harvest_GIT_DEPTH :: LineHarvester
+harvest_GIT_DEPTH = (taggedLineHarvester "GIT_DEPTH" (\d r -> r{ _GIT_DEPTH = d }))
+
+harvest_WHO :: LineHarvester
+harvest_WHO = (taggedLineHarvester "WHO" (\d r -> r{ _WHO = d }))
+
+harvest_ETC_ISSUE :: LineHarvester
+harvest_ETC_ISSUE = (taggedLineHarvester "ETC_ISSUE" (\d r -> r{ _ETC_ISSUE = d }))
+
+harvest_LSPCI :: LineHarvester
+harvest_LSPCI = (taggedLineHarvester "LSPCI" (\d r -> r{ _LSPCI = d }))
+
+harvest_FULL_LOG :: LineHarvester
+harvest_FULL_LOG = (taggedLineHarvester "FULL_LOG" (\d r -> r{ _FULL_LOG = d }))
+
+harvest_MEDIANTIME_ALLOCRATE :: LineHarvester
+harvest_MEDIANTIME_ALLOCRATE = (taggedLineHarvester "MEDIANTIME_ALLOCRATE" (\d r -> r{ _MEDIANTIME_ALLOCRATE = d }))
+
+harvest_MEDIANTIME_MEMFOOTPRINT :: LineHarvester
+harvest_MEDIANTIME_MEMFOOTPRINT = (taggedLineHarvester "MEDIANTIME_MEMFOOTPRINT" (\d r -> r{ _MEDIANTIME_MEMFOOTPRINT = d }))
+
+harvest_ALLJITTIMES :: LineHarvester
+harvest_ALLJITTIMES = (taggedLineHarvester "ALLJITTIMES" (\d r -> r{ _ALLJITTIMES = d }))
+
+harvest_RETRIES :: LineHarvester
+harvest_RETRIES = (taggedLineHarvester "RETRIES" (\d r -> r{ _RETRIES = d }))
+
+            --------------------------------------------------------------------------------
+
+-- | Check for a line of output of the form "TAG: <VAL>".
+--
+--   Where <VAL> is a string matching the Haskell `Read` instance
+--   for the corresponding type.
+--
+--   This only handles lines for which `fromTaggedLine` returns `Just`.
+--
+--  Lines without the specified tag are ignored.  Lines which have the
+--  tag but have an unparseable value on the RHS result in an error.
+--
 taggedLineHarvester :: Read a => B.ByteString -> (a -> BenchmarkResult -> BenchmarkResult) -> LineHarvester
 taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
   let fail = (id, False) in
-  case B.words ln of
-    [] -> fail
+  case fromTaggedLine ln of
+    Nothing -> fail
     -- Match either "TAG" or "TAG:"
-    hd:tl | hd == tag || hd == (tag `B.append` ":") ->
-      case tl of
-        [time] ->
-          case reads (B.unpack time) of
-            (dbl,_):_ -> (stickit dbl, True)
-            _ -> error$ "[taggedLineHarvester] Error: line tagged with "++B.unpack tag++", but couldn't parse number: "++B.unpack ln
-        _ -> error$ "[taggedLineHarvester] Error: tagged line followed by more than one token: "++B.unpack ln
+    Just (tg,rhs) | tg == B.unpack tag ->
+      case reads rhs of
+        (val,_):_ -> (stickit val, True)
+        _ -> error$ "[taggedLineHarvester] Error: line tagged with "
+                  ++B.unpack tag++", but couldn't parse number: "++B.unpack ln
     _ -> fail
+
+
 
 --------------------------------------------------------------------------------
 -- GHC-specific Harvesters:
@@ -148,8 +304,8 @@ customTagHarvesterDouble tag =
 
 customTagHarvesterString :: String -> LineHarvester
 customTagHarvesterString tag =
-  taggedLineHarvesterStr (pack tag) $
-    \s r -> r { _CUSTOM = (tag,StringResult s) : _CUSTOM r }
+  taggedRawHarvester (pack tag) $
+  \s r -> r { _CUSTOM = (tag,StringResult s) : _CUSTOM r }
 
 -- Harvesters which accumulate their output over multiple "trials"
 customAccumHarvesterInt :: String -> LineHarvester
@@ -176,30 +332,59 @@ accumHarvester ctr tag =
 
 -- TODO: Get rid of the use of String's in this section:
 
-taggedLineHarvesterStr :: B.ByteString
-                          -> (String -> BenchmarkResult -> BenchmarkResult)
-                          -> LineHarvester
-taggedLineHarvesterStr tag stickit = LineHarvester $ \ ln ->
+-- | Build a harvester that directly consumes the string on the
+-- right-hand-side of the tagged line.  However, leading whitespace
+-- that separates the "TAG:" from the value is stripped.  For example
+-- the line "TAG: A B C" results in the string "A B C" being passed
+-- along.
+taggedRawHarvester :: B.ByteString
+                      -> (String -> BenchmarkResult -> BenchmarkResult)
+                      -> LineHarvester
+taggedRawHarvester tag stickit = LineHarvester $ \ ln ->
   case fromTaggedLine ln of
     Nothing -> (id, False)
     Just (tg,val) | tg == unpack tag -> (stickit val, True)
                   | otherwise -> (id, False)
 
 -- | Decompose a valid HSBencher tagged-line of output into its
--- constituent pieces, whitespace stripped.  This returns Just only if
+-- constituent pieces, minus some whitespace.  This returns `Just` only if
 -- the line starts with a valid tag followed by a colon.  Whitespace
 -- between the tag and the colon is permitted but not encouraged.
+--
+-- Whitespace after the colon, before the value (right hand side), is
+-- not required but may be in the future.  It is stripped in the RHS
+-- returned by this function.
+--
+-- No assumptions about the tokenization of the RHS are made by this
+-- function, and the RHS may even be empty.
+--
+-- The tag portion, on the other hand, MUST consist of exactly one
+-- "word".
 fromTaggedLine :: B.ByteString -> Maybe (Tag,String)
 fromTaggedLine ln =
-  case B.words ln of
-    [] -> Nothing
-    -- Whitespace between tag and colon:
-    hd:col:tl | unpack col == ":" && validTag (unpack hd)
-               -> Just (unpack hd, (unpack (B.unwords tl)))
-    hd:tl | isColonTerminated (unpack hd) &&
-            validTag (stripTag (unpack hd)) ->
-      Just (stripTag (unpack hd), (unpack (B.unwords tl)))
-    _ -> Nothing
+  -- case B.words ln of
+  --   [] -> Nothing
+  --   -- Whitespace between tag and colon:
+  --   hd:col:tl | unpack col == ":" && validTag (unpack hd)
+  --              -> Just (unpack hd, (unpack (B.unwords tl)))
+  --   hd:tl | isColonTerminated (unpack hd) &&
+  --           validTag (stripTag (unpack hd)) ->
+  --     Just (stripTag (unpack hd), (unpack (B.unwords tl)))
+  --   _ -> Nothing
+  case B.uncons tl of
+    Nothing -> Nothing -- No colon was found:
+    Just (':', rhs) -> case B.words tag of
+                         [tg] -> Just ( B.unpack tg,
+                                        B.unpack $ B.dropWhile isSpace rhs)
+                         _    -> Nothing
+    Just _ -> Nothing -- Missing colon.
+ where
+  (hd,tl) = B.span (not . (==':')) ln
+  tag = trim hd
+
+trim :: ByteString -> ByteString
+trim = B.dropWhile isSpace . B.reverse .
+       B.dropWhile isSpace . B.reverse
 
 -- | This defines HSBencher's concept of a valid tag for tagged output
 -- on stdout or stderr.
@@ -209,14 +394,12 @@ validTag (a:rst) | isAlpha a = L.all isAlphaNum rst
                  | otherwise = False
 
 -- | This is an internal utility for stripping the comma off the end.
-stripTag :: String -> String
-stripTag t = case L.reverse t of
-               ':':ls -> L.reverse ls
-               _ -> t
+_stripTag :: String -> String
+_stripTag t = case L.reverse t of
+                ':':ls -> L.reverse ls
+                _ -> t
 
-isColonTerminated :: String -> Bool
-isColonTerminated t = case L.reverse t of
-                        ':':_ -> True
-                        _ -> False
-
--- Move other harvesters here?
+_isColonTerminated :: String -> Bool
+_isColonTerminated t = case L.reverse t of
+                         ':':_ -> True
+                         _ -> False

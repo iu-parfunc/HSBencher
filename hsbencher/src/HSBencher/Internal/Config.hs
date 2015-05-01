@@ -283,11 +283,15 @@ getConfig cmd_line_options benches = do
            , binDir         = "./hsbencher_bin/"
            , systemCleaner  = NoCleanup
            , argsBeforeFlags = True
-           , harvesters = selftimedHarvester       `mappend`
+           , harvesters = -- Legacy conventions:
+                          selftimedHarvester       `mappend`
+                          jittimeHarvester         `mappend`
+                          -- GHC-specific funny business:
                           ghcProductivityHarvester `mappend`
                           ghcMemFootprintHarvester `mappend`
                           ghcAllocRateHarvester    `mappend`
-                          jittimeHarvester
+                          -- Standard coverage of all built-in columns:
+                          allBuiltinHarvesters
            , plugIns = []
            , plugInConfs = M.empty
 	   }
