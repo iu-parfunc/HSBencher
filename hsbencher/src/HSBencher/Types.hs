@@ -5,7 +5,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | All the core types used by the rest of the HSBencher codebase.
@@ -70,6 +69,7 @@ import Data.Word
 import Data.List
 import Data.Monoid
 import Data.Maybe (fromMaybe)
+import Data.Orphans ()
 import Data.Dynamic
 import Data.Default (Default(..))
 import qualified Data.Map as M
@@ -906,22 +906,6 @@ tupleToResult tuple = BenchmarkResult
 
 --------------------------------------------------------------------------------
 -- Generic uploader interface
---------------------------------------------------------------------------------
-
--- Only for GHC 7.6 and earlier:
-#if !MIN_VERSION_base(4,7,0)
-instance Functor OptDescr where
-  fmap fn (Option shrt long args str) =
-    Option shrt long (fmap fn args) str
-
-instance Functor ArgDescr where
-  fmap fn x =
-    case x of
-      NoArg x ->  NoArg (fn x)
-      ReqArg fn2 str -> ReqArg (fn . fn2) str
-      OptArg fn2 str -> OptArg (fn . fn2) str
-#endif
-
 --------------------------------------------------------------------------------
 
 -- | An interface for plugins provided in separate packages.  These plugins provide
