@@ -9,7 +9,7 @@ stack --version
 which -a stack || echo ok
 
 # stack --no-system-ghc build
-stack --no-system-ghc test
+stack --no-system-ghc --install-ghc test
 
 # TODO: bring back these other tests:
 
