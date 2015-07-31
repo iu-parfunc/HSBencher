@@ -5,8 +5,9 @@
 
 set -xe
 
-which -a stack
 stack --version
+which -a stack || echo ok
+
 # stack --no-system-ghc build
 stack --no-system-ghc test
 
