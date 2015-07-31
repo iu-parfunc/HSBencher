@@ -1,47 +1,26 @@
 #!/bin/bash
 
+# Build everything using "stack", the modern way!
+# ------------------------------------------------
+
 set -xe
 
-if [ "$CABAL" == "" ]; then
- CABAL=cabal-1.22
-fi
+which -a stack
+stack --version
+stack build
 
-PKGS=" ./hsbencher/ ./hsbencher-fusion/ ./hsbencher-codespeed ./hsbencher-analytics "
+# stack test
 
-$CABAL --version
-TOP=`pwd`
+# TODO: bring back these other tests:
 
-which -a ghc
-ghc --version
+# # Next, build individual tests/examples that we can't actually run,
+# # because we don't want to connect to the network and upload data:
+# mkdir -p ./bin
+# $CABAL install --bindir=./bin ./hsbencher/example/custom_tag
+# # $CABAL exec custom-tag
 
-if [ "NOSETUP" != "1" ]; then
-  git submodule update --init
-  if ! [ -e ./cabal.sandbox.config ]; then
-      $CABAL sandbox init
-  fi
-  # for pkg in $PKGS; do
-  #     cd "$pkg"
-  #     $CABAL sandbox init --sandbox=../.cabal-sandbox/
-  #     cd "$TOP"
-  # done
-fi
+# $CABAL install --bindir=./bin ./hsbencher-fusion/examples/fusion_backend/
 
-# "--run-tests" Requires cabal 1.20+
-$CABAL install $PKGS -j --run-tests
-# $CABAL install $PKGS -j --enable-tests
+# $CABAL install --bindir=./bin ./hsbencher-codespeed/example/
 
-# cd "./hsbencher/"
-# $CABAL test
-# cd "$TOP"
-
-# Next, build individual tests/examples that we can't actually run,
-# because we don't want to connect to the network and upload data:
-mkdir -p ./bin
-$CABAL install --bindir=./bin ./hsbencher/example/custom_tag
-# $CABAL exec custom-tag
-
-$CABAL install --bindir=./bin ./hsbencher-fusion/examples/fusion_backend/
-
-$CABAL install --bindir=./bin ./hsbencher-codespeed/example/
-
-$CABAL install --bindir=./bin ./hsbencher-analytics/examples/fusion-analytics/
+# $CABAL install --bindir=./bin ./hsbencher-analytics/examples/fusion-analytics/

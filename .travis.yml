@@ -41,4 +41,4 @@ install:
 
 # Here starts the actual work to be performed for the package under test; any command which exits with a non-zero exit code causes the build to fail.
 script:
- - CABAL=cabal NOSETUP=1 ./.jenkins_script.sh
+ - CABAL=cabal NOSETUP=1 ./.jenkins_script_cabal.sh
