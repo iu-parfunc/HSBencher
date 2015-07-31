@@ -251,7 +251,8 @@ Test-suite hsbencher-unit-tests
                  test-framework-hunit >= 0.3,
                  data-default >= 0.5.3,
                  HUnit, time, text,
-                 QuickCheck >= 2.8, test-framework-quickcheck2
+                 QuickCheck >= 2.7.6,
+                 test-framework-quickcheck2
   ghc-options: -threaded
   default-language:  Haskell2010
   if flag(hydra) {

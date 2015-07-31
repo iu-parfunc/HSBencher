@@ -7,9 +7,8 @@ set -xe
 
 which -a stack
 stack --version
-stack build
-
-# stack test
+# stack --no-system-ghc build
+stack --no-system-ghc test
 
 # TODO: bring back these other tests:
 
