@@ -14,3 +14,4 @@ cabal.config
 *.bak
 nohup.out
 *.csv
+.stack-work
