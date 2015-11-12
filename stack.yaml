@@ -33,6 +33,7 @@ extra-deps:
   - simple-sql-parser-0.4.1
 
 # Ugh, this prevents building in subdirs.  I.e. its not relative to stack.yaml location:
+# See stack issue https://github.com/commercialhaskell/stack/issues/1340
 # local-bin-path: ./bin/
 
 system-ghc: false
