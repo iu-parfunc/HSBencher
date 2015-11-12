@@ -32,7 +32,8 @@ extra-deps:
   - aeson-0.8.0.2
   - simple-sql-parser-0.4.1
 
-local-bin-path: ./bin/
+# Ugh, this prevents building in subdirs.  I.e. its not relative to stack.yaml location:
+# local-bin-path: ./bin/
 
 system-ghc: false
 

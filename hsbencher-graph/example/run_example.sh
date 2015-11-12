@@ -1,14 +1,6 @@
 #!/bin/bash
 
-HSG="../.cabal-sandbox/bin/hsbencher-graph"
-
-if [ -e $HSG ]; then
-    echo "Using hsbencher-graph executable from sandbox."
-else
-    HSG="hsbencher-graph"
-fi
-
-which $HSG
+HSG="stack exec hsbencher-graph -- "
 
 set -xe
 
@@ -18,6 +10,8 @@ function go() {
 	 --pad=THREADS,2 --error=MINTIME,MAXTIME \
          -x ARGS -y MEDIANTIME --key PROGNAME --key VARIANT --key THREADS $*
 }
+
+stack build
 
 go -o plot_both.csv
 
