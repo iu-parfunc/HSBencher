@@ -4,8 +4,8 @@ packages:
  - hsbencher-codespeed/
  - hsbencher-csv/
  - hsbencher-fusion/
+ - hsbencher-graph/
 
-# - hsbencher-graph/
 # - hsbencher-analytics/
 
  # Not building examples for now:
@@ -32,8 +32,12 @@ extra-deps:
   - aeson-0.8.0.2
   - simple-sql-parser-0.4.1
 
+local-bin-path: ./bin/
+
+system-ghc: false
+
 flags:
   aeson:
     old-locale: false
 
-resolver: lts-2.20
+resolver: lts-3.11
