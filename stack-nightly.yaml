@@ -12,4 +12,5 @@ extra-deps:
   - handa-gdata-0.7.0.3
   - simple-sql-parser-0.4.1
 
-resolver: nightly-2015-07-30
+#
+resolver: nightly-2015-07-3

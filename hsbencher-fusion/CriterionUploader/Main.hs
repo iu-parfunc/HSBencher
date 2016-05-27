@@ -19,7 +19,7 @@ import HSBencher.Backend.Fusion
 import HSBencher.Backend.Dribble (defaultDribblePlugin, DribbleConf (..))
 
 import Criterion.Types                                  ( Report(..), SampleAnalysis(..), Regression(..) )
-import Criterion.IO                                     ( readReports )
+import Criterion.IO                                     ( readRecords )
 import Statistics.Resampling.Bootstrap                  ( Estimate(..) )
 
 -- Standard:
@@ -185,7 +185,7 @@ main = do
 
 doupload :: Config -> BenchmarkResult -> FilePath -> IO ()
 doupload confs presets file = do
-  x <- readReports file
+  x <- readRecords file
   case x of
     Left err -> error $ "Failed to read report file: \n"++err
     Right reports -> forM_ reports (upreport confs presets)
@@ -193,7 +193,7 @@ doupload confs presets file = do
 doCSV :: Config -> BenchmarkResult -> [FilePath] -> FilePath -> IO ()
 doCSV confs presets reportFiles csvFile = do
   brs <- concat `fmap` forM reportFiles (\reportFile -> do
-           critReport <- readReports reportFile
+           critReport <- readRecords reportFile
            case critReport of
              Left err -> error $ "Failed to read report file " ++ reportFile ++ ": \n" ++ err
              Right reports -> mapM (augmentResultWithConfig confs . flip addReport presets) reports)
