@@ -2,10 +2,15 @@ flags: {}
 packages:
  - hsbencher/
  - hsbencher-codespeed/
- - hsbencher-csv/
  - hsbencher-fusion/
  - hsbencher-graph/
+ - cat-csv
+ 
  - deps/criterion
+
+ # Looks like we can throw this out:
+ - hsbencher-csv/
+ 
  
 # - hsbencher-analytics/
 
@@ -30,7 +35,7 @@ extra-deps:
 
 # Ugh, this prevents building in subdirs.  I.e. its not relative to stack.yaml location:
 # See stack issue https://github.com/commercialhaskell/stack/issues/1340
-# local-bin-path: ./bin/
+local-bin-path: ./bin/
 
 system-ghc: false
 
@@ -43,4 +48,4 @@ system-ghc: false
 # resolver: lts-3.5
 resolver: lts-5.16
 
-allow-newer: true
+# allow-newer: true
