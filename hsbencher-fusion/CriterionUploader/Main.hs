@@ -277,8 +277,8 @@ addReport Report{..} BenchmarkResult{..} =
     (maybe [] (\ e -> [("CYCLES",DoubleResult (estPoint e))])
               (Map.lookup ("cycles","iters") ests)) ++
 
-    [("RSQR_TIME_FIT", DoubleResult (estPoint rsqr))]
-      
+    [ ("RSQR_TIME_FIT", DoubleResult (estPoint rsqr)) 
+    , ("RSQR_TIME_LOW", DoubleResult (estLowerBound rsqr)) ]
   , ..
   }
   where
