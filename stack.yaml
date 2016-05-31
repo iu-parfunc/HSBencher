@@ -5,7 +5,8 @@ packages:
  - hsbencher-csv/
  - hsbencher-fusion/
  - hsbencher-graph/
-
+ - deps/criterion
+ 
 # - hsbencher-analytics/
 
  # Not building examples for now:

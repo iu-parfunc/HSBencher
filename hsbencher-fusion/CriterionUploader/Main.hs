@@ -18,9 +18,9 @@ import HSBencher.Internal.Config (augmentResultWithConfig, getConfig)
 import HSBencher.Backend.Fusion
 import HSBencher.Backend.Dribble (defaultDribblePlugin, DribbleConf (..))
 
-import Criterion.Types                                  ( Report(..), SampleAnalysis(..), Regression(..) )
-import Criterion.IO                                     ( readRecords )
-import Statistics.Resampling.Bootstrap                  ( Estimate(..) )
+import Criterion.Types                  ( Report(..), SampleAnalysis(..), Regression(..) )
+import Criterion.IO                     ( readRecords, readJSONReports )
+import Statistics.Resampling.Bootstrap   ( Estimate(..) )
 
 -- Standard:
 import Control.Monad.Reader
@@ -52,11 +52,14 @@ data ExtraFlag = TableName String
                | WriteCSV     FilePath
                | NoUpload
                | PrintHelp
+               | JSONReport
   deriving (Eq,Ord,Show,Read)
 
 extra_cli_options :: [OptDescr ExtraFlag]
 extra_cli_options =  [ Option ['h'] ["help"] (NoArg PrintHelp)
                        "Show this help message and exit."
+                     , Option ['j'] ["json"] (NoArg JSONReport)
+                       "Expect the report file to be in JSON rather than binary format."
                      , Option [] ["name"] (ReqArg TableName "NAME")
                        "Name for the fusion table to which we upload (discovered or created)."
                      , Option [] ["variant"] (ReqArg SetVariant "STR")
@@ -177,23 +180,28 @@ main = do
    gconf3 <- if noup then return gconf2 else plugInitialize plug gconf2
 
    ------------------------------------------------------------
+   let reader = if (L.elem JSONReport opts1)
+                then fmap (fmap (\ (_,_,l) -> l)) . readJSONReports
+                else readRecords
    case plainargs of
      [] -> error "No file given to upload!"
      reports -> do
-       maybe (return ()) (doCSV gconf3 presets6 reports) csvPath
-       unless noup $ forM_ reports (doupload gconf3 presets6)
+       maybe (return ()) (doCSV gconf3 presets6 reports reader) csvPath
+       unless noup $ forM_ reports (doupload gconf3 presets6 reader)
 
-doupload :: Config -> BenchmarkResult -> FilePath -> IO ()
-doupload confs presets file = do
-  x <- readRecords file
+type ReportReader = FilePath -> IO (Either String [Report])
+
+doupload :: Config -> BenchmarkResult -> ReportReader -> FilePath -> IO ()
+doupload confs presets reader file = do
+  x <- reader file
   case x of
     Left err -> error $ "Failed to read report file: \n"++err
     Right reports -> forM_ reports (upreport confs presets)
 
-doCSV :: Config -> BenchmarkResult -> [FilePath] -> FilePath -> IO ()
-doCSV confs presets reportFiles csvFile = do
+doCSV :: Config -> BenchmarkResult -> [FilePath] -> ReportReader -> FilePath -> IO ()
+doCSV confs presets reportFiles reader csvFile = do
   brs <- concat `fmap` forM reportFiles (\reportFile -> do
-           critReport <- readRecords reportFile
+           critReport <- reader reportFile
            case critReport of
              Left err -> error $ "Failed to read report file " ++ reportFile ++ ": \n" ++ err
              Right reports -> mapM (augmentResultWithConfig confs . flip addReport presets) reports)
@@ -219,6 +227,7 @@ printReport Report{..} = do
   forM_ anRegress $ \Regression{..} -> do
     putStrLn$ "  Regression: "++ show (regResponder, Map.keys regCoeffs)
 
+-- | Add the relevant data inside a Report to our BenchmarkResult
 addReport :: Report -> BenchmarkResult -> BenchmarkResult
 addReport Report{..} BenchmarkResult{..} =
   BenchmarkResult
@@ -254,7 +263,10 @@ addReport Report{..} BenchmarkResult{..} =
               (Map.lookup ("cpuTime","iters") ests)) ++
 
     (maybe [] (\ e -> [("CYCLES",DoubleResult (estPoint e))])
-              (Map.lookup ("cycles","iters") ests))
+              (Map.lookup ("cycles","iters") ests)) ++
+
+    [("RSQR_TIME_FIT", DoubleResult (estPoint rsqr))]
+      
   , ..
   }
   where
@@ -264,6 +276,8 @@ addReport Report{..} BenchmarkResult{..} =
     ests = Map.fromList $
              [ ((regResponder,p), e) | Regression{..} <- anRegress
                                      , (p,e) <- Map.toList regCoeffs ]
+    [rsqr] = [ regRSquare | Regression{regResponder="time", regRSquare} <- anRegress ]
+             
     fetch r p = case Map.lookup (r,p) ests of
                   Nothing -> error $ "Expected regression with responder/predictor:"++r++"/"++p
                   Just x  -> x
