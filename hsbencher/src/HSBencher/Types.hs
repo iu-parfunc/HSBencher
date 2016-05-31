@@ -76,7 +76,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe (catMaybes)
 import Prelude hiding (pred)
-import System.Console.GetOpt (OptDescr(..), ArgDescr(..))
+import System.Console.GetOpt (OptDescr(..))
 import System.FilePath
 import System.Directory
 import System.Process (CmdSpec(..))

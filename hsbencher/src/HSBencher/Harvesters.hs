@@ -38,8 +38,6 @@ import qualified Data.List as L
 import           HSBencher.Types
 import           Prelude hiding (fail)
 
-import Data.Monoid
-
 -------------------------------------------------------------------
 -- LineHarvesters: Hacks for looking for particular bits of text in process output:
 -------------------------------------------------------------------

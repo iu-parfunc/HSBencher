@@ -180,31 +180,33 @@ main = do
    gconf3 <- if noup then return gconf2 else plugInitialize plug gconf2
 
    ------------------------------------------------------------
-   let reader = if (L.elem JSONReport opts1)
-                then fmap (fmap (\ (_,_,l) -> l)) . readJSONReports
-                else readRecords
+   let readReps = if (L.elem JSONReport opts1)
+                 then fmap (fmap (\ (_,_,l) -> l)) . readJSONReports
+                 else readRecords
    case plainargs of
      [] -> error "No file given to upload!"
      reports -> do
-       maybe (return ()) (doCSV gconf3 presets6 reports reader) csvPath
-       unless noup $ forM_ reports (doupload gconf3 presets6 reader)
+       maybe (return ()) (doCSV gconf3 presets6 reports readReps) csvPath
+       unless noup $ forM_ reports (doupload gconf3 presets6 readReps)
 
 type ReportReader = FilePath -> IO (Either String [Report])
 
 doupload :: Config -> BenchmarkResult -> ReportReader -> FilePath -> IO ()
-doupload confs presets reader file = do
-  x <- reader file
+doupload confs presets readReports file = do
+  x <- readReports file
   case x of
     Left err -> error $ "Failed to read report file: \n"++err
     Right reports -> forM_ reports (upreport confs presets)
 
 doCSV :: Config -> BenchmarkResult -> [FilePath] -> ReportReader -> FilePath -> IO ()
-doCSV confs presets reportFiles reader csvFile = do
+doCSV confs presets reportFiles readReports csvFile = do
   brs <- concat `fmap` forM reportFiles (\reportFile -> do
-           critReport <- reader reportFile
+           critReport <- readReports reportFile
            case critReport of
              Left err -> error $ "Failed to read report file " ++ reportFile ++ ": \n" ++ err
-             Right reports -> mapM (augmentResultWithConfig confs . flip addReport presets) reports)
+             Right reports -> mapM (fmap wipeDynFields .
+                                    augmentResultWithConfig confs .
+                                    flip addReport presets) reports)
   -- TODO: need to change file names here
   forM_ brs $ \benchRet -> do
     -- we restart dribble plugin to set a new path for each report
@@ -227,6 +229,16 @@ printReport Report{..} = do
   forM_ anRegress $ \Regression{..} -> do
     putStrLn$ "  Regression: "++ show (regResponder, Map.keys regCoeffs)
 
+-- | Static (machine description) fields are fine.
+-- Dynamic fields don't make much sense when we're running this post-facto, 
+-- an arbitrary amount of time after the benchmarks have completed.
+wipeDynFields :: BenchmarkResult -> BenchmarkResult
+wipeDynFields BenchmarkResult{..} =
+  BenchmarkResult
+  { _WHO = ""
+  , _TOPOLOGY = ""
+  , .. }
+
 -- | Add the relevant data inside a Report to our BenchmarkResult
 addReport :: Report -> BenchmarkResult -> BenchmarkResult
 addReport Report{..} BenchmarkResult{..} =
@@ -248,7 +260,7 @@ addReport Report{..} BenchmarkResult{..} =
     do e <- Map.lookup ("allocated","iters") ests
        -- Use time to extrapolate the alloc rate / second:
        return (round(estPoint e * (1.0 / medtime)))
-
+       
   , _CUSTOM = _CUSTOM ++
     (maybe [] (\ e -> [("BYTES_ALLOC",DoubleResult (estPoint e))])
               (Map.lookup ("allocated","iters") ests)) ++

@@ -19,7 +19,7 @@ module HSBencher.Internal.Config
 import qualified Data.Map as M
 import Data.Time.Clock (getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.Monoid
+
 import GHC.Conc (getNumProcessors)
 import System.Environment (getEnvironment)
 import System.Console.GetOpt (OptDescr(Option), ArgDescr(..))

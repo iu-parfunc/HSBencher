@@ -29,7 +29,7 @@ import System.Directory
 import System.FilePath (dropTrailingPathSeparator, takeBaseName)
 import System.IO (hGetContents)
 import qualified System.IO.Streams as Strm
-import qualified System.IO.Streams.Concurrent as Strm
+
 import System.IO.Unsafe (unsafePerformIO)
 import System.Process (waitForProcess, getProcessExitCode, createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
 
