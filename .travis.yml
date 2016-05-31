@@ -48,7 +48,8 @@ addons:
 # This just sets up stack:
 before_install:
  - mkdir -p ~/.local/bin
- - export PATH=~/.local/bin:$PATH
+ - mkdir -p ./bin/
+ - export PATH=${PWD}/bin:~/.local/bin:${PATH}
  - if [ "$STACK_RESOLVER" == "" ];
    then STACK="stack --no-terminal";
    else STACK="stack --no-terminal --resolver=$STACK_RESOLVER";
