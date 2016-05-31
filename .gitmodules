@@ -1,3 +1,4 @@
 [submodule "deps/criterion"]
 	path = deps/criterion
-	url = git@github.com:iu-parfunc/criterion.git
+	url = https://github.com/iu-parfunc/criterion.git
+#	url = git@github.com:iu-parfunc/criterion.git
