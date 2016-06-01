@@ -31,6 +31,7 @@ module HSBencher.Harvesters
         fromTaggedLine, validTag
         ) where
 
+import           Data.Monoid
 import           Data.ByteString.Char8 as B
 import           Data.Char (isAlpha, isAlphaNum, isSpace)
 import qualified Data.List as L

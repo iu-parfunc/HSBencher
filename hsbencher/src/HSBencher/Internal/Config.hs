@@ -26,6 +26,9 @@ import System.Console.GetOpt (OptDescr(Option), ArgDescr(..))
 import System.IO (openFile, IOMode(..), BufferMode(..), hSetBuffering)
 import qualified System.IO.Streams as Strm
 
+import Data.Monoid -- Temporory AMP work-around
+import Prelude
+
 import HSBencher.Types
 import HSBencher.Internal.Utils
 import HSBencher.Methods.Builtin
