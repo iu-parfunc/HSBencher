@@ -15,6 +15,7 @@ matrix:
 
     # Test with an older GHC, 7.8.4:
     - env: STACK_RESOLVER=lts-2.22
+           STACK_YAML=stack-lts-2.22.yaml
 
     # Test with GHC 8.0, not yet in LTS:
     - env: STACK_RESOLVER=nightly-2016-05-31
@@ -68,13 +69,14 @@ install:
  - stack --no-terminal --install-ghc install cabal-install
 
  - $STACK setup 
- # This should be deterministic for LTS releases, and others are
- # expected to be nondeterministic anyway:
- - if [ "$STACK_RESOLVER" != "" ];
+ - if [ "$STACK_RESOLVER" == ghc-7.8 ] ||
+      [ "$STACK_RESOLVER" == ghc-7.10 ] ||
+      [ "$STACK_RESOLVER" == ghc-8.0 ]; 
    then $STACK solver --update-config ;
-   fi
- - $STACK exec ghc -- --version                    || echo '?'
- - $STACK exec ghc ----print-project-git-commit-id || echo '?'
+   fi    
+
+ - $STACK exec ghc -- --version                     || echo '?'
+ - $STACK exec ghc -- --print-project-git-commit-id || echo '?'
  - $STACK build --test --no-run-tests
 
  
@@ -88,3 +90,5 @@ script:
 
 # notifications:
 #   email: false
+
+

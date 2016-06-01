@@ -1,0 +1,27 @@
+flags: {}
+packages:
+ - hsbencher/
+ - hsbencher-codespeed/
+ - hsbencher-fusion/
+ - hsbencher-graph/
+ - cat-csv 
+ - deps/criterion
+
+extra-deps: 
+  - base-orphans-0.4.1
+  - handa-gdata-0.7.0.3
+  - io-streams-1.3.1.0
+  # For handa-gdata.  I wish this could be avoided:
+  - time-1.5.0.1
+  - aeson-0.8.0.2
+  - simple-sql-parser-0.4.1
+
+local-bin-path: ./bin/
+
+system-ghc: false
+
+resolver: lts-2.22
+
+flags:
+  aeson:
+    old-locale: false
