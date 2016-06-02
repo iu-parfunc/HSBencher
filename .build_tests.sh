@@ -16,9 +16,10 @@ fi
 
 $STACK setup 
 
-if [ "$STACK_RESOLVER" == ghc-7.8 ] ||
+if [ "$STACK_RESOLVER" == ghc-7.8  ] ||
    [ "$STACK_RESOLVER" == ghc-7.10 ] ||
-   [ "$STACK_RESOLVER" == ghc-8.0 ]; 
+   [ "$STACK_RESOLVER" == ghc-8.0  ] ||
+   [ "$STACK_RESOLVER" == nightly  ] ; 
 then stack setup ;
      stack --no-terminal --install-ghc install cabal-install ;
      cabal --version ;

@@ -1,0 +1,22 @@
+flags: {}
+packages:
+ - hsbencher/
+ - hsbencher-codespeed/
+ - hsbencher-fusion/
+ - hsbencher-graph/
+ - cat-csv
+ - deps/criterion
+ - hsbencher-csv/
+
+extra-deps: 
+- handa-gdata-0.7.0.3
+- simple-sql-parser-0.4.1
+- GenericPretty-1.2.1
+- csv-0.1.2
+- json-0.9.1
+
+# Ugh, this prevents building in subdirs.  I.e. its not relative to stack.yaml location:
+# See stack issue https://github.com/commercialhaskell/stack/issues/1340
+local-bin-path: ./bin/
+system-ghc: false
+resolver: nightly-2016-05-31
