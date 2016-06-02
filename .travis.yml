@@ -99,5 +99,5 @@ script:
  # 
  # - $STACK test hsbencher:hsbencher-test1
 
- - TESTEXE=`find -name hsbencher-test1 -type f`
- - $TESTEXE
+# - TESTEXE=`find -name hsbencher-test1 -type f`
+# - $TESTEXE
