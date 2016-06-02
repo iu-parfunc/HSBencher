@@ -46,15 +46,11 @@ addons:
       - libgmp-dev
       
 # Note: the distinction between `before_install` and `install` is not important.
-# This just sets up stack:
+# This just sets up stack and paths
 before_install:
  - mkdir -p ~/.local/bin
  - mkdir -p ./bin/
  - export PATH=${PWD}/bin:~/.local/bin:${PATH}
- - if [ "$STACK_RESOLVER" == "" ];
-   then STACK="stack --no-terminal";
-   else STACK="stack --no-terminal --resolver=$STACK_RESOLVER";
-   fi
  - export STACKVER=1.1.2
  - wget https://github.com/commercialhaskell/stack/releases/download/v${STACKVER}/stack-${STACKVER}-linux-x86_64.tar.gz
  - tar xvf stack-${STACKVER}-linux-x86_64.tar.gz
@@ -62,42 +58,10 @@ before_install:
  - chmod a+x ~/.local/bin/stack
 
  # This sets up GHC and builds our packages:
-install: 
- - $STACK setup 
- - if [ "$STACK_RESOLVER" == ghc-7.8 ] ||
-      [ "$STACK_RESOLVER" == ghc-7.10 ] ||
-      [ "$STACK_RESOLVER" == ghc-8.0 ]; 
-   then stack setup ;
-        stack --no-terminal --install-ghc install cabal-install ;
-        cabal --version ;
-        $STACK solver --update-config ;
-   fi
-
- - $STACK exec ghc -- --version                     || echo '?'
- - $STACK exec ghc -- --print-project-git-commit-id || echo '?'
- - $STACK build --test --no-run-tests
-
+install:
+ - source .build_tests.sh 
  
 # Here starts the actual work to be performed for the package under test;
 # any command which exits with a non-zero exit code causes the build to fail.
 script:
-
-
- - $STACK test hsbencher-codespeed
- - $STACK test hsbencher-fusion
- - $STACK test hsbencher-graph
-
- - $STACK test hsbencher:hsbencher-unit-tests
- - $STACK test hsbencher:hsbencher-test2
- - $STACK test hsbencher:hsbencher-test3
- 
- # [2016.05.31] Problems with calling cabal as subprocess:
- # And no good way to avoid it, even with cabal-1.24:
- # 
- #    cabal: Use of GHC's environment variable GHC_PACKAGE_PATH is
- #    incompatible with Cabal
- # 
- # - $STACK test hsbencher:hsbencher-test1
-
-# - TESTEXE=`find -name hsbencher-test1 -type f`
-# - $TESTEXE
+ - source .run_tests.sh

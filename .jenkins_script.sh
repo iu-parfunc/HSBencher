@@ -1,26 +1,15 @@
 #!/bin/bash
 
+set -xe
+
 # Build everything using "stack", the modern way!
 # ------------------------------------------------
 
-set -xe
-
-stack --version
 which -a stack || echo ok
 
-# stack --no-system-ghc build
-stack --no-system-ghc --install-ghc test
+if [ "$STACK_RESOLVER" == lts-2.22 ]; then 
+    export STACK_YAML=stack-lts-2.22.yaml
+fi
 
-# TODO: bring back these other tests:
-
-# # Next, build individual tests/examples that we can't actually run,
-# # because we don't want to connect to the network and upload data:
-# mkdir -p ./bin
-# $CABAL install --bindir=./bin ./hsbencher/example/custom_tag
-# # $CABAL exec custom-tag
-
-# $CABAL install --bindir=./bin ./hsbencher-fusion/examples/fusion_backend/
-
-# $CABAL install --bindir=./bin ./hsbencher-codespeed/example/
-
-# $CABAL install --bindir=./bin ./hsbencher-analytics/examples/fusion-analytics/
+source .build_tests.sh 
+source .run_tests.sh
