@@ -4,7 +4,7 @@ HSBencher: A flexible benchmarking framework
 
 Build/test Status:
 
- * Travis: [![Build Status](https://travis-ci.org/rrnewton/HSBencher.svg?branch=master)](https://travis-ci.org/rrnewton/HSBencher)
+ * Travis: [![Build Status](https://travis-ci.org/iu-parfunc/HSBencher.svg?branch=master)](https://travis-ci.org/rrnewton/HSBencher)
  * Jenkins: [![Build Status](http://tester-lin.soic.indiana.edu:8080/buildStatus/icon?job=HSBencher)](http://tester-lin.soic.indiana.edu:8080/job/HSBencher)
 
 
