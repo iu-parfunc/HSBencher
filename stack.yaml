@@ -5,13 +5,15 @@ packages:
  - hsbencher-fusion/
  - hsbencher-graph/
  - cat-csv
- 
- - deps/criterion
 
  # Looks like we can throw this out:
  - hsbencher-csv/
- 
- 
+
+ - location:
+     git: https://github.com/bos/criterion
+     commit: fa26f39a187f422adbb513ea459ee2700301f804
+   extra-dep: true
+
 # - hsbencher-analytics/
 
  # Not building examples for now:
@@ -29,7 +31,8 @@ packages:
  #- hsbencher-analytics/examples/fusion-analytics/
 # - hsbencher-analytics/examples/fusion-analytics/Bench/
 
-extra-deps: 
+extra-deps:
+- criterion-1.1.3.0
 - handa-gdata-0.7.0.3
 - simple-sql-parser-0.4.1
 
