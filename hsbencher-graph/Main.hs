@@ -337,7 +337,7 @@ fullUsageInfo = usageInfo docs core_cli_options
   docs = "USAGE: "++progName++" <flags> ... <inputCSVfiles> ...\n"++
          "Version: "++showVersion version++"\n"++
          
-         "\nA utility for plotting datasets retrieved from HSBencher.\n"++
+         "\nA utility for plotting datasets retrieved from HSBencher (using standard HSBencher Schema).\n"++
          "\nReads CSV data from stdin if no input files are given.\n\n"++
 
          "Basic usage guide:\n"++
