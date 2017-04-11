@@ -218,9 +218,18 @@ Library
     build-depends: hydra-print >= 0.1.0.3
     cpp-options: -DUSE_HYDRAPRINT
   }
-
   default-language:    Haskell2010
 
+
+Executable hsbencher-ingest-log
+  main-is: IngestLog.hs
+  hs-source-dirs: app/
+  build-depends: base >= 4.5, hsbencher,
+                 filepath,
+                 optparse-applicative
+  default-language:    Haskell2010                        
+
+  
 -- [2013.05.28] This will come back later when the new ASCII benchmark file format is finished:
 -----------------------------------------------------------------------------------------------
 -- Executable hsbencher
@@ -228,12 +237,6 @@ Library
 --  hs-source-dirs: src/
 --   -- other-modules:
 --   build-depends:
---       -- <DUPLICATED from above>
---       base >= 4.5, bytestring, process, directory, filepath, random, unix, containers, time, mtl, async,
---       hydra-print >= 0.1.0.3, io-streams >= 1.0,
---       GenericPretty >= 1.2
---       -- </DUPLICATED>
-
 --   ghc-options: -threaded
 --   default-language:    Haskell2010
 
