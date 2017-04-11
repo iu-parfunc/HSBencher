@@ -1,13 +1,19 @@
+
 flags: {}
 packages:
+ # The library that users depend on:
  - hsbencher/
+ # (deprecated) Upload data to a codespeed instance:
  - hsbencher-codespeed/
+ # Upload data to fusion tables:
  - hsbencher-fusion/
+ # The latest attempt at direct graphing support for hsbencher data:
  - hsbencher-graph/
+ # General utility:
  - cat-csv
 
  # Looks like we can throw this out:
- - hsbencher-csv/
+ - old/hsbencher-csv/
 
  - location:
      git: https://github.com/bos/criterion
