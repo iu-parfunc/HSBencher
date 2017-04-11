@@ -15,7 +15,10 @@
 
 module HSBencher.Internal.App
        (defaultMainModifyConfig,
-        Flag(..), all_cli_options, fullUsageInfo
+        Flag(..), all_cli_options, fullUsageInfo,
+
+        -- * Internal
+        printBenchrunHeader, parseRun, runC_outputBenchmarkResult
        )
        where
 
@@ -204,10 +207,6 @@ runOne (iterNum, totalIters) _bldid bldres
 
   -- (6) Produce output to the right places:
   ------------------------------------------
-  when False $ -- TODO: Delete me.
-    do let thename = canonicalBenchName benchlist thebench
-       _ <- runC_produceOutput (args,fullargs) (retries,nruns) testRoot thename runconfig
-       return ()
   mapM_ runC_outputBenchmarkResult collapsedBenches
 
   -- (7) Finally, compute return status
@@ -460,6 +459,7 @@ aggregateTrials benches =
 
 ------------------------------------------------------------
 
+-- | Augment the benchmark result using  data from the global Config.
 augmentBenchmarkResult :: [(DefaultParamMeaning, ParamSetting)]
                        -> BenchmarkResult
                        -> ReaderT Config IO BenchmarkResult
@@ -735,13 +735,13 @@ doShowHelp allplugs = do
 -- a StateT to store the Config, and reduce the verbosity of the
 -- output when "Harvesting environment data".
 
--- | An even more flexible version allows the user to install a hook which modifies
+-- | An flexible application entrypoint which allows the user to modify
 -- the configuration just before bencharking begins.  All trawling of the execution
 -- environment (command line args, environment variables) happens BEFORE the user
 -- sees the configuration.
 --
--- This function doesn't take a benchmark list separately, because that simply
--- corresponds to the 'benchlist' field of the output 'Config'.
+-- Note that the benchmark list corresponds to the 'benchlist' field of the
+-- output 'Config'.
 defaultMainModifyConfig :: (Config -> Config) -> IO ()
 defaultMainModifyConfig modConfig = do
   id       <- myThreadId

@@ -15,7 +15,7 @@ module HSBencher.Harvesters
         ghcProductivityHarvester, ghcAllocRateHarvester, ghcMemFootprintHarvester,
 
         -- * Utilities for constructing more harvesters
-        taggedLineHarvester,
+        taggedLineHarvester, taggedRawHarvester,
 
         -- * Custom tags, which have an expected type
         customTagHarvesterInt,
@@ -97,10 +97,10 @@ allBuiltinHarvesters =
 
 
 harvest_PROGNAME :: LineHarvester
-harvest_PROGNAME = (taggedLineHarvester "PROGNAME" (\d r -> r{ _PROGNAME = d }))
+harvest_PROGNAME = (taggedRawHarvester "PROGNAME" (\d r -> r{ _PROGNAME = d }))
 
 harvest_VARIANT :: LineHarvester
-harvest_VARIANT = (taggedLineHarvester "VARIANT" (\d r -> r{ _VARIANT = d }))
+harvest_VARIANT = (taggedRawHarvester "VARIANT" (\d r -> r{ _VARIANT = d }))
 
 -- | Note, this harvester expects the ARGS to be written as a Haskell
 -- datatype, compatible with the Read instance for `[String]`.
