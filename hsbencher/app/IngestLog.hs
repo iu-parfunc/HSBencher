@@ -21,6 +21,7 @@ import           HSBencher.Backend.Dribble
 import           HSBencher.Internal.Config
 import           HSBencher.Internal.App
 import           HSBencher.Internal.Logging (log)
+import           HSBencher.Internal.Utils (fromLineOut)
 import           HSBencher.Types
 --------------------------------------------------------------------------------    
 
@@ -37,15 +38,18 @@ argsParser = Opts
 -- https://github.com/iu-parfunc/HSBencher/issues/75
     
 main :: IO ()
-main = do opts <- execParser $ info (helper <*> argsParser)
-                  ( fullDesc
-                  <> progDesc (P.unlines
-                               [ "Utility to ingest logs and produce HSBencher-formatted CSV output."
-                               , "As described in: https://github.com/iu-parfunc/HSBencher/issues/75"
-                               , "Writes to the specified input/output files, if present, or from/to stdin/stdout otherwise."
-                               ])
-                  <> header "hsbencher-ingest-log" )
-          ingestLog opts
+main = do
+  opts <- execParser $ info (helper <*> argsParser)
+          ( fullDesc
+          <> progDesc
+            (P.unlines
+             [ "Utility to ingest logs and produce HSBencher-formatted CSV output."
+             , "As described in: https://github.com/iu-parfunc/HSBencher/issues/75"
+             , "Writes to the specified input/output files, if present, or from/to stdin/stdout otherwise."
+             ])
+          <> header "hsbencher-ingest-log" )
+  ingestLog opts
+
 
 -- TODO: Should do this all with constant space, conduit, etc...
 ingestLog :: Opts -> IO ()
@@ -65,22 +69,51 @@ ingestLog opts@Opts{infile,outfile} = do
               harvesters
 
   let runRess = log2Runs input
-  let results = parseRun def harvs (RunCompleted 0.0 (map OutLine (BS.lines input)))
-              
+  let results0 = parseRun def harvs (RunCompleted 0.0 (map OutLine (BS.lines input)))
+      -- Add the median timing info back in:
+      withTimes = [ br { _MEDIANTIME = median alltimes
+                       , _MINTIME    = minimum alltimes
+                       , _MAXTIME    = maximum alltimes
+                       , _ALLTIMES   = unwords (map show alltimes)
+                       }
+                  | (RunCompleted _ lns, br) <- zip runRess results0
+                  , let alltimes = getSelfTimed lns                        
+                  ]
+                 
   putStrLn $ "Config: "++ppShow (cfg2)
-
   putStrLn $ "Extracted "++show (length runRess)++" individual benchmark results."
-  putStrLn $ "Parsed "++show (length results)++" individual benchmark results."
-           
--- augmentBenchmarkResult
--- parseRun
-
+  putStrLn $ "Parsed "++show (length results0)++" individual benchmark results."
+  
   runReaderT (do printBenchrunHeader
+                 final <- mapM (augmentBenchmarkResult []) withTimes
                  log "Printing output to files..."
-                 mapM_ runC_outputBenchmarkResult results
+                 mapM_ runC_outputBenchmarkResult final
                  log "Done."
              )
      cfg2
+
+-- | Extract the SELFTIMED lines' values.
+getSelfTimed :: [LineOut] -> [Double]
+getSelfTimed [] = []
+getSelfTimed (x:xs) =
+   case BS.words (fromLineOut x) of
+     [] -> getSelfTimed xs
+     [w1,w2] -> if BS.isPrefixOf "SELFTIMED" w1
+                then case reads (BS.unpack w2) of
+                       ((n,_):_) -> n : getSelfTimed xs
+                       [] -> error$ "Could not parse RHS of SELFTIMED line: "++show x
+                else getSelfTimed xs
+     _ -> getSelfTimed xs
+
+median :: (Fractional a, Ord a) => [a] -> a
+median [] = error "cannot take the median value in an empty list!"
+median ls =  
+  if even len
+  then (ls !! half + ls!!(half-1) / 2)
+  else ls !! half
+ where
+   len  = length ls
+   half = len `quot` 2
 
 log2Runs :: BS.ByteString -> [RunResult]
 log2Runs bs0 = [ RunCompleted 0.0 (map OutLine lns) | lns <- trimmed ]

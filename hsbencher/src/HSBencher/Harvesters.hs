@@ -56,6 +56,8 @@ jittimeHarvester = taggedLineHarvester "JITTIME" (\d r -> r{ _ALLJITTIMES = show
 
 -- TODO: Generate these somehow:
 
+-- | All harvesters that correspond directly to setters on fields of
+-- the BenchmarkResult record.
 allBuiltinHarvesters :: LineHarvester
 allBuiltinHarvesters =
   harvest_PROGNAME `mappend`
