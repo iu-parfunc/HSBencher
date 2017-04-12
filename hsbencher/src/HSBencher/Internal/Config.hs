@@ -216,8 +216,8 @@ getConfig cmd_line_options benches = do
   let
       -- Read an ENV var with default:
       get v x = case lookup v env of
-		  Nothing -> x
-		  Just  s -> s
+          Nothing -> x
+          Just  s -> s
       logFile = "bench_" ++ hostname ++ ".log"
       resultsFile = "results_" ++ hostname ++ ".dat"
 
@@ -261,23 +261,23 @@ getConfig cmd_line_options benches = do
            , doLSPCI        = False
            , benchsetName   = Nothing
 --	   , trials         = read$ get "TRIALS"    "1"
-	   , trials         = 1
-	   , skipTo         = Nothing
-	   , runOnly        = Nothing
-	   , retryFailed    = Nothing
-	   , runID          = Nothing
-	   , ciBuildID      = Nothing
+       , trials         = 1
+       , skipTo         = Nothing
+       , runOnly        = Nothing
+       , retryFailed    = Nothing
+       , runID          = Nothing
+       , ciBuildID      = Nothing
            , pathRegistry   = M.empty
 --	   , benchlist      = parseBenchList benchstr
 --	   , benchversion   = (benchF, ver)
            , benchlist      = benches
            , extraParams    = []
-	   , benchversion   = ("",0)
-	   , maxthreads     = maxthreads
+       , benchversion   = ("",0)
+       , maxthreads     = maxthreads
 --	   , threadsettings = parseIntList$ get "THREADS" (show maxthreads)
            , runTimeOut     = Just defaultTimeout
-	   , keepgoing      = False
-	   , resultsFile, logFile, logOut, resultsOut, stdOut
+       , keepgoing      = False
+       , resultsFile, logFile, logOut, resultsOut, stdOut
 --	   , outHandles     = Nothing
            , envs           = read $ get "ENVS" "[[]]"
            , gitInfo        = (trim branch, trim revision, length hashes)
@@ -297,7 +297,7 @@ getConfig cmd_line_options benches = do
                           allBuiltinHarvesters
            , plugIns = []
            , plugInConfs = M.empty
-	   }
+       }
 
   -- Process command line arguments to add extra cofiguration information:
   let

@@ -23,7 +23,7 @@ import Data.IORef
 import System.Exit
 -- import System.Directory
 import System.IO (hClose, stderr, hPutStrLn)
-import System.Process (system, waitForProcess)
+import System.Process (shell, system, waitForProcess)
 import System.Process (createProcess, CreateProcess(..), CmdSpec(..), StdStream(..), readProcess, ProcessHandle)
 import System.Posix.Process (getProcessID)
 import qualified System.IO.Streams as Strm
@@ -202,7 +202,7 @@ runSubprocess Nothing CommandDescr{command, envVars, timeout=_, workingDir, tole
   -- Create the subprocess:
   startTime <- getCurrentTime
   (Just _hin, Just hout, Just herr, ph) <- createProcess
-     CreateProcess {
+     (shell "") {
        cmdspec = command,
        env = Just (envVars++curEnv),
        std_in  = CreatePipe,
@@ -340,8 +340,7 @@ _runInteractiveCommandWithEnv :: String
                              ProcessHandle)
 _runInteractiveCommandWithEnv scmd env = do
     (Just hin, Just hout, Just herr, ph) <- createProcess
-       CreateProcess {
-         cmdspec = ShellCommand scmd,
+       (shell scmd) {
          env = Just env,
          std_in  = CreatePipe,
          std_out = CreatePipe,
