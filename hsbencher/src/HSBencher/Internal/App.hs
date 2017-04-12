@@ -18,7 +18,7 @@ module HSBencher.Internal.App
         Flag(..), all_cli_options, fullUsageInfo,
 
         -- * Internal
-        printBenchrunHeader, parseRun, runC_outputBenchmarkResult, augmentBenchmarkResult
+        printBenchrunHeader, runC_outputBenchmarkResult, augmentBenchmarkResult
        )
        where
 

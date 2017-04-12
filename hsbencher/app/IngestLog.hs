@@ -10,6 +10,7 @@ import           Options.Applicative
 import           System.FilePath
 import           Data.Maybe
 import           Data.Default 
+import           Data.List as L
 import           Data.List.Split (splitWhen)
 -- import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.ByteString.Char8 as BS
@@ -23,6 +24,8 @@ import           HSBencher.Internal.App
 import           HSBencher.Internal.Logging (log)
 import           HSBencher.Internal.Utils (fromLineOut)
 import           HSBencher.Types
+
+import           Debug.Trace
 --------------------------------------------------------------------------------    
 
 data Opts = Opts { infile  :: Maybe FilePath
@@ -61,42 +64,60 @@ ingestLog opts@Opts{infile,outfile} = do
   cfg0 <- getConfig [] []
   let cfg1 = addPlugin defaultDribblePlugin (DribbleConf { csvfile = outfile }) cfg0          
   cfg2@Config{ harvesters } <- plugInitialize defaultDribblePlugin cfg1
+           
+  runReaderT (do
 
-  -- ADD harvesters for PROGNAME, ARGS, VARIANT
-  let harvs = taggedRawHarvester "PROGNAME" (\x r -> r{ _PROGNAME = x }) <>
-              taggedRawHarvester "VARIANT"  (\x r -> r{ _VARIANT  = x }) <>
-              -- taggedLineHarvester "ARGS"     (\x r -> r{ _ARGS     = words x }) <>
-              harvesters
+    -- Grab environmental information:
+    starting <- augmentBenchmarkResult [] def
 
-  let runRess = log2Runs input
-  let results0 = parseRun def harvs (RunCompleted 0.0 (map OutLine (BS.lines input)))
-      -- Add the median timing info back in:
-      withTimes = [ br { _MEDIANTIME = median alltimes
-                       , _MINTIME    = minimum alltimes
-                       , _MAXTIME    = maximum alltimes
-                       , _ALLTIMES   = unwords (map show alltimes)
-                       }
-                  | (RunCompleted _ lns, br) <- zip runRess results0
-                  , let alltimes = getSelfTimed lns                        
-                  ]
-                 
-  putStrLn $ "Config: "++ppShow (cfg2)
-  putStrLn $ "Extracted "++show (length runRess)++" individual benchmark results."
-  putStrLn $ "Parsed "++show (length results0)++" individual benchmark results."
-  
-  runReaderT (do printBenchrunHeader
-                 final <- mapM (augmentBenchmarkResult []) withTimes
-                 log "Printing output to files..."
-                 mapM_ runC_outputBenchmarkResult final
-                 log "Done."
-             )
-     cfg2
+    -- ADD harvesters for PROGNAME, ARGS, VARIANT
+    let harvs = -- taggedRawHarvester "PROGNAME" (\x r -> r{ _PROGNAME = x }) <>
+                -- taggedRawHarvester "VARIANT"  (\x r -> r{ _VARIANT  = x }) <>
+                -- taggedRawHarvester "THREADS"  (\x r -> r{ _THREADS  =
+                --                                               trace ("SETTING THREADS "++x) $ 
+                --                                               read x
+                --                                         })
+                -- taggedLineHarvester "ARGS"  (\x r -> r{ _ARGS     = words x }) <>
+                harvesters
+
+    let runRess = log2Runs input
+  --  let results0 = parseRun def harvs (RunCompleted 0.0 (map OutLine (BS.lines input)))
+    let results = map (parseOne starting harvs) runRess
+
+--    lift $ putStrLn $ "Config: "++ppShow (cfg2)
+    lift $ putStrLn $ "Extracted "++show (length runRess)++" individual benchmark results."
+    lift $ putStrLn $ "Parsed "++show (length results)++" individual benchmark results."
+--    lift $ mapM_ (putStrLn . ppShow) results
+--    lift $ putStrLn $ "Threads: "++show (map _THREADS results)
+         
+--    final <- mapM (augmentBenchmarkResult []) results
+    printBenchrunHeader
+    log "Printing output to files..."
+    mapM_ runC_outputBenchmarkResult results
+    log "Done.")
+   cfg2
+
+-- | Parse the block of lines that corresponds to a single benchmark
+-- run (including multiple trials)
+parseOne :: BenchmarkResult -> LineHarvester -> OneRun -> BenchmarkResult
+parseOne starting (LineHarvester fn) (OneRun lns) =
+    accumed { _MEDIANTIME = median alltimes
+            , _MINTIME    = minimum alltimes
+            , _MAXTIME    = maximum alltimes
+            , _ALLTIMES   = unwords (map show alltimes)
+            }
+ where
+  accumed = L.foldl (\acc ln -> let (fn2,_) = fn ln
+                                in fn2 acc)
+                    starting lns
+  alltimes = getSelfTimed lns
+
 
 -- | Extract the SELFTIMED lines' values.
-getSelfTimed :: [LineOut] -> [Double]
+getSelfTimed :: [BS.ByteString] -> [Double]
 getSelfTimed [] = []
 getSelfTimed (x:xs) =
-   case BS.words (fromLineOut x) of
+   case BS.words (x) of
      [] -> getSelfTimed xs
      [w1,w2] -> if BS.isPrefixOf "SELFTIMED" w1
                 then case reads (BS.unpack w2) of
@@ -115,8 +136,12 @@ median ls =
    len  = length ls
    half = len `quot` 2
 
-log2Runs :: BS.ByteString -> [RunResult]
-log2Runs bs0 = [ RunCompleted 0.0 (map OutLine lns) | lns <- trimmed ]
+-- | One run is a block of lines, some of which may be tags for us to process.
+newtype OneRun = OneRun [BS.ByteString]
+  deriving (Show,Eq,Ord,Read)
+    
+log2Runs :: BS.ByteString -> [OneRun]
+log2Runs bs0 = [ OneRun lns | lns <- trimmed ]
   where
     allLines = BS.lines bs0
     chunks = case splitWhen isStart allLines of

@@ -63,6 +63,7 @@ version:             1.31
 -- 1.20     : add --bindir
 -- 1.20.0.3 : bugfix, #71, runSL change
 -- 1.20.0.4 : Build time environmentVariables
+-- 1.21     : add hsbencher-ingest-log executable
 
 -----------------------------------------------------------------------------------------
 
