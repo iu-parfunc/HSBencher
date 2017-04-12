@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.31
+version:             1.32
 ----------------------------------------
 -- Detailed CHANGELOG:
 ----------------------------------------
@@ -63,8 +63,10 @@ version:             1.31
 -- 1.20     : add --bindir
 -- 1.20.0.3 : bugfix, #71, runSL change
 -- 1.20.0.4 : Build time environmentVariables
--- 1.21     : add hsbencher-ingest-log executable
+   
+-- [See user-visible ChangeLog below]
 
+   
 -----------------------------------------------------------------------------------------
 
 synopsis:  Launch and gather data from Haskell and non-Haskell benchmarks.
@@ -146,6 +148,8 @@ description: Benchmark frameworks are usually very specific to the
  * (1.30): Major overhaul of LineHarvester type.  Now multiple benchmarks per subprocess.
  .
  * (1.31): No longer allow tagged lines without colons.  Add harvesters for all builtin fields.
+ .
+ * (1.32): add hsbencher-ingest-log executable
 
  -- * (1.9)
  -- .
