@@ -31,7 +31,7 @@ import System.IO (hGetContents)
 import qualified System.IO.Streams as Strm
 
 import System.IO.Unsafe (unsafePerformIO)
-import System.Process (waitForProcess, getProcessExitCode, createProcess, CreateProcess(..), CmdSpec(..), StdStream(..))
+import System.Process (waitForProcess, getProcessExitCode, createProcess, shell, CreateProcess(..), CmdSpec(..), StdStream(..))
 
 import HSBencher.Types
 import HSBencher.Internal.Logging (log,logOn, LogDest(StdOut, LogFile))
@@ -126,8 +126,7 @@ runLines :: String -> IO [String]
 runLines cmd = do
   putStr$ "   * Executing: " ++ cmd
   (Nothing, Just outH, Just _, ph) <- createProcess
-     CreateProcess {
-       cmdspec = ShellCommand cmd,
+     (shell cmd) {
        env = Nothing,
        std_in  = Inherit,
        std_out = CreatePipe,

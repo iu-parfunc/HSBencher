@@ -5,18 +5,20 @@
 
 module Main where
 
+import           Control.Applicative
 import           Control.Monad.Reader
 import           Options.Applicative
 import           System.FilePath
 import           Data.Maybe
 import           Data.Default 
 import           Data.List as L
+import           Data.Monoid
 import           Data.List.Split (splitWhen)
 -- import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.ByteString.Char8 as BS
 import           Prelude as P hiding (log)
 import           Text.Show.Pretty (ppShow)
-   
+
 import           HSBencher.Harvesters
 import           HSBencher.Backend.Dribble
 import           HSBencher.Internal.Config
@@ -25,21 +27,20 @@ import           HSBencher.Internal.Logging (log)
 import           HSBencher.Internal.Utils (fromLineOut)
 import           HSBencher.Types
 
-import           Debug.Trace
 --------------------------------------------------------------------------------    
 
 data Opts = Opts { infile  :: Maybe FilePath
                  , outfile :: Maybe FilePath
                  }
  deriving (Eq,Show,Read,Ord)
-          
+
 argsParser :: Parser Opts
-argsParser = Opts 
+argsParser = Opts
              <$> optional (strArgument (metavar "InputFile.log"))
              <*> optional (strArgument (metavar "OutputFile.csv"))
 
 -- https://github.com/iu-parfunc/HSBencher/issues/75
-    
+
 main :: IO ()
 main = do
   opts <- execParser $ info (helper <*> argsParser)
@@ -60,9 +61,9 @@ ingestLog opts@Opts{infile,outfile} = do
   putStrLn $ "Ingesting logs  "++show opts
   input <- case infile of
              Just f  -> BS.readFile f
-             Nothing -> BS.getContents 
+             Nothing -> BS.getContents
   cfg0 <- getConfig [] []
-  let cfg1 = addPlugin defaultDribblePlugin (DribbleConf { csvfile = outfile }) cfg0          
+  let cfg1 = addPlugin defaultDribblePlugin (DribbleConf { csvfile = outfile }) cfg0
   cfg2@Config{ harvesters } <- plugInitialize defaultDribblePlugin cfg1
            
   runReaderT (do
@@ -128,7 +129,7 @@ getSelfTimed (x:xs) =
 
 median :: (Fractional a, Ord a) => [a] -> a
 median [] = error "cannot take the median value in an empty list!"
-median ls =  
+median ls =
   if even len
   then (ls !! half + ls!!(half-1) / 2)
   else ls !! half
