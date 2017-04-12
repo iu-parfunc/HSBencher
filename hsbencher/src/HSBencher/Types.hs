@@ -534,9 +534,11 @@ data CommandDescr =
   }
  deriving (Show,Eq,Ord,Read,Generic)
 
--- Umm... these should be defined in base:
+-- Umm... these should be defined in process:
+#if !(MIN_VERSION_process(1,4,3))
 deriving instance Eq   CmdSpec
 deriving instance Show CmdSpec
+#endif
 deriving instance Ord  CmdSpec
 deriving instance Read CmdSpec
 
