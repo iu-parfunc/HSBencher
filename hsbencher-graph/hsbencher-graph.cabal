@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hsbencher-graph
-version:             0.7
+version:             0.8
 synopsis:            Command line tool for plotting hsbencher data from CSV files.
 description:         This tool reads CSV files and uses the Haskell Chart library to
                      produce plots.
@@ -24,6 +24,7 @@ cabal-version:       >=1.10
 -- 0.4:   add --filtEq --filtContain, remove --filter
 -- 0.6:   add --factor
 -- 0.7:   add --filtRange
+-- 0.8:   add --ratio and --inverse-ratio
 
 flag chart
   description: Enable use of the Chart plotting library.  Otherwise

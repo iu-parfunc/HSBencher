@@ -97,11 +97,14 @@ type ColName = String
 -- | For now we only pattern match by string inclusion.  TODO: support regexps?
 type Pattern = String
 
+-- | Which columns contain the error data.
 data ErrorCols = ErrDelta  ColName
+                  -- ^ Symmetric error range needing only one number.
                | ErrMinMax { errmin:: ColName,  errmax:: ColName }
+                  -- ^ Find the MIN and MAX Y value in the specified columns.
   deriving (Show,Eq,Read,Ord)
 
--- The error around a specific point in a given dimension can be
+-- | The error around a specific point in a given dimension can be
 -- either a delta or *bounds*.
 data ErrorVal = NoError
               | DeltaVal  Double
@@ -160,10 +163,12 @@ data Flag = ShowHelp
           | NormaliseKey String
             -- ^ Normalize against a line, produce a factor plot.
           
-          | Ratio String
-            -- ^ Normalize against a single value.
-          | InverseRatio String
-            -- ^ Normalize against a single value.
+          | Ratio        ValueSpec
+            -- ^ Normalize against a single value: a single line point.
+          | InverseRatio ValueSpec
+            -- ^ Normalize against a single value: a single line point.
+
+          -- TODO: More general way to map simple functions over points.
             
           | DummyFlag
 
@@ -172,9 +177,13 @@ data Flag = ShowHelp
           -- | AuxKey  String -- part of key into auxfile
           -- | AuxX    String -- column with aux x value 
           -- | AuxY    String -- column with aux y value 
-  deriving (Eq,Ord,Show,Read)
+  deriving (Eq,Ord,Show)
 
-
+data ValueSpec = ValueSpec { valkey :: Key, valX :: SeriesData }
+  deriving (Eq,Ord,Show)
+               
+-- | A ValueSpec is a comma separated list of COL=VAL settings.  E.g. "THREADS=1,VARIANT=foo"
+-- type ValueSpec = [(String,String)]
            
 -- This is all a bit unfortunate. 
 data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
@@ -235,6 +244,17 @@ parseFilterRange s =
  where
    err = error $ "--filtRange argument expected a column and two numbers separated by commas, not: "++s
 
+parseValueSpec :: String -> ValueSpec
+parseValueSpec s =
+   case splitOn universalSeparator s of
+     [linekey,xval] -> ValueSpec (Key linekey) (toSeriesData xval)
+     _ -> error$ "not a valid POINT for --ratio/--inverse-ratio: "++s
+                  
+parseAssigns :: String -> [(String,String)]
+parseAssigns s0 = [ case splitOn "=" assn of
+                        [lhs,rhs] -> (lhs,rhs)
+                        _ -> error $ "bad COL=VAL specification: " ++s0
+                    | assn <- splitOn universalSeparator s0 ]
          
 parseErrCols :: String -> ErrorCols
 parseErrCols s =
@@ -356,18 +376,20 @@ core_cli_options =
                       "are values for the --key columns, in order."++
                       "This KEY identifies which line is the baseline."
                      )
-     , Option []    ["ratio"] (ReqArg Ratio "POINT")
+     , Option []    ["ratio"] (ReqArg (Ratio . parseValueSpec) "POINT")
                      ("Report the ratio of each datapoint divided by a constant." ++
                       "The constant normalization value is selected by POINT."++
-                      "This is appropriate for 'bigger=better' plots."
+                      "This is appropriate for 'bigger=better' plots."++
+                      "POINT is of the form kEY,VAL, where KEY is formatted "++
+                      "so as to select a line (see --factor), and VAL is the X-value that selects which point"++
+                      "(Y value) on the line becomes the normalization constant."
                      )
-     , Option []    ["inverse-ratio"] (ReqArg InverseRatio "POINT")
+     , Option []    ["inverse-ratio"] (ReqArg (InverseRatio . parseValueSpec) "POINT")
                      ("The inverse of --ratio.  That is, report a "++
                       "constant divided by each datapoint, respectively." ++
-                      "The constant normalization value is selected by POINT."++
+                      "The constant normalization value is selected by POINT, formatted as in --ratio."++
                       "This is appropriate for 'smaller=better' plots."
                      )
-
        
      , Option []    []    (NoArg DummyFlag) "\n GNUPlot Options:"
      , Option []    []    (NoArg DummyFlag) "------------------"
@@ -487,8 +509,10 @@ main = do
 
   let (options, inFiles, unrec,errs) = getOpt' Permute core_cli_options args
 
-      normaliseSpecified = (not . null) [ () | NormaliseKey _ <- options] 
-  
+      normaliseKeyFlags = [ x | x@NormaliseKey{} <- options]
+      ratioFlags        = [ x | x@Ratio{} <- options]
+      inverseRatioFlags = [ x | x@InverseRatio{} <- options]
+
       xRes = head $ [readInt x | XRes x <- options] ++ [800]
       yRes = head $ [readInt y | YRes y <- options] ++ [600]
   
@@ -637,9 +661,16 @@ main = do
       -- RRN: Why would we look this up in "aux"?
       base = csv # normKey -- The entire data series which we normalize against.
             
-      plot_series0 = if normaliseSpecified       
-                     then normalise base series2
-                     else series2
+      plot_series0 =
+          case normaliseKeyFlags ++ ratioFlags ++ inverseRatioFlags of
+            [NormaliseKey{}] -> normalise base series2
+            [Ratio whichval]        -> let val = fromData (findVal whichval series2) in
+                                       mapPoints (\pt -> onY (\y -> NumData (fromData y / val)) pt) series2
+            [InverseRatio whichval] -> let val = fromData (findVal whichval series2) in
+                                       mapPoints (\pt -> onY (\y-> NumData (val/fromData y)) pt)  series2
+            [] -> series2
+            ls -> error $ "Expected only one of --factor, --ratio, --inverse-ratio, got:\n"++show ls
+
       renamer = buildRenamer renameTable
       plot_series :: [(Key, [LinePoint])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
@@ -662,6 +693,9 @@ main = do
     (_,Just (_,_)) -> error $ "no support for plotting of this series type: "++show series_type++
                               ", with this output format: "++show outFormat
 
+-- | Operate only on the Y data
+onY :: (SeriesData -> SeriesData) -> LinePoint -> LinePoint
+onY fn lp@LinePoint{y} = lp { y = fn y }
   
 ---------------------------------------------------------------------------
 -- Plotting
@@ -973,11 +1007,12 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
       -- trace ("Dereferencing !!2: "++show(csv,ix)) $
       csv !! ix 
 
-    toSeriesData x =
-      case recogValueType x of
-        Int -> IntData (read x) 
-        Double -> NumData (read x) 
-        String -> StringData x        
+toSeriesData :: String -> SeriesData
+toSeriesData x =
+    case recogValueType x of
+      Int    -> IntData (read x) 
+      Double -> NumData (read x) 
+      String -> StringData x        
 
 ---------------------------------------------------------------------------
 -- Recognize data
@@ -1029,9 +1064,33 @@ getBaseVal normKey csv aux =
     (Just v,_) -> v
     (_,Just v) -> v
 
+type MultilineDataset = [(Key,[LinePoint])]
+                  
+-- | Simpler than normalise, this just operates pointwise on the data.
+mapPoints :: (LinePoint -> LinePoint) -> MultilineDataset -> MultilineDataset
+mapPoints _ [] = []
+mapPoints f ((k,lps):xs) = (k, L.map f lps) : mapPoints f xs
+    
+-- | Find the value that matches a given predicate (ValueSpec).  Error
+-- if there is more than one.  Return the "Y" coordinate of the selected point.
+findVal :: ValueSpec -> MultilineDataset -> SeriesData
+findVal (ValueSpec linekey xval) allLines =
+    case candidates of
+      [LinePoint{y}] -> y
+      [] -> error $ "Could not find data value corresponding to key "++show linekey
+                  ++"\n and X-value: "++show xval
+      _ -> error $ "MULTIPLE data points corresponding to key "++show linekey
+                  ++"\n and X-value: "++show xval++":\n" ++show candidates
+  where
+    candidates = [ lp
+                 | (k,lps) <- allLines
+                 , k == linekey
+                 , lp@LinePoint{x} <- lps
+                 , x == xval ]
+
 -- | Normalize a set of lines against their respective normalization values.
 --   This requires equal-length, isomorphic data series.
-normalise :: [LinePoint] -> [(Key,[LinePoint])] -> [(Key,[LinePoint])]
+normalise :: [LinePoint] -> MultilineDataset -> MultilineDataset
 normalise []   _  = error "No Value to normalise against"
 normalise base0 lns
   = [ (nom, fragileZipWith doIt base0 series) | (nom,series) <- lns ]
