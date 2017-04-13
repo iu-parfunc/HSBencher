@@ -413,11 +413,11 @@ instance FromData String where
 ---------------------------------------------------------------------------
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
-type DataSeries = M.Map Key [Point] 
-data Point = Point { x::SeriesData, y::SeriesData, err::ErrorVal }
+type DataSeries = M.Map Key [LineData] 
+data LineData = LineData { x::SeriesData, y::SeriesData, err::ErrorVal }
   deriving (Eq,Show,Ord,Read)
 
-insertVal :: DataSeries -> Key -> Point -> DataSeries
+insertVal :: DataSeries -> Key -> LineData -> DataSeries
 insertVal m key val =
   case M.lookup key m of
     Nothing   -> M.insert key [val] m 
@@ -590,7 +590,7 @@ main = do
 
   renameTable <- fmap (concatMap lines) $
                  mapM readFile [f | Renames f <- options] 
-  let series1 :: [(Key,[Point])]
+  let series1 :: [(Key,[LineData])]
       series1 = M.assocs csv
   
       series2     = map unifyTypes series1
@@ -604,7 +604,7 @@ main = do
                      then normalise base series2
                      else series2
       renamer = buildRenamer renameTable
-      plot_series :: [(Key, [Point])]
+      plot_series :: [(Key, [LineData])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
   
   chatter$ "Inferred types for X/Y axes: "++show series_type  
@@ -631,7 +631,7 @@ main = do
 
 
 -- | Don't produce an actual chart, rather write out the data as CSV.
-writeCSV :: PlotConfig -> [(Key, [Point])] -> IO ()
+writeCSV :: PlotConfig -> [(Key, [LineData])] -> IO ()
 -- Assumes a shared and sensible X axis for all data series.
 writeCSV PlotConfig{..} series = do
   -- ASSUMPTION: we assume a sensible Ord instance for
@@ -650,7 +650,7 @@ writeCSV PlotConfig{..} series = do
 
       -- nested map from key -> x -> (y,yErr)
       alldata = M.map (\prs -> M.fromList
-                        [ (convertToString x, (convertToString y, err)) | Point{x,y,err} <- prs ] ) $ 
+                        [ (convertToString x, (convertToString y, err)) | LineData{x,y,err} <- prs ] ) $ 
                 M.fromList series
                 
       rows = [ key : buildRow key | key <- allKeys ]
@@ -823,12 +823,12 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 ---------------------------------------------------------------------------
 -- Types in the data 
 
-unifyTypes :: (Key,[Point]) -> (Key,[Point])
+unifyTypes :: (Key,[LineData]) -> (Key,[LineData])
 unifyTypes (name,series) =
   let (xs,ys,errs) = (map x series, map y series, map err series)
       xs' = unify xs
       ys' = unify ys
-  in (name, zipWith3 Point xs' ys' errs)
+  in (name, zipWith3 LineData xs' ys' errs)
   where
     isString :: SeriesData -> Bool
     isString (StringData _) = True
@@ -848,7 +848,7 @@ unifyTypes (name,series) =
     convertToNum (NumData x) = NumData x
     convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
 
-typecheck :: [(Key,[Point])] -> Maybe (ValueType, ValueType) 
+typecheck :: [(Key,[LineData])] -> Maybe (ValueType, ValueType) 
 typecheck dat =
   let series = concatMap snd dat
       (xs,ys) = (map x series, map y series)
@@ -906,7 +906,7 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
             ("","") -> do chatter$ "has no x/y values: " ++ show key ++ " discarding."
                           loop  xy (m,aux) restRows
             ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
-                          let aux' = insertVal aux key (Point{ x= StringData "NO_X_VALUE"
+                          let aux' = insertVal aux key (LineData{ x= StringData "NO_X_VALUE"
                                                              , y= toSeriesData a
                                                              , err=NoError })
                           loop  xy (m,aux') restRows
@@ -918,7 +918,7 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
                                  Just (ErrMinMax mn mx) ->
                                    MinMaxVal (readDbl$ collectVal (getIx mn) csv)
                                              (readDbl$ collectVal (getIx mx) csv)
-                           m' = insertVal m key (Point { x= toSeriesData x
+                           m' = insertVal m key (LineData { x= toSeriesData x
                                                        , y= toSeriesData y
                                                        , err=e
                                                        })
@@ -987,19 +987,19 @@ getBaseVal normKey csv aux =
     (Just v,_) -> v
     (_,Just v) -> v
 
-
-normalise :: [Point] -> [(Key,[Point])] -> [(Key,[Point])]
+                  
+normalise :: [LineData] -> [(Key,[LineData])] -> [(Key,[LineData])]
 normalise []   _  = error "No Value to normalise against"
 normalise _ [] = []
 normalise base0 ((nom,series):rest0) 
   = (nom,normalise' base0 series):normalise base0 rest0
   where
-    normalise' ::  [Point] -> [Point] ->  [Point] 
+    normalise' ::  [LineData] -> [LineData] ->  [LineData] 
     normalise' _ [] = []
     normalise' base (pt:rest) =
       doIt base pt : normalise' base rest
-    doIt ((Point{y=NumData y}):_) (Point {x=sx, y= NumData sy, err}) =
-      Point {x=sx, y=NumData ((sy-y)/y), err }
+    doIt ((LineData{y=NumData y}):_) (LineData {x=sx, y= NumData sy, err}) =
+      LineData {x=sx, y=NumData ((sy-y)/y), err }
     doIt a b = error $ "hsbencher-graph/normalise: internal error:\n "++show(a,b)
 
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
