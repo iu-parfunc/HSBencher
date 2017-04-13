@@ -27,6 +27,8 @@ import           HSBencher.Internal.Logging (log)
 import           HSBencher.Internal.Utils (fromLineOut)
 import           HSBencher.Types
 
+import           Paths_hsbencher (version)
+import           Data.Version (showVersion)
 --------------------------------------------------------------------------------    
 
 data Opts = Opts { infile  :: Maybe FilePath
@@ -43,15 +45,17 @@ argsParser = Opts
 
 main :: IO ()
 main = do
+  let hdr = ("hsbencher-ingest-log: compiled with hsbencher version "++showVersion version++".")
   opts <- execParser $ info (helper <*> argsParser)
-          ( fullDesc
+          (fullDesc
           <> progDesc
             (P.unlines
-             [ "Utility to ingest logs and produce HSBencher-formatted CSV output."
-             , "As described in: https://github.com/iu-parfunc/HSBencher/issues/75"
-             , "Writes to the specified input/output files, if present, or from/to stdin/stdout otherwise."
-             ])
-          <> header "hsbencher-ingest-log" )
+             [ "A utility to ingest logs and produce HSBencher-formatted CSV output,"
+             , "as described in: https://github.com/iu-parfunc/HSBencher/issues/75"
+             , "\n"
+             , "Writes to the specified input/output files, if present, or from/to stdin/stdout otherwise."  
+             ])          
+          <> header hdr )
   ingestLog opts
 
 
