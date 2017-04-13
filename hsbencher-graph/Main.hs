@@ -223,6 +223,19 @@ parseFilter s =
     (l:r1:rest) -> (l,r1:rest)
     _ -> error $ "--filter argument expected at least two strings separated by commas, not: "++s
 
+
+parseFilterRange :: String -> Flag
+parseFilterRange s =
+  case splitOn universalSeparator s of
+    [col,mn,mx] ->
+        case (reads mn, reads mx) of 
+          ((mn',_):_,(mx',_):_) -> FilterRange col mn' mx'
+          _ -> err
+    _ -> err
+ where
+   err = error $ "--filtRange argument expected a column and two numbers separated by commas, not: "++s
+
+         
 parseErrCols :: String -> ErrorCols
 parseErrCols s =
   case splitOn universalSeparator s of
@@ -271,11 +284,9 @@ core_cli_options =
        "Filter leaving only rows where COL is exactly equal\n" ++ 
        "to one of VAL1, or exactly equal to VAL2, etc."
 
-{-       
      , Option [] ["filtRange"] (ReqArg parseFilterRange "COL,VAL1,VAL2") $
        "Filter leaving only rows where COL is between VAL1 and VAL2 inclusive.\n" ++ 
        "This requires that all cells in COL are numeric values."
--}
        
      -- , Option [] ["sort"] (ReqArg () "STR") $
      --  "Name of a numeric field by which to sort the lines."
@@ -1069,6 +1080,10 @@ doFilters (FilterEq col vals : rest) (ValidatedCSV header csv) =
 doFilters (FilterContain col vals : rest) (ValidatedCSV header csv) =
    doFilters rest $ ValidatedCSV header $ 
      filter ((\x -> any (`isInfixOf` x) vals) . mkPrj header col) csv   
+
+doFilters (FilterRange col minV maxV : rest) (ValidatedCSV header csv) =
+   doFilters rest $ ValidatedCSV header $
+     filter ((\x -> read x >= minV && read x <= maxV) . mkPrj header col) csv   
 
 -- | Everything else we ignore:
 doFilters (_ : rest) dat = doFilters rest dat
