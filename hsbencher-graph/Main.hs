@@ -87,7 +87,7 @@ data KeyedCSV =
 -- | A combination of fields, e.g. A_B_C, stored as a String.
 newtype Key = Key String  deriving (Eq,Ord)
 instance Show Key where
-    show (Key s) = s
+    show (Key s) = show s
 
 fromKey :: Key -> String
 fromKey (Key s) = s
@@ -391,7 +391,15 @@ fullUsageInfo = usageInfo docs core_cli_options
 data SeriesData = IntData Int 
                 | NumData Double
                 | StringData String
-                  deriving (Show, Eq, Ord, Read)
+                  deriving (Show, Eq, Read)
+
+instance Ord SeriesData where
+ IntData x <= IntData y = x <= y
+ NumData x <= NumData y = x <= y
+ IntData x <= NumData y = fromIntegral x <= y
+ NumData x <= IntData y = x <= fromIntegral y
+ StringData x <= _ = error $ "Ord: cannot compare string data: "++ x
+ _ <= StringData y = error $ "Ord: cannot compare string data: "++ y
 
 convertToString :: SeriesData -> String
 convertToString (IntData x) = (show x)
@@ -1011,26 +1019,29 @@ getBaseVal normKey csv aux =
     (_,Just v) -> v
 
 -- | Normalize a set of lines against their respective normalization values.
---   This requires two equal-length lists with isomorphic data series.
+--   This requires equal-length, isomorphic data series.
 normalise :: [LinePoint] -> [(Key,[LinePoint])] -> [(Key,[LinePoint])]
 normalise []   _  = error "No Value to normalise against"
-normalise _ [] = []
-normalise base0 ((nom,series):rest0) 
-  = (nom,normalise' base0 series):normalise base0 rest0
+normalise base0 lns
+  = [ (nom, fragileZipWith doIt base0 series) | (nom,series) <- lns ]
   where
-    normalise' ::  [LinePoint] -> [LinePoint] ->  [LinePoint] 
-    normalise' _ [] = []
-    normalise' base (pt:rest) =
-      doIt base pt : normalise' base rest
-    doIt p1@((LinePoint{x, y=NumData y}):_)
-         p2@(LinePoint {x=sx, y= NumData sy, err}) =
-      if x==sx
-      then LinePoint {x=sx, y=NumData ((sy-y)/y), err }
-      else error $ "hsbencher-graph/normalise: mismatched X data points in line and normalisation baseline: "
+
+    doIt :: LinePoint -> LinePoint -> LinePoint
+    doIt (p1@(LinePoint{x, y=NumData normY}))
+          p2@(LinePoint {x=sx, y= NumData sy, err}) =
+      if x==sx  
+      then LinePoint {x=sx, y=NumData (sy / normY), err }
+           -- Report the ratio of the line to the norm line.
+      else error $ "hsbencher-graph/normalise: mismatched X data points in line and normalisation baseline:\n    "
                    ++ show p1 ++ "\n vs: "++show p2
     doIt p1 p2 =
-        error $ "hsbencher-graph/normalise: mismatched Y data points in line and normalisation baseline: "
+        error $ "hsbencher-graph/normalise: mismatched Y data points in line and normalisation baseline:\n    "
                   ++ show p1 ++ "\n vs: "++show p2
+    -- doIt [] p2 =
+    --     error $ "hsbencher-graph/normalise: mismatched data points and normalisation baseline.\n"
+    --             ++ "Baseline ran out to soon.  Points remaining"
+    --              ++ show p2
+                 
 
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
 replace old new = intercalate new . splitOn old
@@ -1209,3 +1220,13 @@ m # k = case M.lookup k m of
           Just x -> x
           Nothing -> error $ "Map did not contain key: "++show k
                           ++ "\nAll keys: "++show (M.keys m)
+
+fragileZipWith :: (Show a, Show b) => (a -> b -> c) -> [a] -> [b] -> [c]
+fragileZipWith fn l1 l2 = go l1 l2
+ where
+   go [] [] = []
+   go (a:as) (b:bs) = fn a b : go as bs
+   go [] bs = error $ "fragileZipWith: left list ran out first.  Remaining:\n "
+                ++take 500 (show bs)
+   go as [] = error $ "fragileZipWith: right list ran out first.  Remaining:\n "
+                ++take 500 (show as)
