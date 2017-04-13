@@ -160,9 +160,11 @@ data Flag = ShowHelp
           | NormaliseKey String
             -- ^ Normalize against a line, produce a factor plot.
           
-          | NormaliseVal String
+          | Ratio String
             -- ^ Normalize against a single value.
-
+          | InverseRatio String
+            -- ^ Normalize against a single value.
+            
           | DummyFlag
 
           --   -- Aux values are not plotted!
@@ -337,11 +339,24 @@ core_cli_options =
      , Option []    []    (NoArg DummyFlag) "----------------"
 
        
-     , Option []    ["normalise"] (ReqArg NormaliseKey "String")
-                     ("Which line to normalise against. " ++
-                      "The string must be a KEY, i.e. A_B_C where A B and C "++
-                      "are values for the --key columns, in order."
+     , Option []    ["factor"] (ReqArg NormaliseKey "KEY")
+                     ("A factor plot: the ratio of each line to a designated baseline." ++
+                      "The KEY must be a string, e.g. \"A_B_C\" where A B and C "++
+                      "are values for the --key columns, in order."++
+                      "This KEY identifies which line is the baseline."
                      )
+     , Option []    ["ratio"] (ReqArg Ratio "POINT")
+                     ("Report the ratio of each datapoint divided by a constant." ++
+                      "The constant normalization value is selected by POINT."++
+                      "This is appropriate for 'bigger=better' plots."
+                     )
+     , Option []    ["inverse-ratio"] (ReqArg InverseRatio "POINT")
+                     ("The inverse of --ratio.  That is, report a "++
+                      "constant divided by each datapoint, respectively." ++
+                      "The constant normalization value is selected by POINT."++
+                      "This is appropriate for 'smaller=better' plots."
+                     )
+
        
      , Option []    []    (NoArg DummyFlag) "\n GNUPlot Options:"
      , Option []    []    (NoArg DummyFlag) "------------------"
@@ -413,11 +428,11 @@ instance FromData String where
 ---------------------------------------------------------------------------
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
-type DataSeries = M.Map Key [LineData] 
-data LineData = LineData { x::SeriesData, y::SeriesData, err::ErrorVal }
+type DataSeries = M.Map Key [LinePoint] 
+data LinePoint = LinePoint { x::SeriesData, y::SeriesData, err::ErrorVal }
   deriving (Eq,Show,Ord,Read)
 
-insertVal :: DataSeries -> Key -> LineData -> DataSeries
+insertVal :: DataSeries -> Key -> LinePoint -> DataSeries
 insertVal m key val =
   case M.lookup key m of
     Nothing   -> M.insert key [val] m 
@@ -583,14 +598,14 @@ main = do
 
   chatter$ "Here is a sample of the CSV before renaming and normalization:\n" ++
     unlines [ "    "++take 100 (show l)++"..." | l <- (take 5 (M.toList csv))] ++ "    ...."
-  chatter$ "Also, a sample of 'aux': "++ take 500 (show aux) 
+  chatter$ "Also, a sample of discarded rows missing X datapoints: "++ take 500 (show aux) 
 
   --------------------------------------------------
   -- Data preprocessing / munging:
 
   renameTable <- fmap (concatMap lines) $
                  mapM readFile [f | Renames f <- options] 
-  let series1 :: [(Key,[LineData])]
+  let series1 :: [(Key,[LinePoint])]
       series1 = M.assocs csv
   
       series2     = map unifyTypes series1
@@ -598,13 +613,16 @@ main = do
 
       -- normalise values against this datapoint
       normKey = Key $ head [nom | NormaliseKey nom <- options] 
-      base = getBaseVal normKey csv aux 
+
+      -- base = getBaseVal normKey csv aux
+      -- RRN: Why would we look this up in "aux"?
+      base = csv # normKey -- The entire data series which we normalize against.
             
       plot_series0 = if normaliseSpecified       
                      then normalise base series2
                      else series2
       renamer = buildRenamer renameTable
-      plot_series :: [(Key, [LineData])]
+      plot_series :: [(Key, [LinePoint])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
   
   chatter$ "Inferred types for X/Y axes: "++show series_type  
@@ -631,7 +649,7 @@ main = do
 
 
 -- | Don't produce an actual chart, rather write out the data as CSV.
-writeCSV :: PlotConfig -> [(Key, [LineData])] -> IO ()
+writeCSV :: PlotConfig -> [(Key, [LinePoint])] -> IO ()
 -- Assumes a shared and sensible X axis for all data series.
 writeCSV PlotConfig{..} series = do
   -- ASSUMPTION: we assume a sensible Ord instance for
@@ -650,7 +668,7 @@ writeCSV PlotConfig{..} series = do
 
       -- nested map from key -> x -> (y,yErr)
       alldata = M.map (\prs -> M.fromList
-                        [ (convertToString x, (convertToString y, err)) | LineData{x,y,err} <- prs ] ) $ 
+                        [ (convertToString x, (convertToString y, err)) | LinePoint{x,y,err} <- prs ] ) $ 
                 M.fromList series
                 
       rows = [ key : buildRow key | key <- allKeys ]
@@ -823,12 +841,12 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 ---------------------------------------------------------------------------
 -- Types in the data 
 
-unifyTypes :: (Key,[LineData]) -> (Key,[LineData])
+unifyTypes :: (Key,[LinePoint]) -> (Key,[LinePoint])
 unifyTypes (name,series) =
   let (xs,ys,errs) = (map x series, map y series, map err series)
       xs' = unify xs
       ys' = unify ys
-  in (name, zipWith3 LineData xs' ys' errs)
+  in (name, zipWith3 LinePoint xs' ys' errs)
   where
     isString :: SeriesData -> Bool
     isString (StringData _) = True
@@ -848,7 +866,7 @@ unifyTypes (name,series) =
     convertToNum (NumData x) = NumData x
     convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
 
-typecheck :: [(Key,[LineData])] -> Maybe (ValueType, ValueType) 
+typecheck :: [(Key,[LinePoint])] -> Maybe (ValueType, ValueType) 
 typecheck dat =
   let series = concatMap snd dat
       (xs,ys) = (map x series, map y series)
@@ -864,9 +882,13 @@ typecheck dat =
 
 ---------------------------------------------------------------------------
 
--- | Extract the data we care about from in-memory CSV data:
+-- | Extract the data we care about from in-memory CSV data.
+--   This includes a bit of data cleaning for missing values in the X/Y columns.
 --      
 -- Note: This is in the IO monad only to produce chatter.
+--
+-- Returns: 1. the good data series.
+--          2. the misfits - bad rows that had Y values but were missing X values.
 extractData :: [ColName] -> (ColName,ColName,Maybe ErrorCols)
             -> ValidatedCSV -> IO (DataSeries,DataSeries)
 extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) = 
@@ -906,7 +928,7 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
             ("","") -> do chatter$ "has no x/y values: " ++ show key ++ " discarding."
                           loop  xy (m,aux) restRows
             ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
-                          let aux' = insertVal aux key (LineData{ x= StringData "NO_X_VALUE"
+                          let aux' = insertVal aux key (LinePoint{ x= StringData "NO_X_VALUE"
                                                              , y= toSeriesData a
                                                              , err=NoError })
                           loop  xy (m,aux') restRows
@@ -918,7 +940,7 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
                                  Just (ErrMinMax mn mx) ->
                                    MinMaxVal (readDbl$ collectVal (getIx mn) csv)
                                              (readDbl$ collectVal (getIx mx) csv)
-                           m' = insertVal m key (LineData { x= toSeriesData x
+                           m' = insertVal m key (LinePoint { x= toSeriesData x
                                                        , y= toSeriesData y
                                                        , err=e
                                                        })
@@ -979,6 +1001,7 @@ recogValueType str =
 -- get a value to normalise against 
 ---------------------------------------------------------------------------
 
+-- | Simply do a lookup in EITHER map, left-biased.
 getBaseVal :: (Show k,Ord k) => k -> M.Map k a -> M.Map k a -> a
 getBaseVal normKey csv aux =
   case (M.lookup normKey csv, M.lookup normKey aux) of
@@ -987,20 +1010,27 @@ getBaseVal normKey csv aux =
     (Just v,_) -> v
     (_,Just v) -> v
 
-                  
-normalise :: [LineData] -> [(Key,[LineData])] -> [(Key,[LineData])]
+-- | Normalize a set of lines against their respective normalization values.
+--   This requires two equal-length lists with isomorphic data series.
+normalise :: [LinePoint] -> [(Key,[LinePoint])] -> [(Key,[LinePoint])]
 normalise []   _  = error "No Value to normalise against"
 normalise _ [] = []
 normalise base0 ((nom,series):rest0) 
   = (nom,normalise' base0 series):normalise base0 rest0
   where
-    normalise' ::  [LineData] -> [LineData] ->  [LineData] 
+    normalise' ::  [LinePoint] -> [LinePoint] ->  [LinePoint] 
     normalise' _ [] = []
     normalise' base (pt:rest) =
       doIt base pt : normalise' base rest
-    doIt ((LineData{y=NumData y}):_) (LineData {x=sx, y= NumData sy, err}) =
-      LineData {x=sx, y=NumData ((sy-y)/y), err }
-    doIt a b = error $ "hsbencher-graph/normalise: internal error:\n "++show(a,b)
+    doIt p1@((LinePoint{x, y=NumData y}):_)
+         p2@(LinePoint {x=sx, y= NumData sy, err}) =
+      if x==sx
+      then LinePoint {x=sx, y=NumData ((sy-y)/y), err }
+      else error $ "hsbencher-graph/normalise: mismatched X data points in line and normalisation baseline: "
+                   ++ show p1 ++ "\n vs: "++show p2
+    doIt p1 p2 =
+        error $ "hsbencher-graph/normalise: mismatched Y data points in line and normalisation baseline: "
+                  ++ show p1 ++ "\n vs: "++show p2
 
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
 replace old new = intercalate new . splitOn old
@@ -1174,4 +1204,8 @@ readInt s =
     (x,_):_ -> x
     _ -> error $ "Could not parse string as an Int: "++s
     
-
+(#) :: (Ord k,Show k) => M.Map k v -> k -> v
+m # k = case M.lookup k m of
+          Just x -> x
+          Nothing -> error $ "Map did not contain key: "++show k
+                          ++ "\nAll keys: "++show (M.keys m)
