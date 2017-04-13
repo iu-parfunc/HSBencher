@@ -105,24 +105,30 @@ harvest_VARIANT :: LineHarvester
 harvest_VARIANT = (taggedRawHarvester "VARIANT" (\d r -> r{ _VARIANT = d }))
 
 -- | Note, this harvester expects the ARGS to be written as a Haskell
--- datatype, compatible with the Read instance for `[String]`.
+--   datatype, compatible with the Read instance for `[String]`.  But,
+--   we're also forgiving here.  If it doesn't parse in that form we
+--   treat it as space-separated words.
 harvest_ARGS :: LineHarvester
-harvest_ARGS = (taggedLineHarvester "ARGS" (\d r -> r{ _ARGS = d }))
+harvest_ARGS = (taggedLineHarvester "ARGS"
+                (\d r -> r{ _ARGS =
+                   case reads d of
+                     ((ls,_):_) -> ls
+                     [] -> Prelude.words d }))
 
 harvest_HOSTNAME :: LineHarvester
-harvest_HOSTNAME = (taggedLineHarvester "HOSTNAME" (\d r -> r{ _HOSTNAME = d }))
+harvest_HOSTNAME = (taggedRawHarvester "HOSTNAME" (\d r -> r{ _HOSTNAME = d }))
 
 harvest_RUNID :: LineHarvester
-harvest_RUNID = (taggedLineHarvester "RUNID" (\d r -> r{ _RUNID = d }))
+harvest_RUNID = (taggedRawHarvester "RUNID" (\d r -> r{ _RUNID = d }))
 
 harvest_CI_BUILD_ID :: LineHarvester
-harvest_CI_BUILD_ID = (taggedLineHarvester "CI_BUILD_ID" (\d r -> r{ _CI_BUILD_ID = d }))
+harvest_CI_BUILD_ID = (taggedRawHarvester "CI_BUILD_ID" (\d r -> r{ _CI_BUILD_ID = d }))
 
 harvest_THREADS :: LineHarvester
 harvest_THREADS = (taggedLineHarvester "THREADS" (\d r -> r{ _THREADS = d }))
 
 harvest_DATETIME :: LineHarvester
-harvest_DATETIME = (taggedLineHarvester "DATETIME" (\d r -> r{ _DATETIME = d }))
+harvest_DATETIME = (taggedRawHarvester "DATETIME" (\d r -> r{ _DATETIME = d }))
 
 harvest_MINTIME :: LineHarvester
 harvest_MINTIME = (taggedLineHarvester "MINTIME" (\d r -> r{ _MINTIME = d }))
@@ -144,58 +150,58 @@ harvest_MAXTIME_PRODUCTIVITY = (taggedLineHarvester "MAXTIME_PRODUCTIVITY" (\d r
 
 -- | ALLTIMES is read in as a single string of space separated numbers.
 harvest_ALLTIMES :: LineHarvester
-harvest_ALLTIMES = (taggedLineHarvester "ALLTIMES" (\d r -> r{ _ALLTIMES = d }))
+harvest_ALLTIMES = (taggedRawHarvester "ALLTIMES" (\d r -> r{ _ALLTIMES = d }))
 
 harvest_TRIALS :: LineHarvester
 harvest_TRIALS = (taggedLineHarvester "TRIALS" (\d r -> r{ _TRIALS = d }))
 
 harvest_COMPILER :: LineHarvester
-harvest_COMPILER = (taggedLineHarvester "COMPILER" (\d r -> r{ _COMPILER = d }))
+harvest_COMPILER = (taggedRawHarvester "COMPILER" (\d r -> r{ _COMPILER = d }))
 
 harvest_COMPILE_FLAGS :: LineHarvester
-harvest_COMPILE_FLAGS = (taggedLineHarvester "COMPILE_FLAGS" (\d r -> r{ _COMPILE_FLAGS = d }))
+harvest_COMPILE_FLAGS = (taggedRawHarvester "COMPILE_FLAGS" (\d r -> r{ _COMPILE_FLAGS = d }))
 
 harvest_RUNTIME_FLAGS :: LineHarvester
-harvest_RUNTIME_FLAGS = (taggedLineHarvester "RUNTIME_FLAGS" (\d r -> r{ _RUNTIME_FLAGS = d }))
+harvest_RUNTIME_FLAGS = (taggedRawHarvester "RUNTIME_FLAGS" (\d r -> r{ _RUNTIME_FLAGS = d }))
 
 harvest_ENV_VARS :: LineHarvester
-harvest_ENV_VARS = (taggedLineHarvester "ENV_VARS" (\d r -> r{ _ENV_VARS = d }))
+harvest_ENV_VARS = (taggedRawHarvester "ENV_VARS" (\d r -> r{ _ENV_VARS = d }))
 
 harvest_BENCH_VERSION :: LineHarvester
-harvest_BENCH_VERSION = (taggedLineHarvester "BENCH_VERSION" (\d r -> r{ _BENCH_VERSION = d }))
+harvest_BENCH_VERSION = (taggedRawHarvester "BENCH_VERSION" (\d r -> r{ _BENCH_VERSION = d }))
 
 harvest_BENCH_FILE :: LineHarvester
-harvest_BENCH_FILE = (taggedLineHarvester "BENCH_FILE" (\d r -> r{ _BENCH_FILE = d }))
+harvest_BENCH_FILE = (taggedRawHarvester "BENCH_FILE" (\d r -> r{ _BENCH_FILE = d }))
 
 harvest_UNAME :: LineHarvester
-harvest_UNAME = (taggedLineHarvester "UNAME" (\d r -> r{ _UNAME = d }))
+harvest_UNAME = (taggedRawHarvester "UNAME" (\d r -> r{ _UNAME = d }))
 
 harvest_PROCESSOR :: LineHarvester
-harvest_PROCESSOR = (taggedLineHarvester "PROCESSOR" (\d r -> r{ _PROCESSOR = d }))
+harvest_PROCESSOR = (taggedRawHarvester "PROCESSOR" (\d r -> r{ _PROCESSOR = d }))
 
 harvest_TOPOLOGY :: LineHarvester
-harvest_TOPOLOGY = (taggedLineHarvester "TOPOLOGY" (\d r -> r{ _TOPOLOGY = d }))
+harvest_TOPOLOGY = (taggedRawHarvester "TOPOLOGY" (\d r -> r{ _TOPOLOGY = d }))
 
 harvest_GIT_BRANCH :: LineHarvester
-harvest_GIT_BRANCH = (taggedLineHarvester "GIT_BRANCH" (\d r -> r{ _GIT_BRANCH = d }))
+harvest_GIT_BRANCH = (taggedRawHarvester "GIT_BRANCH" (\d r -> r{ _GIT_BRANCH = d }))
 
 harvest_GIT_HASH :: LineHarvester
-harvest_GIT_HASH = (taggedLineHarvester "GIT_HASH" (\d r -> r{ _GIT_HASH = d }))
+harvest_GIT_HASH = (taggedRawHarvester "GIT_HASH" (\d r -> r{ _GIT_HASH = d }))
 
 harvest_GIT_DEPTH :: LineHarvester
 harvest_GIT_DEPTH = (taggedLineHarvester "GIT_DEPTH" (\d r -> r{ _GIT_DEPTH = d }))
 
 harvest_WHO :: LineHarvester
-harvest_WHO = (taggedLineHarvester "WHO" (\d r -> r{ _WHO = d }))
+harvest_WHO = (taggedRawHarvester "WHO" (\d r -> r{ _WHO = d }))
 
 harvest_ETC_ISSUE :: LineHarvester
-harvest_ETC_ISSUE = (taggedLineHarvester "ETC_ISSUE" (\d r -> r{ _ETC_ISSUE = d }))
+harvest_ETC_ISSUE = (taggedRawHarvester "ETC_ISSUE" (\d r -> r{ _ETC_ISSUE = d }))
 
 harvest_LSPCI :: LineHarvester
-harvest_LSPCI = (taggedLineHarvester "LSPCI" (\d r -> r{ _LSPCI = d }))
+harvest_LSPCI = (taggedRawHarvester "LSPCI" (\d r -> r{ _LSPCI = d }))
 
 harvest_FULL_LOG :: LineHarvester
-harvest_FULL_LOG = (taggedLineHarvester "FULL_LOG" (\d r -> r{ _FULL_LOG = d }))
+harvest_FULL_LOG = (taggedRawHarvester "FULL_LOG" (\d r -> r{ _FULL_LOG = d }))
 
 harvest_MEDIANTIME_ALLOCRATE :: LineHarvester
 harvest_MEDIANTIME_ALLOCRATE = (taggedLineHarvester "MEDIANTIME_ALLOCRATE" (\d r -> r{ _MEDIANTIME_ALLOCRATE = d }))
@@ -204,7 +210,7 @@ harvest_MEDIANTIME_MEMFOOTPRINT :: LineHarvester
 harvest_MEDIANTIME_MEMFOOTPRINT = (taggedLineHarvester "MEDIANTIME_MEMFOOTPRINT" (\d r -> r{ _MEDIANTIME_MEMFOOTPRINT = d }))
 
 harvest_ALLJITTIMES :: LineHarvester
-harvest_ALLJITTIMES = (taggedLineHarvester "ALLJITTIMES" (\d r -> r{ _ALLJITTIMES = d }))
+harvest_ALLJITTIMES = (taggedRawHarvester "ALLJITTIMES" (\d r -> r{ _ALLJITTIMES = d }))
 
 harvest_RETRIES :: LineHarvester
 harvest_RETRIES = (taggedLineHarvester "RETRIES" (\d r -> r{ _RETRIES = d }))

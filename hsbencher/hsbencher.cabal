@@ -1,6 +1,6 @@
 
 name:                hsbencher
-version:             1.32
+version:             1.33
 ----------------------------------------
 -- Detailed CHANGELOG:
 ----------------------------------------
@@ -63,7 +63,7 @@ version:             1.32
 -- 1.20     : add --bindir
 -- 1.20.0.3 : bugfix, #71, runSL change
 -- 1.20.0.4 : Build time environmentVariables
-   
+      
 -- [See user-visible ChangeLog below]
 
    
@@ -150,7 +150,11 @@ description: Benchmark frameworks are usually very specific to the
  * (1.31): No longer allow tagged lines without colons.  Add harvesters for all builtin fields.
  .
  * (1.32): add hsbencher-ingest-log executable
-
+ .
+ * (1.33): use taggedRawHarvester for most fields.  Don't expect enclosing double quotes when
+           reading "TAG: str log output.
+           
+ 
  -- * (1.9)
  -- .
  -- * (1.10)
