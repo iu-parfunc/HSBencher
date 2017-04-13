@@ -85,8 +85,13 @@ data KeyedCSV =
               , krows   :: M.Map Key [CSV.Record] }
 
 -- | A combination of fields, e.g. A_B_C, stored as a String.
-type Key = String
+newtype Key = Key String  deriving (Eq,Ord)
+instance Show Key where
+    show (Key s) = s
 
+fromKey :: Key -> String
+fromKey (Key s) = s
+    
 type ColName = String
 
 -- | For now we only pattern match by string inclusion.  TODO: support regexps?
@@ -123,7 +128,7 @@ data Flag = ShowHelp
           | XLog  -- logarithmic scale on x-axis 
 
           -- identify part of a key 
-          | Key     { col :: ColName } -- --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
+          | KeyCol  { col :: ColName } -- --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
           | XValues { col :: ColName } -- column containing x-values
           | YValues { col :: ColName } -- column containing y-values
 
@@ -131,6 +136,9 @@ data Flag = ShowHelp
 
           | FilterContain { col :: ColName, pats :: [Pattern] }
           | FilterEq      { col :: ColName, pats :: [String] }
+
+          | FilterRange  { col :: ColName, minVal :: Double, maxVal :: Double }
+
           | Pad    { col :: ColName, padTo :: Int }
           | Renames FilePath
 
@@ -148,10 +156,12 @@ data Flag = ShowHelp
           | Speedup { col :: ColName, contains :: Pattern } 
           | Vs      { col :: ColName, contains :: Pattern }
 
--- This is getting messy 
-            -- Normalize against this column
-          | NormaliseKey { col :: ColName }
-          | NormaliseVal String 
+
+          | NormaliseKey String
+            -- ^ Normalize against a line, produce a factor plot.
+          
+          | NormaliseVal String
+            -- ^ Normalize against a single value.
 
           | DummyFlag
 
@@ -163,6 +173,7 @@ data Flag = ShowHelp
   deriving (Eq,Ord,Show,Read)
 
 
+           
 -- This is all a bit unfortunate. 
 data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
                   | MyCSV
@@ -238,7 +249,7 @@ core_cli_options =
      , Option []    []    (NoArg DummyFlag) "\n Data Handling options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
 
-     , Option ['k'] ["key"]    (ReqArg Key     "STR")      "Columns that make part of the key"
+     , Option ['k'] ["key"]    (ReqArg KeyCol  "STR")      "Columns that make part of the key"
      , Option ['x'] ["xvalue"] (ReqArg XValues "STR")      "Column containing x values"
      , Option ['y'] ["yvalue"] (ReqArg YValues "STR")      "Column containing y values"
 
@@ -257,6 +268,12 @@ core_cli_options =
      , Option [] ["filtEq"] (ReqArg (uncurry FilterEq . parseFilter) "COL,VAL1,VAL2..") $
        "Filter leaving only rows where COL is exactly equal\n" ++ 
        "to one of VAL1, or exactly equal to VAL2, etc."
+
+{-       
+     , Option [] ["filtRange"] (ReqArg parseFilterRange "COL,VAL1,VAL2") $
+       "Filter leaving only rows where COL is between VAL1 and VAL2 inclusive.\n" ++ 
+       "This requires that all cells in COL are numeric values."
+-}
        
      -- , Option [] ["sort"] (ReqArg () "STR") $
      --  "Name of a numeric field by which to sort the lines."
@@ -320,7 +337,11 @@ core_cli_options =
      , Option []    []    (NoArg DummyFlag) "----------------"
 
        
-     , Option []    ["normalise"] (ReqArg NormaliseKey "String") "What value to normalise against" 
+     , Option []    ["normalise"] (ReqArg NormaliseKey "String")
+                     ("Which line to normalise against. " ++
+                      "The string must be a KEY, i.e. A_B_C where A B and C "++
+                      "are values for the --key columns, in order."
+                     )
        
      , Option []    []    (NoArg DummyFlag) "\n GNUPlot Options:"
      , Option []    []    (NoArg DummyFlag) "------------------"
@@ -392,14 +413,14 @@ instance FromData String where
 ---------------------------------------------------------------------------
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
-type DataSeries = M.Map String [Point] 
+type DataSeries = M.Map Key [Point] 
 data Point = Point { x::SeriesData, y::SeriesData, err::ErrorVal }
   deriving (Eq,Show,Ord,Read)
 
-insertVal :: DataSeries -> String -> Point -> DataSeries
+insertVal :: DataSeries -> Key -> Point -> DataSeries
 insertVal m key val =
   case M.lookup key m of
-    Nothing -> M.insert key [val] m 
+    Nothing   -> M.insert key [val] m 
     Just vals -> M.insert key (val:vals) m
 
 
@@ -478,11 +499,11 @@ main = do
 
   --------------------------------------------------
   -- Get keys
-  let hasKey  = (not . null) [ () | Key _ <- options]  
+  let hasKey  = (not . null) [ () | KeyCol _ <- options]  
       key =
         case hasKey of
           False -> error "No key specified" 
-          True  -> [ q | Key q <- options] 
+          True  -> [ q | KeyCol q <- options] 
 
   let hasX    = (not . null) [ () | XValues _ <- options]  
       hasY    = (not . null) [ () | YValues _ <- options]  
@@ -569,21 +590,21 @@ main = do
 
   renameTable <- fmap (concatMap lines) $
                  mapM readFile [f | Renames f <- options] 
-  let series1 :: [(String,[Point])]
+  let series1 :: [(Key,[Point])]
       series1 = M.assocs csv
   
-      series2 = map unifyTypes series1
-      series_type = typecheck series2 
+      series2     = map unifyTypes series1
+      series_type = typecheck series2
 
       -- normalise values against this datapoint
-      normKey = head [nom | NormaliseKey nom <- options]   
+      normKey = Key $ head [nom | NormaliseKey nom <- options] 
       base = getBaseVal normKey csv aux 
             
       plot_series0 = if normaliseSpecified       
                      then normalise base series2
                      else series2
       renamer = buildRenamer renameTable
-      plot_series :: [(String, [Point])]
+      plot_series :: [(Key, [Point])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
   
   chatter$ "Inferred types for X/Y axes: "++show series_type  
@@ -610,7 +631,7 @@ main = do
 
 
 -- | Don't produce an actual chart, rather write out the data as CSV.
-writeCSV :: PlotConfig -> [(String, [Point])] -> IO ()
+writeCSV :: PlotConfig -> [(Key, [Point])] -> IO ()
 -- Assumes a shared and sensible X axis for all data series.
 writeCSV PlotConfig{..} series = do
   -- ASSUMPTION: we assume a sensible Ord instance for
@@ -620,7 +641,7 @@ writeCSV PlotConfig{..} series = do
                 S.toAscList $ S.fromList $ concatMap ((map x) . snd) series
       -- Format:  all data columns before all error columns:
       header = [plotXLabel] ++ yCols ++ yErrs
-      yCols  = map fst series
+      yCols  = map (fromKey . fst) series
       yErrs  = case plotErrorCols of
                  Nothing -> []
                  Just (ErrDelta _)    -> map (++"_Err")     yCols
@@ -652,7 +673,7 @@ writeCSV PlotConfig{..} series = do
       csvResult = CSV.printCSV (header:rows)
   chatter $ "Writing out CSV for "++show (length series)++" data series (lines) named: "++unwords (tail header) 
   writeFile plotOutFile csvResult
-  chatter $ "Succesfully wrote file "++show plotOutFile
+  chatter $ "Successfully wrote file "++show plotOutFile
 
   
 writeGnuplot :: Show a => PlotConfig -> [(a, t)] -> IO ()
@@ -681,7 +702,10 @@ writeGnuplot PlotConfig{..} series = do
                  ]
           Points -> [show plotOutFile++" using 1:"++show ind ++
                      " title "++show seriesName++" w points ps "++show(ind-1)]
-      
+
+          Bars{}        -> error "FINISHME: Gnuplot / Bars"
+          BarClusters{} -> error "FINISHME: Gnuplot / BarClusters"
+
       -- usingClause ind =
       --   case plotErrorCols of 
       --     Nothing -> "using 1:"++show ind
@@ -710,22 +734,22 @@ writeGnuplot PlotConfig{..} series = do
   -- FIXME: assumes the template is in the current directory.  Use a more principled way:
   prelude <- fmap lines $ readFile template
   writeFile gplfile (unlines (prelude ++ gplLines))
-  chatter $ "Succesfully wrote file "++show gplfile
+  chatter $ "Successfully wrote file "++show gplfile
 
   let cmd = "gnuplot "++gplfile
   chatter $ "Attempting to use gnuplot command to build the plot:"++show cmd
   cde <- system cmd
   case cde of
-    ExitSuccess   -> chatter "Gnuplot returned succesfully."
+    ExitSuccess   -> chatter "Gnuplot returned successfully."
     ExitFailure c -> chatter$ "WARNING: Gnuplot process returned error code: "++show c
   return ()
   
 
 #ifdef USECHART
-plotIntInt :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
+plotIntInt :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
 plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!"
 
-plotIntDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
+plotIntDouble :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
 plotIntDouble conf  series = do 
   let fopts = Cairo.FileOptions (plotResolution conf)
                                 (convToFileFormat (plotOutFormat conf))
@@ -791,7 +815,7 @@ plotIntDouble conf  series = do
       plot_points_style . point_border_color .= color
       plot_points_style . point_radius .= 2
 
-plotDoubleDouble :: PlotConfig -> [(String, [(SeriesData, SeriesData)])] -> IO ()
+plotDoubleDouble :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
 plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 
 #endif
@@ -799,7 +823,7 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 ---------------------------------------------------------------------------
 -- Types in the data 
 
-unifyTypes :: (String,[Point]) -> (String,[Point])
+unifyTypes :: (Key,[Point]) -> (Key,[Point])
 unifyTypes (name,series) =
   let (xs,ys,errs) = (map x series, map y series, map err series)
       xs' = unify xs
@@ -819,11 +843,12 @@ unifyTypes (name,series) =
         (True, _, _)   -> map (StringData . convertToString) xs
         (False,_,True) -> map convertToNum xs
         (False,True,False) -> xs
+        (False,False,False) -> error "hsbencher-graph/unifyTypes: value is not a string Int or Double: "++xs
     convertToNum (IntData x) = NumData (fromIntegral x)
     convertToNum (NumData x) = NumData x
     convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
 
-typecheck :: [(String,[Point])] -> Maybe (ValueType, ValueType) 
+typecheck :: [(Key,[Point])] -> Maybe (ValueType, ValueType) 
 typecheck dat =
   let series = concatMap snd dat
       (xs,ys) = (map x series, map y series)
@@ -950,21 +975,20 @@ recogValueType str =
 
 
 
-
 ---------------------------------------------------------------------------
 -- get a value to normalise against 
 ---------------------------------------------------------------------------
 
-getBaseVal :: Ord k => k -> M.Map k a -> M.Map k a -> a
+getBaseVal :: (Show k,Ord k) => k -> M.Map k a -> M.Map k a -> a
 getBaseVal normKey csv aux =
   case (M.lookup normKey csv, M.lookup normKey aux) of
-    (Nothing, Nothing) -> error "Value to normalise against not found"
+    (Nothing, Nothing) -> error $ "Value to normalise against not found: "++show normKey ++
+                                  "\nAll keys: "++show (M.keys csv)
     (Just v,_) -> v
     (_,Just v) -> v
-      
 
 
-normalise :: [Point] -> [(String,[Point])] -> [(String,[Point])]
+normalise :: [Point] -> [(Key,[Point])] -> [(Key,[Point])]
 normalise []   _  = error "No Value to normalise against"
 normalise _ [] = []
 normalise base0 ((nom,series):rest0) 
@@ -976,17 +1000,20 @@ normalise base0 ((nom,series):rest0)
       doIt base pt : normalise' base rest
     doIt ((Point{y=NumData y}):_) (Point {x=sx, y= NumData sy, err}) =
       Point {x=sx, y=NumData ((sy-y)/y), err }
-  
+    doIt a b = error $ "hsbencher-graph/normalise: internal error:\n "++show(a,b)
 
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
 replace old new = intercalate new . splitOn old
 
-buildRenamer :: [String] -> String -> String
+-- | A list of "OLD,NEW" mappings.
+type RenameTable = [String]
+                  
+buildRenamer :: RenameTable -> Key -> Key
 buildRenamer [] = id
 buildRenamer (ln:rest) =
   case (splitOn "," ln) of
-    [lhs,rhs] -> \str -> buildRenamer rest
-                           (replace lhs rhs str)
+    [lhs,rhs] -> \ (Key str) -> buildRenamer rest
+                                 (Key $ replace lhs rhs str)
     _ -> error ("Bad line in rename table: "++ ln)
 
 fromValidated :: ValidatedCSV -> CSV.CSV
@@ -1076,11 +1103,10 @@ toKeyedGroups keys ValidatedCSV{header,rows} =
   loop !mp (row:rest) =
     let mp' = M.insertWith' (++) (combineFields keyIxs row) [row] mp in
     loop mp' rest
-    
-
+         
 -- Project multiple rows and put them together in a human readable way:
-combineFields :: [Int] -> [CSV.Field] -> String
-combineFields ixs row = concat $ intersperse "_" $ filter (/="") $
+combineFields :: [Int] -> [CSV.Field] -> Key
+combineFields ixs row = Key $ concat $ intersperse "_" $ filter (/="") $
                         map (\i -> row !! i) ixs
 
 -- | Collapse keyed groups back down to a flat list of rows, in no
