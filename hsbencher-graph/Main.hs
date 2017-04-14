@@ -629,7 +629,8 @@ main = do
                ls  -> error $ "Error: More than one --latest provided: "++show ls
   chatter $ "After validation, read total rows: " ++ show (length (rows dat1))
   _ <- evaluate (force (rows dat4))  -- Flush out error messages.
-  chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat4))
+  chatter $ "Data filtering completed successfully, rows remaining: " ++ show (length (rows dat2))
+  chatter $ "After padding and taking --latest into account: " ++ show (length (rows dat4))
   forM_ [ f | DumpFile f <- options ] $ \fl -> do
     chatter $ "Writing cleaned/filtered copy of CSV data to: "++fl
     writeFile fl (CSV.printCSV (fromValidated dat4))
@@ -675,7 +676,8 @@ main = do
       plot_series :: [(Key, [LinePoint])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
   
-  chatter$ "Inferred types for X/Y axes: "++show series_type  
+  chatter$ "Inferred types for X/Y axes: "++show series_type++
+           "\n From series: "++show series2
   
   --------------------------------------------------
   -- do it      
@@ -894,6 +896,7 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 ---------------------------------------------------------------------------
 -- Types in the data 
 
+-- | 
 unifyTypes :: (Key,[LinePoint]) -> (Key,[LinePoint])
 unifyTypes (name,series) =
   let (xs,ys,errs) = (map x series, map y series, map err series)
@@ -919,6 +922,7 @@ unifyTypes (name,series) =
     convertToNum (NumData x) = NumData x
     convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
 
+-- | Returns the type of the X values and the type of the Y values.
 typecheck :: [(Key,[LinePoint])] -> Maybe (ValueType, ValueType) 
 typecheck dat =
   let series = concatMap snd dat
