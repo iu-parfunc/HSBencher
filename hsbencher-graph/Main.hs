@@ -684,8 +684,8 @@ main = do
       plot_series :: [(Key, [LinePoint])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
   
-  chatter$ "Inferred types for X/Y axes: "++show series_type++
-           "\n From series: "++show series2
+  chatter$ "Inferred types for X/Y axes: "++show series_type
+--           "\n From series: "++show series2
   
   --------------------------------------------------
   -- do it      
