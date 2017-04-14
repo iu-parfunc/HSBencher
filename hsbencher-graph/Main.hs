@@ -340,8 +340,8 @@ core_cli_options =
      , Option []    ["lines"] (NoArg (RenderMode Lines))     "Plot data as lines"
        
      , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
-     , Option []    ["xlabel"] (ReqArg XLabel "String")      "X-axis label"
-     , Option []    ["ylabel"] (ReqArg YLabel "String")      "Y-axis label"
+     , Option []    ["xlabel"] (ReqArg (XLabel . deUnderscore) "String")      "X-axis label"
+     , Option []    ["ylabel"] (ReqArg (YLabel . deUnderscore) "String")      "Y-axis label"
        
      -- Logarithmic scales
      , Option []     ["ylog"] (NoArg YLog)                "Logarithmic scale on y-axis"
@@ -399,6 +399,14 @@ core_cli_options =
 
      ]
 
+-- | A complete hack to make it easier to pass in multi-word labels in
+-- bash scripts.  Turn underscores into spaces.
+deUnderscore :: String -> String
+deUnderscore = L.map f
+  where
+    f '_' = ' '
+    f  c  = c
+     
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
 fullUsageInfo = usageInfo docs core_cli_options
