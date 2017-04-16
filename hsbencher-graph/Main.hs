@@ -746,12 +746,49 @@ writeCSV PlotConfig{..} series = do
   writeFile plotOutFile csvResult
   chatter $ "Successfully wrote file "++show plotOutFile
 
-  
+
+-- | Combine the template file with the generated script and write it out to the appropriate file on disk.
 writeGnuplot :: Show a => PlotConfig -> [(a, t)] -> IO ()
-writeGnuplot PlotConfig{..} series = do
+writeGnuplot cfg@PlotConfig{..} series = do
   let gplfile = replaceExtension plotOutFile "gpl"
-  let numSeries = length series      
-  let mkPlotClauses seriesName ind =
+      gplLines = lines (buildGnuplot cfg series)
+  chatter $ "Writing out Gnuplot script as well as CSV: "++gplfile
+-- TODO, make this into a library and look up the template file in ~/.cabal/share (from the Paths_ module)
+--      defaultTemplate = "template.gpl"
+  let
+      defaultTemplate = error "ERROR: For now you must provide GnuPlot template with --template"
+      template = fromMaybe defaultTemplate gnuPlotTemplate 
+
+  -- FIXME: assumes the template is in the current directory.  Use a more principled way:
+  prelude <- fmap lines $ readFile template
+  writeFile gplfile (unlines (prelude ++ gplLines))
+  chatter $ "Successfully wrote file "++show gplfile
+
+  let cmd = "gnuplot "++gplfile
+  chatter $ "Attempting to use gnuplot command to build the plot:"++show cmd
+  cde <- system cmd
+  case cde of
+    ExitSuccess   -> chatter "Gnuplot returned successfully."
+    ExitFailure c -> chatter$ "WARNING: Gnuplot process returned error code: "++show c
+  return ()
+
+-- | Build the body of the gnuplot file.  Actually it's the /suffix/ given that we prepend a header.
+buildGnuplot :: Show a => PlotConfig -> [(a, t)] -> String
+buildGnuplot PlotConfig{..} series = unlines gplLines
+  where    
+      gplLines = [ "\n# Begin "++progName++" generated script:"
+                 , "set xlabel "++ show plotXLabel
+                 , "set ylabel "++ show plotYLabel
+                 , "set output "++ show (replaceExtension plotOutFile "pdf")
+                 , "# And because we're plotting CSV data:"
+                 , "set datafile separator \",\""
+                 , "plot "++ concat (intersperse ", \\\n     "
+                   -- Line them up carefully by position:
+                   (concat [ mkPlotClauses seriesName ind
+                           | ((seriesName, _),ind) <- zip series [2::Int ..] ]))
+                 ]
+      numSeries = length series      
+      mkPlotClauses seriesName ind =
         case plotMode of
           Lines -> 
             let basicLine sty = show plotOutFile++" using 1:"++show ind ++
@@ -786,34 +823,6 @@ writeGnuplot PlotConfig{..} series = do
       --                             show (ind +   numSeries)++":"++
       --                             show (ind + 2*numSeries) ++ " with yerrorbars"
           
-  chatter $ "Writing out Gnuplot script as well as CSV: "++gplfile
-  let gplLines = [ "\n# Begin "++progName++" generated script:"
-                 , "set xlabel "++ show plotXLabel
-                 , "set ylabel "++ show plotYLabel
-                 , "set output "++ show (replaceExtension plotOutFile "pdf")
-                 , "# And because we're plotting CSV data:"
-                 , "set datafile separator \",\""
-                 , "plot "++ concat (intersperse ", \\\n     "
-                   -- Line them up carefully by position:
-                   (concat [ mkPlotClauses seriesName ind
-                           | ((seriesName, _),ind) <- zip series [2::Int ..] ]))
-                 ]
--- TODO, make this into a library and look up the template file in ~/.cabal/share (from the Paths_ module)
---      defaultTemplate = "template.gpl"
-      defaultTemplate = error "ERROR: For now you must provide GnuPlot template with --template"
-      template = fromMaybe defaultTemplate gnuPlotTemplate 
-  -- FIXME: assumes the template is in the current directory.  Use a more principled way:
-  prelude <- fmap lines $ readFile template
-  writeFile gplfile (unlines (prelude ++ gplLines))
-  chatter $ "Successfully wrote file "++show gplfile
-
-  let cmd = "gnuplot "++gplfile
-  chatter $ "Attempting to use gnuplot command to build the plot:"++show cmd
-  cde <- system cmd
-  case cde of
-    ExitSuccess   -> chatter "Gnuplot returned successfully."
-    ExitFailure c -> chatter$ "WARNING: Gnuplot process returned error code: "++show c
-  return ()
   
 
 #ifdef USECHART
