@@ -784,11 +784,14 @@ writeGnuplot cfg@PlotConfig{..} series = do
 
 -- | Build the body of the gnuplot file.  Actually it's the /suffix/ given that we prepend a header.
 buildGnuplot :: Show a => PlotConfig -> [(a, t)] -> String
-buildGnuplot PlotConfig{..} series = unlines gplLines
+buildGnuplot PlotConfig{plotXLabel, plotYLabel, plotXLog, plotYLog, plotOutFile, plotMode,plotErrorCols}
+             series = unlines gplLines
   where    
       gplLines = [ "\n# Begin "++progName++" generated script:"
                  , "set xlabel "++ show plotXLabel
                  , "set ylabel "++ show plotYLabel
+                 , if plotXLog then "set log x" else ""
+                 , if plotYLog then "set log y" else ""
                  , "set output "++ show (replaceExtension plotOutFile "pdf")
                  , "# And because we're plotting CSV data:"
                  , "set datafile separator \",\""
