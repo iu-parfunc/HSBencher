@@ -371,19 +371,20 @@ core_cli_options =
 
        
      , Option []    ["factor"] (ReqArg NormaliseKey "KEY")
-                     ("A factor plot: the ratio of each line to a designated baseline." ++
-                      "The KEY must be a string, e.g. \"A_B_C\" where A B and C "++
-                      "are values for the --key columns, in order."++
-                      "This KEY identifies which line is the baseline."
-                     )
+                     (unlines
+                      [ "A factor plot: the ratio of each line to a designated baseline."
+                      , "The KEY must be a string, e.g. \"A_B_C\" where A B and C "
+                      , "are values for the --key columns, in order."
+                      , "This KEY identifies which line is the baseline." ])
      , Option []    ["ratio"] (ReqArg (Ratio . parseValueSpec) "POINT")
-                     ("Report the ratio of each datapoint divided by a constant." ++
-                      "The constant normalization value is selected by POINT."++
-                      "This is appropriate for 'bigger=better' plots."++
-                      "POINT is of the form kEY,VAL, where KEY is formatted "++
-                      "so as to select a line (see --factor), and VAL is the X-value that selects which point"++
-                      "(Y value) on the line becomes the normalization constant."
-                     )
+                     (unlines
+                      ["Report the ratio of each datapoint divided by a constant. "
+                      ,"The constant normalization value is selected by POINT. "
+                      ,"This is appropriate for 'bigger=better' plots. "
+                      ,"POINT is of the form kEY,VAL, where KEY is formatted "
+                      ,"so as to select a line (see --factor), and VAL is the X-value "
+                      ,"that selects which point (Y value) on the line becomes "
+                      ,"the normalization constant."])
      , Option []    ["inverse-ratio"] (ReqArg (InverseRatio . parseValueSpec) "POINT")
                      ("The inverse of --ratio.  That is, report a "++
                       "constant divided by each datapoint, respectively." ++
@@ -1103,6 +1104,7 @@ findVal (ValueSpec linekey xval) allLines =
       [LinePoint{y}] -> y
       [] -> error $ "Could not find data value corresponding to key "++show linekey
                   ++"\n and X-value: "++show xval
+                  ++"\nAll keys: "++show (map fst allLines)
       _ -> error $ "MULTIPLE data points corresponding to key "++show linekey
                   ++"\n and X-value: "++show xval++":\n" ++show candidates
   where
