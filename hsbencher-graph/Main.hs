@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-} 
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -25,7 +25,7 @@ import Data.String.Utils (strip)
 import qualified Data.Set as S
 import Data.Typeable
 import Data.Version (showVersion)
-import Prelude hiding (init) 
+import Prelude hiding (init)
 import System.Console.GetOpt (getOpt', ArgOrder(Permute), OptDescr(Option), ArgDescr(..), usageInfo)
 import System.Environment (getArgs, getProgName)
 -- import System.Exit (exitFailure, exitSuccess)
@@ -44,7 +44,7 @@ import Paths_hsbencher_graph(version) -- getDataDir
 #ifdef USECHART
 -- Charting library
 import Graphics.Rendering.Chart as C
-import Graphics.Rendering.Chart as C 
+import Graphics.Rendering.Chart as C
 import qualified Graphics.Rendering.Chart.Backend.Cairo as Cairo
 import Graphics.Rendering.Chart.Easy as C
 #endif
@@ -54,20 +54,20 @@ import Graphics.Rendering.Chart.Easy as C
 
 
 {- DEVLOG
-  - 11 March 2015: Added Points to GraphMode 
+  - 11 March 2015: Added Points to GraphMode
 
   - 20 Nov 2014: Starting some simplifications and cleanups
 
 
--} 
+-}
 
 {- Random junk
 cabal install HSBencher/hsbencher-tool/ HSBencher/hsbencher-graph/ --bindir=/home/joels/Current/ObsidianWriting/Winter2014/bin/ --force-reinstalls
 cat ./text/data/Scan-cse-324974-663.csv | ./bin/grapher -o apa.png --key="ARGS0" --key="ARGS1" -x ARGS2 -y runtime
 
--} 
+-}
 
--- 
+--
 ---------------------------------------------------------------------------
 
 -- | CSV data where all rows have the right number of entries.
@@ -91,7 +91,7 @@ instance Show Key where
 
 fromKey :: Key -> String
 fromKey (Key s) = s
-    
+
 type ColName = String
 
 -- | For now we only pattern match by string inclusion.  TODO: support regexps?
@@ -110,11 +110,11 @@ data ErrorVal = NoError
               | DeltaVal  Double
               | MinMaxVal Double Double
   deriving (Show,Eq,Read,Ord)
-           
+
 -- | Command line flags to the executable.
 data Flag = ShowHelp
           | ShowVersion -- TODO: implement this
-            
+
           | OutFile  FilePath
 
             -- TODO: move this functionality over to a separate executable:
@@ -128,14 +128,14 @@ data Flag = ShowHelp
 
           -- Log mode
           | YLog  -- logarithmic scale on y-axis
-          | XLog  -- logarithmic scale on x-axis 
+          | XLog  -- logarithmic scale on x-axis
 
-          -- identify part of a key 
+          -- identify part of a key
           | KeyCol  { col :: ColName } -- --key="Arg1" --key="Arg2" means Arg1_Arg2 is the name of data series
           | XValues { col :: ColName } -- column containing x-values
           | YValues { col :: ColName } -- column containing y-values
 
-          | YErrValues ErrorCols 
+          | YErrValues ErrorCols
 
           | FilterContain { col :: ColName, pats :: [Pattern] }
           | FilterEq      { col :: ColName, pats :: [String] }
@@ -145,7 +145,7 @@ data Flag = ShowHelp
           | Pad    { col :: ColName, padTo :: Int }
           | Renames FilePath
 
-          -- output resolution  
+          -- output resolution
           | XRes String
           | YRes String
 
@@ -156,40 +156,40 @@ data Flag = ShowHelp
 
           -- Resolving/aggregating duplicates or performing comparisons:
           | Latest  { col :: ColName }
-          | Speedup { col :: ColName, contains :: Pattern } 
+          | Speedup { col :: ColName, contains :: Pattern }
           | Vs      { col :: ColName, contains :: Pattern }
 
 
           | NormaliseKey String
             -- ^ Normalize against a line, produce a factor plot.
-          
+
           | Ratio        ValueSpec
             -- ^ Normalize against a single value: a single line point.
           | InverseRatio ValueSpec
             -- ^ Normalize against a single value: a single line point.
 
           -- TODO: More general way to map simple functions over points.
-            
+
           | DummyFlag
 
           --   -- Aux values are not plotted!
           -- | AuxFile String -- a single auxfile that need not have same format as other CSV
           -- | AuxKey  String -- part of key into auxfile
-          -- | AuxX    String -- column with aux x value 
-          -- | AuxY    String -- column with aux y value 
+          -- | AuxX    String -- column with aux x value
+          -- | AuxY    String -- column with aux y value
   deriving (Eq,Ord,Show)
 
 data ValueSpec = ValueSpec { valkey :: Key, valX :: SeriesData }
   deriving (Eq,Ord,Show)
-               
+
 -- | A ValueSpec is a comma separated list of COL=VAL settings.  E.g. "THREADS=1,VARIANT=foo"
 -- type ValueSpec = [(String,String)]
-           
--- This is all a bit unfortunate. 
+
+-- This is all a bit unfortunate.
 data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
                   | MyCSV
                   | MyGPL
-                  deriving (Eq, Ord, Show, Read) 
+                  deriving (Eq, Ord, Show, Read)
 
 #ifdef USECHART
 convToFileFormat :: MyFileFormat -> Cairo.FileFormat
@@ -200,21 +200,21 @@ convToFileFormat MyPS  = Cairo.PS
 convToFileFormat MyCSV = error "Cairo does not do CSV output"
 #endif
 
-data GraphMode = Bars | BarClusters | Lines | Points 
+data GraphMode = Bars | BarClusters | Lines | Points
                deriving (Eq, Ord, Show, Read )
 
 -- | Type of values stored in a series
-data ValueType = Int | Double | String 
+data ValueType = Int | Double | String
                deriving (Eq, Ord, Show, Read )
 
 
--- Once things start to work more properly, exception handling should be made proper. 
+-- Once things start to work more properly, exception handling should be made proper.
 -- | Exceptions that may occur
 data Error
   = FlagsNotValidE String
-    deriving (Show, Typeable) 
+    deriving (Show, Typeable)
 
-instance Exception Error 
+instance Exception Error
 
 -- | For now this application is hardcoded to use a particular
 -- separator in both rename files and command line arguments.
@@ -237,7 +237,7 @@ parseFilterRange :: String -> Flag
 parseFilterRange s =
   case splitOn universalSeparator s of
     [col,mn,mx] ->
-        case (reads mn, reads mx) of 
+        case (reads mn, reads mx) of
           ((mn',_):_,(mx',_):_) -> FilterRange col mn' mx'
           _ -> err
     _ -> err
@@ -249,13 +249,13 @@ parseValueSpec s =
    case splitOn universalSeparator s of
      [linekey,xval] -> ValueSpec (Key linekey) (toSeriesData xval)
      _ -> error$ "not a valid POINT for --ratio/--inverse-ratio: "++s
-                  
+
 parseAssigns :: String -> [(String,String)]
 parseAssigns s0 = [ case splitOn "=" assn of
                         [lhs,rhs] -> (lhs,rhs)
                         _ -> error $ "bad COL=VAL specification: " ++s0
                     | assn <- splitOn universalSeparator s0 ]
-         
+
 parseErrCols :: String -> ErrorCols
 parseErrCols s =
   case splitOn universalSeparator s of
@@ -273,14 +273,14 @@ parsePad s =
 
 -- | Command line options.
 core_cli_options :: [OptDescr Flag]
-core_cli_options = 
+core_cli_options =
      [ Option ['h'] ["help"]    (NoArg ShowHelp)         "Show this help message and exit."
      , Option []    ["version"] (NoArg ShowVersion)      "Show version and exit."
      , Option ['o'] ["out"]  (ReqArg OutFile "FILE")     "Specify result file for main output"
 
-     , Option [] ["cleaned"] (ReqArg DumpFile "FILE")  "Write a cleaned, filtered version of the orig CSV here."      
+     , Option [] ["cleaned"] (ReqArg DumpFile "FILE")  "Write a cleaned, filtered version of the orig CSV here."
      , Option [] ["summary"] (NoArg Summary)           "After cleaning, print a summary of each column to stderr."
-       
+
      , Option []    []    (NoArg DummyFlag) "\n Data Handling options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
 
@@ -290,36 +290,36 @@ core_cli_options =
 
      -- TODO: especially when using this for CSV->CSV operations.
      -- Allowing multiple dependent variables seems like a good idea.
-       
+
      , Option [] ["error"] (ReqArg (YErrValues . parseErrCols) "STR") $
        "Column containing error for Y dimension.  Either 'COl1,COL2' for\n"++
        "separate lower/upper bounds or just 'COL' for Y-delta."
-       
+
      --  Not ready yet:
      , Option [] ["filtContain"] (ReqArg (uncurry FilterContain . parseFilter) "COL,VAL1,VAL2..") $
-       "Filter leaving only rows where COL contains one\n" ++ 
+       "Filter leaving only rows where COL contains one\n" ++
        "of VAL1..VALN as a substring."
 
      , Option [] ["filtEq"] (ReqArg (uncurry FilterEq . parseFilter) "COL,VAL1,VAL2..") $
-       "Filter leaving only rows where COL is exactly equal\n" ++ 
+       "Filter leaving only rows where COL is exactly equal\n" ++
        "to one of VAL1, or exactly equal to VAL2, etc."
 
      , Option [] ["filtRange"] (ReqArg parseFilterRange "COL,VAL1,VAL2") $
-       "Filter leaving only rows where COL is between VAL1 and VAL2 inclusive.\n" ++ 
+       "Filter leaving only rows where COL is between VAL1 and VAL2 inclusive.\n" ++
        "This requires that all cells in COL are numeric values."
-       
+
      -- , Option [] ["sort"] (ReqArg () "STR") $
      --  "Name of a numeric field by which to sort the lines."
 
      , Option [] ["pad"] (ReqArg (uncurry Pad . parsePad) "COL,N") $
      "Treat COL as a numeric column, and pad numbers to\n"++
-     "N characters, preppending leading zeros."        
-       
+     "N characters, preppending leading zeros."
+
      , Option [] ["renames"] (ReqArg Renames "FILE") $
        "Provide a comma-separated file where each line is an\n" ++
        "OLD,NEW pair indicating renames for data series' names"
 
-       
+
      , Option []    []    (NoArg DummyFlag) "\n Resolving duplicates and making comparisons"
      , Option []    []    (NoArg DummyFlag) "----------------------------------------------"
 
@@ -327,33 +327,33 @@ core_cli_options =
 
  -- TODO: and also move this over to a separate CSV->CSV executable:
      -- , Option [] ["speedup"] (ReqArg (uncurry Speedup . parseFilter) "KEY,VAL") $ ""
-     -- , Option [] ["vs"] (ReqArg (uncurry Vs . parseFilter) "KEY,VAL") $ ""       
-       
+     -- , Option [] ["vs"] (ReqArg (uncurry Vs . parseFilter) "KEY,VAL") $ ""
+
      , Option []    []    (NoArg DummyFlag) "\n Presentation options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
 
--- Not finished yet, don't mention [2015.02.22]:       
+-- Not finished yet, don't mention [2015.02.22]:
 --     , Option []    ["bars"] (NoArg (RenderMode Bars))       "Plot data as bars"
 --     , Option []    ["barclusters"] (NoArg (RenderMode BarClusters)) "Plot data as bar clusters"
 
-     , Option []    ["points"] (NoArg (RenderMode Points))   "Plot data as points" 
+     , Option []    ["points"] (NoArg (RenderMode Points))   "Plot data as points"
      , Option []    ["lines"] (NoArg (RenderMode Lines))     "Plot data as lines"
-       
-     , Option []    ["title"] (ReqArg Title "String")        "Plot title" 
+
+     , Option []    ["title"] (ReqArg Title "String")        "Plot title"
      , Option []    ["xlabel"] (ReqArg (XLabel . deUnderscore) "String")      "X-axis label"
      , Option []    ["ylabel"] (ReqArg (YLabel . deUnderscore) "String")      "Y-axis label"
-       
+
      -- Logarithmic scales
      , Option []     ["ylog"] (NoArg YLog)                "Logarithmic scale on y-axis"
-     , Option []     ["xlog"] (NoArg XLog)                "Logarithmix scale on x-axis" 
+     , Option []     ["xlog"] (NoArg XLog)                "Logarithmix scale on x-axis"
 
      , Option []    ["CSV"]    (NoArg (OutFormat MyCSV)) "Output raw CSV data to file selected by --out"
 
 #ifdef USECHART
      , Option []    []    (NoArg DummyFlag) "\n Haskell Chart specific options"
      , Option []    []    (NoArg DummyFlag) "--------------------------------"
-      
-     -- plot configuration 
+
+     -- plot configuration
      , Option []    ["xres"]   (ReqArg XRes "String")    "X-resolution of output graphics"
      , Option []    ["yres"]   (ReqArg XRes "String")    "Y-resolution of output graphics"
      , Option []    ["SVG"]    (NoArg (OutFormat MySVG)) "Output in SVG format"
@@ -365,11 +365,11 @@ core_cli_options =
      , Option []    []    (NoArg DummyFlag) "\n Haskell Chart support not compiled in!  No options."
      , Option []    []    (NoArg DummyFlag) "-----------------------------------------------------"
 #endif
-      
+
      , Option []    []    (NoArg DummyFlag) "\n Normalisation:"
      , Option []    []    (NoArg DummyFlag) "----------------"
 
-       
+
      , Option []    ["factor"] (ReqArg NormaliseKey "KEY")
                      (unlines
                       [ "A factor plot: the ratio of each line to a designated baseline."
@@ -391,12 +391,12 @@ core_cli_options =
                       "The constant normalization value is selected by POINT, formatted as in --ratio."++
                       "This is appropriate for 'smaller=better' plots."
                      )
-       
+
      , Option []    []    (NoArg DummyFlag) "\n GNUPlot Options:"
      , Option []    []    (NoArg DummyFlag) "------------------"
 
      , Option []    ["GPL"] (NoArg (OutFormat MyGPL))  "Output a .gpl plot script + CSV data."
-     , Option []    ["template"] (ReqArg GnuPlotTemplate "FILE") "Prepend FILE to generated gnuplot scripts."       
+     , Option []    ["template"] (ReqArg GnuPlotTemplate "FILE") "Prepend FILE to generated gnuplot scripts."
 
      ]
 
@@ -407,14 +407,14 @@ deUnderscore = L.map f
   where
     f '_' = ' '
     f  c  = c
-     
+
 -- | Multiple lines of usage info help docs.
 fullUsageInfo :: String
 fullUsageInfo = usageInfo docs core_cli_options
- where 
+ where
   docs = "USAGE: "++progName++" <flags> ... <inputCSVfiles> ...\n"++
          "Version: "++showVersion version++"\n"++
-         
+
          "\nA utility for plotting datasets retrieved from HSBencher (using standard HSBencher Schema).\n"++
          "\nReads CSV data from stdin if no input files are given.\n\n"++
 
@@ -423,14 +423,14 @@ fullUsageInfo = usageInfo docs core_cli_options
          "\n"++
          "Currently incomplete functionality: :\n"++
          " * bar charts are not supported in gnuplot output\n"++
-         
+
          "\nCommand line flags: \n"
 --   ++ generalUsageStr
 
 ---------------------------------------------------------------------------
 -- Data representations
 ---------------------------------------------------------------------------
-data SeriesData = IntData Int 
+data SeriesData = IntData Int
                 | NumData Double
                 | StringData String
                   deriving (Show, Eq, Read)
@@ -455,7 +455,7 @@ isNum _ = False
 seriesType :: SeriesData -> ValueType
 seriesType (IntData _) = Int
 seriesType (NumData _) = Double
-seriesType (StringData _) = String 
+seriesType (StringData _) = String
 
 class FromData a where
   fromData :: SeriesData -> a
@@ -471,21 +471,21 @@ instance FromData Int where
 
 instance FromData String where
   fromData (StringData a) = a
-  fromData e = error "FromData String, could not parse: "++show e 
+  fromData e = error "FromData String, could not parse: "++show e
 
 ---------------------------------------------------------------------------
 -- Data series
 ---------------------------------------------------------------------------
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
-type DataSeries = M.Map Key [LinePoint] 
+type DataSeries = M.Map Key [LinePoint]
 data LinePoint = LinePoint { x::SeriesData, y::SeriesData, err::ErrorVal }
   deriving (Eq,Show,Ord,Read)
 
 insertVal :: DataSeries -> Key -> LinePoint -> DataSeries
 insertVal m key val =
   case M.lookup key m of
-    Nothing   -> M.insert key [val] m 
+    Nothing   -> M.insert key [val] m
     Just vals -> M.insert key (val:vals) m
 
 
@@ -493,8 +493,8 @@ insertVal m key val =
 -- Plot configuration
 ---------------------------------------------------------------------------
 data PlotConfig = PlotConfig { plotOutFile    :: FilePath
-                             , plotOutFormat  :: MyFileFormat 
-                             , plotResolution :: (Int,Int)                                
+                             , plotOutFormat  :: MyFileFormat
+                             , plotResolution :: (Int,Int)
                              , plotTitle      :: String
                              , plotXLabel     :: String
                              , plotYLabel     :: String
@@ -524,7 +524,7 @@ main = do
 
       xRes = head $ [readInt x | XRes x <- options] ++ [800]
       yRes = head $ [readInt y | YRes y <- options] ++ [600]
-  
+
       plotTitle = head $ [t | Title t <- options] ++ ["NO_TITLE"]
       xLabel    = head $ [l | XLabel l <- options] ++
                          [c | XValues c <- options] ++
@@ -536,23 +536,23 @@ main = do
       -- Should any axis be log scale
       y_logscale = (not . null) [() | YLog <- options]
       x_logscale = (not . null) [() | XLog <- options]
-  
-  outFormat <- case [ format | OutFormat format <- options] of 
+
+  outFormat <- case [ format | OutFormat format <- options] of
                  []  -> do chatter$ "Warning: no output format selected.  Defaulting to CSV output."
-                           return MyCSV 
+                           return MyCSV
                  [x] -> return x
-                 ls  -> error$ "multiple output formats not yet supported: "++show ls  
+                 ls  -> error$ "multiple output formats not yet supported: "++show ls
 
   unless (null errs) $ do
     chatter$ "Errors parsing command line option(s):"
-    mapM_ (putStr . ("   "++)) errs       
+    mapM_ (putStr . ("   "++)) errs
     exitFailure
   unless (null unrec) $ do
     chatter$ "Unrecognized command line option(s):"
-    mapM_ (putStr . ("   "++)) unrec  
+    mapM_ (putStr . ("   "++)) unrec
     exitFailure
 
-  when (ShowHelp `elem` options) $ do 
+  when (ShowHelp `elem` options) $ do
     putStrLn fullUsageInfo
     exitSuccess
   when (ShowVersion `elem` options) $ do
@@ -561,19 +561,19 @@ main = do
 
   --------------------------------------------------
   -- Get target
-  let outFile = fromMaybe (error  "Error: an output file has to be specified") $ 
+  let outFile = fromMaybe (error  "Error: an output file has to be specified") $
                 listToMaybe [file | OutFile file <- reverse options]
 
   --------------------------------------------------
   -- Get keys
-  let hasKey  = (not . null) [ () | KeyCol _ <- options]  
+  let hasKey  = (not . null) [ () | KeyCol _ <- options]
       key =
         case hasKey of
-          False -> error "No key specified" 
-          True  -> [ q | KeyCol q <- options] 
+          False -> error "No key specified"
+          True  -> [ q | KeyCol q <- options]
 
-  let hasX    = (not . null) [ () | XValues _ <- options]  
-      hasY    = (not . null) [ () | YValues _ <- options]  
+  let hasX    = (not . null) [ () | XValues _ <- options]
+      hasY    = (not . null) [ () | YValues _ <- options]
 
       plotErrorCols = listToMaybe [ e | YErrValues e <- options ]
       xyerr =
@@ -587,18 +587,18 @@ main = do
 
       renderModes = [ x | RenderMode x <- options]
 
-  renderMode <- 
+  renderMode <-
     case renderModes of
       [] -> do
         chatter $ "No mode (--lines, --points) specified. Defaulting to draw lines"
         return Lines
-      [x] -> return x 
+      [x] -> return x
       (x:_) -> do
         chatter $ "More than one mode specified. Using " ++ show x
-        return x 
-  
+        return x
+
   --------------------------------------------------
-  -- All the collected parameters for the plotting. 
+  -- All the collected parameters for the plotting.
   let plotConf = PlotConfig outFile
                             outFormat
                             (xRes,yRes)
@@ -610,7 +610,7 @@ main = do
                             plotErrorCols
                             gnuPlotTemplate
                             renderMode
-  
+
   --------------------------------------------------
   -- Acquire data:
 
@@ -651,26 +651,26 @@ main = do
 
   chatter$ "Here is a sample of the CSV before renaming and normalization:\n" ++
     unlines [ "    "++take 100 (show l)++"..." | l <- (take 5 (M.toList csv))] ++ "    ...."
-  chatter$ "Also, a sample of discarded rows missing X datapoints: "++ take 500 (show aux) 
+  chatter$ "Also, a sample of discarded rows missing X datapoints: "++ take 500 (show aux)
 
   --------------------------------------------------
   -- Data preprocessing / munging:
 
   renameTable <- fmap (concatMap lines) $
-                 mapM readFile [f | Renames f <- options] 
+                 mapM readFile [f | Renames f <- options]
   let series1 :: [(Key,[LinePoint])]
       series1 = M.assocs csv
-  
+
       series2     = map unifyTypes series1
       series_type = typecheck series2
 
       -- normalise values against this datapoint
-      normKey = Key $ head [nom | NormaliseKey nom <- options] 
+      normKey = Key $ head [nom | NormaliseKey nom <- options]
 
       -- base = getBaseVal normKey csv aux
       -- RRN: Why would we look this up in "aux"?
       base = csv # normKey -- The entire data series which we normalize against.
-            
+
       plot_series0 =
           case normaliseKeyFlags ++ ratioFlags ++ inverseRatioFlags of
             [NormaliseKey{}] -> normalise base series2
@@ -684,30 +684,30 @@ main = do
       renamer = buildRenamer renameTable
       plot_series :: [(Key, [LinePoint])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
-  
+
   chatter$ "Inferred types for X/Y axes: "++show series_type
 --           "\n From series: "++show series2
-  
+
   --------------------------------------------------
-  -- do it      
+  -- do it
   case (outFormat, series_type) of
     (_,Nothing) -> error $ "Series failed to typecheck"
     (MyCSV, _)  -> writeCSV plotConf plot_series
     (MyGPL, _)  -> do chatter "Writing out both CSV file and a GnuPlot script to plot it."
                       writeCSV     plotConf plot_series
-                      writeGnuplot plotConf plot_series 
-#ifdef USECHART    
+                      writeGnuplot plotConf plot_series
+#ifdef USECHART
     (_,Just (Int,Int))       -> plotIntInt plotConf plot_series
     (_,Just (Int,Double))    -> plotIntDouble plotConf plot_series
     (_,Just (Double,Double)) -> plotDoubleDouble plotConf plot_series
-#endif    
+#endif
     (_,Just (_,_)) -> error $ "no support for plotting of this series type: "++show series_type++
                               ", with this output format: "++show outFormat
 
 -- | Operate only on the Y data
 onY :: (SeriesData -> SeriesData) -> LinePoint -> LinePoint
 onY fn lp@LinePoint{y} = lp { y = fn y }
-  
+
 ---------------------------------------------------------------------------
 -- Plotting
 
@@ -728,32 +728,32 @@ writeCSV PlotConfig{..} series = do
                  Nothing -> []
                  Just (ErrDelta _)    -> map (++"_Err")     yCols
                  Just (ErrMinMax _ _) -> map (++"_ErrLow")  yCols ++
-                                         map (++"_ErrHigh") yCols 
+                                         map (++"_ErrHigh") yCols
 
       -- nested map from key -> x -> (y,yErr)
       alldata = M.map (\prs -> M.fromList
-                        [ (convertToString x, (convertToString y, err)) | LinePoint{x,y,err} <- prs ] ) $ 
+                        [ (convertToString x, (convertToString y, err)) | LinePoint{x,y,err} <- prs ] ) $
                 M.fromList series
-                
+
       rows = [ key : buildRow key | key <- allKeys ]
 
       buildRow key =
         let gogo f = [ case M.lookup key seriesMap of
                         Nothing -> "" -- TODO, make configurable.  Missing data for this X value in this line.
                         Just dat -> f dat
-                     | (seriesName, _) <- series 
+                     | (seriesName, _) <- series
                      , let seriesMap = alldata M.! seriesName ]
-        in 
+        in
         -- Row has Y values then Y errors:
-        gogo fst ++ 
+        gogo fst ++
         case plotErrorCols of
           Nothing              -> []
           Just (ErrDelta _)    -> gogo (\ (_,DeltaVal d) -> show d)
           Just (ErrMinMax _ _) -> gogo (\ (_,MinMaxVal mn _) -> show mn) ++
                                   gogo (\ (_,MinMaxVal _ mx) -> show mx)
-      
+
       csvResult = CSV.printCSV (header:rows)
-  chatter $ "Writing out CSV for "++show (length series)++" data series (lines) named: "++unwords (tail header) 
+  chatter $ "Writing out CSV for "++show (length series)++" data series (lines) named: "++unwords (tail header)
   writeFile plotOutFile csvResult
   chatter $ "Successfully wrote file "++show plotOutFile
 
@@ -768,7 +768,7 @@ writeGnuplot cfg@PlotConfig{..} series = do
 --      defaultTemplate = "template.gpl"
   let
       defaultTemplate = error "ERROR: For now you must provide GnuPlot template with --template"
-      template = fromMaybe defaultTemplate gnuPlotTemplate 
+      template = fromMaybe defaultTemplate gnuPlotTemplate
 
   -- FIXME: assumes the template is in the current directory.  Use a more principled way:
   prelude <- fmap lines $ readFile template
@@ -785,10 +785,11 @@ writeGnuplot cfg@PlotConfig{..} series = do
 
 -- | Build the body of the gnuplot file.  Actually it's the /suffix/ given that we prepend a header.
 buildGnuplot :: Show a => PlotConfig -> [(a, t)] -> String
-buildGnuplot PlotConfig{plotXLabel, plotYLabel, plotXLog, plotYLog, plotOutFile, plotMode,plotErrorCols}
+buildGnuplot PlotConfig{plotTitle, plotXLabel, plotYLabel, plotXLog, plotYLog, plotOutFile, plotMode,plotErrorCols}
              series = unlines gplLines
-  where    
+  where
       gplLines = [ "\n# Begin "++progName++" generated script:"
+                 , "set title "++ show plotTitle
                  , "set xlabel "++ show plotXLabel
                  , "set ylabel "++ show plotYLabel
                  , if plotXLog then "set log x" else ""
@@ -801,23 +802,23 @@ buildGnuplot PlotConfig{plotXLabel, plotYLabel, plotXLog, plotYLog, plotOutFile,
                    (concat [ mkPlotClauses seriesName ind
                            | ((seriesName, _),ind) <- zip series [2::Int ..] ]))
                  ]
-      numSeries = length series      
+      numSeries = length series
       mkPlotClauses seriesName ind =
         case plotMode of
-          Lines -> 
+          Lines ->
             let basicLine sty = show plotOutFile++" using 1:"++show ind ++
-                                " title "++show seriesName++" w "++sty++" ls "++show(ind-1) 
+                                " title "++show seriesName++" w "++sty++" ls "++show(ind-1)
                 errorStyle = " notitle with yerrorbars ls 99 " -- ++show(ind-1)
-            in 
+            in
              case plotErrorCols of
                Nothing -> [ basicLine "linespoints" ]
                Just (ErrDelta _) ->
-                 [ basicLine "lines" 
+                 [ basicLine "lines"
                  , show plotOutFile++" using 1:"++show ind++":"++
-                   show (ind + numSeries) ++ errorStyle              
+                   show (ind + numSeries) ++ errorStyle
                  ]
                Just (ErrMinMax _ _) ->
-                 [ basicLine "lines" 
+                 [ basicLine "lines"
                  , show plotOutFile++" using 1:"++show ind++":"++
                    show (ind + numSeries)++":"++show (ind + 2*numSeries)++
                    errorStyle
@@ -829,22 +830,22 @@ buildGnuplot PlotConfig{plotXLabel, plotYLabel, plotXLog, plotYLog, plotOutFile,
           BarClusters{} -> error "FINISHME: Gnuplot / BarClusters"
 
       -- usingClause ind =
-      --   case plotErrorCols of 
+      --   case plotErrorCols of
       --     Nothing -> "using 1:"++show ind
-      --     Just (ErrDelta _)    -> "using 1:"++show ind++":"++ 
+      --     Just (ErrDelta _)    -> "using 1:"++show ind++":"++
       --                             show (ind + numSeries) ++ " with yerrorbars"
       --     Just (ErrMinMax _ _) -> "using 1:"++show ind++":"++
       --                             show (ind +   numSeries)++":"++
       --                             show (ind + 2*numSeries) ++ " with yerrorbars"
-          
-  
+
+
 
 #ifdef USECHART
 plotIntInt :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
 plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!"
 
 plotIntDouble :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
-plotIntDouble conf  series = do 
+plotIntDouble conf  series = do
   let fopts = Cairo.FileOptions (plotResolution conf)
                                 (convToFileFormat (plotOutFormat conf))
   Cairo.toFile fopts (plotOutFile conf) $ do
@@ -854,7 +855,7 @@ plotIntDouble conf  series = do
               [blue, green, orange, red
               ,brown, black, darkblue, darkgray
               ,darkgreen, darkorange, darkred, yellow, violet]
-    
+
     layout_title .= plotTitle conf
     layout_background .= solidFillStyle (opaque white)
     layout_foreground .= opaque black
@@ -862,22 +863,22 @@ plotIntDouble conf  series = do
     layout_title_style . font_size .= 24
 
     if (plotYLog conf)
-      then layout_y_axis . laxis_generate .= autoScaledLogAxis (LogAxisParams show) 
-      else return () 
+      then layout_y_axis . laxis_generate .= autoScaledLogAxis (LogAxisParams show)
+      else return ()
 
 
     -- Not Possible in IntDouble plot
     --if (plotXLog conf)
     --   then layout_x_axis . laxis_generate .= autoScaledLogAxis (LogAxisParams show)
-    --   else return () 
+    --   else return ()
 
-    -- hint ? 
-    --layout_x_axis . laxis_generate .= autoIndexAxis (map fst values)  
-            
-    
-    
-    mapM_ plotIt series 
-  
+    -- hint ?
+    --layout_x_axis . laxis_generate .= autoIndexAxis (map fst values)
+
+
+
+    mapM_ plotIt series
+
   where
     plotIt (name,xys) = do
       color <- takeColor
@@ -887,10 +888,10 @@ plotIntDouble conf  series = do
           xsi     = map fromData xs :: [Int]
           ysd     = map fromData ys :: [Double]
           sorted  = (sortBy (\(x,_) (x',_) -> x `compare` x')  $ zip xsi ysd)
-          
+
       plot $ myline color name [sorted]
       plot $ mypoints color shape name sorted
-        
+
     myline :: AlphaColour Double -> String -> [[(x,y)]]  -> EC l (PlotLines x y)
     myline color title values = liftEC $ do
       plot_lines_title .= title
@@ -903,7 +904,7 @@ plotIntDouble conf  series = do
     mypoints color shape name values = liftEC $ do
       plot_points_values .= values
       plot_points_title .= name
-      plot_points_style . point_color .= transparent 
+      plot_points_style . point_color .= transparent
       plot_points_style . point_shape .= shape
       plot_points_style . point_border_width .= 1
       plot_points_style . point_border_color .= color
@@ -915,9 +916,9 @@ plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 #endif
 
 ---------------------------------------------------------------------------
--- Types in the data 
+-- Types in the data
 
--- | 
+-- |
 unifyTypes :: (Key,[LinePoint]) -> (Key,[LinePoint])
 unifyTypes (name,series) =
   let (xs,ys,errs) = (map x series, map y series, map err series)
@@ -931,8 +932,8 @@ unifyTypes (name,series) =
 
     isInt :: SeriesData -> Bool
     isInt (IntData _) = True
-    isInt _ = False 
-    
+    isInt _ = False
+
     unify xs =
       case (any isString xs, any isInt xs, any isNum xs) of
         (True, _, _)   -> map (StringData . convertToString) xs
@@ -941,35 +942,35 @@ unifyTypes (name,series) =
         (False,False,False) -> error "hsbencher-graph/unifyTypes: value is not a string Int or Double: "++xs
     convertToNum (IntData x) = NumData (fromIntegral x)
     convertToNum (NumData x) = NumData x
-    convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num" 
+    convertToNum (StringData str) = error $ "Attempting to convert string " ++ str ++ " to Num"
 
 -- | Returns the type of the X values and the type of the Y values.
-typecheck :: [(Key,[LinePoint])] -> Maybe (ValueType, ValueType) 
+typecheck :: [(Key,[LinePoint])] -> Maybe (ValueType, ValueType)
 typecheck dat =
   let series = concatMap snd dat
       (xs,ys) = (map x series, map y series)
   in
-   case length xs >= 1 && length ys >= 1 of 
+   case length xs >= 1 && length ys >= 1 of
      True ->
        let x = seriesType $ head xs
            y = seriesType $ head ys
            _xb = all (==x) $ map seriesType xs
            _yb = all (==y) $ map seriesType ys
        in Just (x,y)
-     False -> Nothing 
+     False -> Nothing
 
 ---------------------------------------------------------------------------
 
 -- | Extract the data we care about from in-memory CSV data.
 --   This includes a bit of data cleaning for missing values in the X/Y columns.
---      
+--
 -- Note: This is in the IO monad only to produce chatter.
 --
 -- Returns: 1. the good data series.
 --          2. the misfits - bad rows that had Y values but were missing X values.
 extractData :: [ColName] -> (ColName,ColName,Maybe ErrorCols)
             -> ValidatedCSV -> IO (DataSeries,DataSeries)
-extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) = 
+extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
   case (length keyIxs) == (length keys) of
     False -> error $ "Keys "++ show keys++" were not all found in schema: "++show csvhdr
     True -> do
@@ -984,7 +985,7 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
     getIx col =
        case elemIndex col csvhdr of
           Just ix -> ix
-          Nothing -> error $ show ycol ++ " is not present in csv."        
+          Nothing -> error $ show ycol ++ " is not present in csv."
 
     loop _ (m,aux) [] = return (m,aux)
     loop xy (m,aux) (row:restRows)= do
@@ -993,15 +994,15 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
         []  -> loop xy (m,aux) restRows
         -- A real string, lets see if it contains anything useful:
         _ -> do
-          -- split out the csv fields 
+          -- split out the csv fields
           let csv = map strip row
               -- Construct a key
-              key = combineFields keyIxs csv      
+              key = combineFields keyIxs csv
 
               -- Find x,y pairs
               (xStr,yStr)  = collectXY xy csv
-          -- empty string at key position. 
-          -- May be of importance! 
+          -- empty string at key position.
+          -- May be of importance!
           case (xStr,yStr) of
             ("","") -> do chatter$ "has no x/y values: " ++ show key ++ " discarding."
                           loop  xy (m,aux) restRows
@@ -1023,21 +1024,21 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
                                                        , err=e
                                                        })
                        in  loop  xy (m',aux) restRows
-        
-    
+
+
     collectXY (x,y) csv =  ( collectVal x csv
                            , collectVal y csv)
-    -- FIXME: I believe using maps is a lot cleaner 
+    -- FIXME: I believe using maps is a lot cleaner
     collectVal ix csv =
       -- trace ("Dereferencing !!2: "++show(csv,ix)) $
-      csv !! ix 
+      csv !! ix
 
 toSeriesData :: String -> SeriesData
 toSeriesData x =
     case recogValueType x of
-      Int    -> IntData (read x) 
-      Double -> NumData (read x) 
-      String -> StringData x        
+      Int    -> IntData (read x)
+      Double -> NumData (read x)
+      String -> StringData x
 
 ---------------------------------------------------------------------------
 -- Recognize data
@@ -1046,7 +1047,7 @@ toSeriesData x =
 -- The rules.
 -- The string contains only numerals -> Int
 -- The string contains only numerals and exactly one . -> Double
--- the string contains exactly one . and an e -> Double 
+-- the string contains exactly one . and an e -> Double
 -- The string contains any non-number char -> String
 
 -- there is an ordering to the rules.
@@ -1055,9 +1056,9 @@ toSeriesData x =
 -- # 2 If not #1 and any element contains . or . and e All values are doubles
 -- # 3 If not #1 and #2 treat as Int
 
--- May be useless. just treat all values as "Double" 
+-- May be useless. just treat all values as "Double"
 
--- | Figure out what type of value is stored in this data series.     
+-- | Figure out what type of value is stored in this data series.
 recogValueType :: String -> ValueType
 recogValueType str =
   case (isString str, isInt str, isDouble str) of
@@ -1065,9 +1066,9 @@ recogValueType str =
     (False,True, False)  -> Int
     (False,_, True)      -> Double
     (_, _, _)            -> String
-  where 
+  where
     isInt s = all isNumber s
-    -- Not a very proper check. 
+    -- Not a very proper check.
     isDouble s = ((all isNumber $ delete '.' s)
                     || (all isNumber $ delete '.' $ delete 'e' s)
                     || (all isNumber $ delete '.' $ delete 'e' $ delete '-' s))
@@ -1077,7 +1078,7 @@ recogValueType str =
 
 
 ---------------------------------------------------------------------------
--- get a value to normalise against 
+-- get a value to normalise against
 ---------------------------------------------------------------------------
 
 -- | Simply do a lookup in EITHER map, left-biased.
@@ -1090,12 +1091,12 @@ getBaseVal normKey csv aux =
     (_,Just v) -> v
 
 type MultilineDataset = [(Key,[LinePoint])]
-                  
+
 -- | Simpler than normalise, this just operates pointwise on the data.
 mapPoints :: (LinePoint -> LinePoint) -> MultilineDataset -> MultilineDataset
 mapPoints _ [] = []
 mapPoints f ((k,lps):xs) = (k, L.map f lps) : mapPoints f xs
-    
+
 -- | Find the value that matches a given predicate (ValueSpec).  Error
 -- if there is more than one.  Return the "Y" coordinate of the selected point.
 findVal :: ValueSpec -> MultilineDataset -> SeriesData
@@ -1125,7 +1126,7 @@ normalise base0 lns
     doIt :: LinePoint -> LinePoint -> LinePoint
     doIt (p1@(LinePoint{x, y=NumData normY}))
           p2@(LinePoint {x=sx, y= NumData sy, err}) =
-      if x==sx  
+      if x==sx
       then LinePoint {x=sx, y=NumData (sy / normY), err }
            -- Report the ratio of the line to the norm line.
       else error $ "hsbencher-graph/normalise: mismatched X data points in line and normalisation baseline:\n    "
@@ -1137,14 +1138,14 @@ normalise base0 lns
     --     error $ "hsbencher-graph/normalise: mismatched data points and normalisation baseline.\n"
     --             ++ "Baseline ran out to soon.  Points remaining"
     --              ++ show p2
-                 
+
 
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
 replace old new = intercalate new . splitOn old
 
 -- | A list of "OLD,NEW" mappings.
 type RenameTable = [String]
-                  
+
 buildRenamer :: RenameTable -> Key -> Key
 buildRenamer [] = id
 buildRenamer (ln:rest) =
@@ -1154,7 +1155,7 @@ buildRenamer (ln:rest) =
     _ -> error ("Bad line in rename table: "++ ln)
 
 fromValidated :: ValidatedCSV -> CSV.CSV
-fromValidated ValidatedCSV{header,rows} = header : rows  
+fromValidated ValidatedCSV{header,rows} = header : rows
 
 -- | Take pre-validated CSV and apply filters to CSV data.
 doFilters :: [Flag] -> ValidatedCSV -> ValidatedCSV
@@ -1163,23 +1164,23 @@ doFilters (FilterEq col vals : rest) (ValidatedCSV header csv) =
    doFilters rest $ ValidatedCSV header $
      filter ((\x -> any (==x) vals) . mkPrj header col) csv
 doFilters (FilterContain col vals : rest) (ValidatedCSV header csv) =
-   doFilters rest $ ValidatedCSV header $ 
-     filter ((\x -> any (`isInfixOf` x) vals) . mkPrj header col) csv   
+   doFilters rest $ ValidatedCSV header $
+     filter ((\x -> any (`isInfixOf` x) vals) . mkPrj header col) csv
 
 doFilters (FilterRange col minV maxV : rest) (ValidatedCSV header csv) =
    doFilters rest $ ValidatedCSV header $
-     filter ((\x -> read x >= minV && read x <= maxV) . mkPrj header col) csv   
+     filter ((\x -> read x >= minV && read x <= maxV) . mkPrj header col) csv
 
 -- | Everything else we ignore:
 doFilters (_ : rest) dat = doFilters rest dat
 
 mkPrj :: (Show b, Eq b) => [b] -> b -> [a] -> a
-mkPrj header col = 
+mkPrj header col =
   case elemIndex col header of
     Just ix -> \row ->
-      -- trace ("Dereferencing: !!0"++show(row,ix)) $ 
+      -- trace ("Dereferencing: !!0"++show(row,ix)) $
       row !! ix
-    Nothing -> error $ show col ++ " is not present in csv." 
+    Nothing -> error $ show col ++ " is not present in csv."
 
 
 doPadding :: [(String,Int)] -> ValidatedCSV -> ValidatedCSV
@@ -1191,20 +1192,20 @@ doPadding ls (ValidatedCSV header csv) =
                                 loop rest rows
    mkPadder :: ColName -> Int -> CSV.Record -> CSV.Record
    mkPadder col padto =
-     let padit s = 
+     let padit s =
            -- Make sure it is a number we are padding
           case reads s of
              [(n,"")] -> let s' = show (n::Integer)
                          in replicate (padto - length s') '0' ++ s'
              _ -> error $ "attempting to --pad something not an integer: "++s
-         
-           in 
+
+           in
      case elemIndex col header of
-       Just ix -> \row ->         
+       Just ix -> \row ->
          let row' = take (ix) row ++ [padit (row !! ix)] ++ drop (ix+1) row
          in -- trace ("PADDING ROW "++col++" at index "++ show ix++": "++show row')
             row'
-       Nothing -> error $ show col ++ " is not present in csv." 
+       Nothing -> error $ show col ++ " is not present in csv."
 
 -- | Resolve groups of rows that share the same key
 takeLatest :: [ColName] -> ColName -> ValidatedCSV -> ValidatedCSV
@@ -1224,7 +1225,7 @@ compareStrDoubles a b =
     ((n,_):_,(m,_):_) -> compare (n::Double) m
     _ -> error $ "compareStrDoubles: expected both of these to parse as Double: "++ show (a,b)
 
--- | Sort the rows by a certain column.  
+-- | Sort the rows by a certain column.
 sortCSVBy :: ColName -> (String -> String -> Ordering) -> ValidatedCSV -> ValidatedCSV
 sortCSVBy col fn ValidatedCSV{header,rows} = ValidatedCSV header rows'
 -- This does seem to get into needless reimplementation of DB functionality...
@@ -1244,7 +1245,7 @@ toKeyedGroups keys ValidatedCSV{header,rows} =
   loop !mp (row:rest) =
     let mp' = M.insertWith' (++) (combineFields keyIxs row) [row] mp in
     loop mp' rest
-         
+
 -- Project multiple rows and put them together in a human readable way:
 combineFields :: [Int] -> [CSV.Field] -> Key
 combineFields ixs row = Key $ concat $ intersperse "_" $ filter (/="") $
@@ -1252,13 +1253,13 @@ combineFields ixs row = Key $ concat $ intersperse "_" $ filter (/="") $
 
 -- | Collapse keyed groups back down to a flat list of rows, in no
 -- particular order.
-fromKeyedGroups :: KeyedCSV -> ValidatedCSV 
-fromKeyedGroups KeyedCSV{kheader,krows} = 
+fromKeyedGroups :: KeyedCSV -> ValidatedCSV
+fromKeyedGroups KeyedCSV{kheader,krows} =
   ValidatedCSV kheader (M.fold (++) [] krows)
 
 -- | Make sure that each row has the right number of columns ad discard blank lines.
 --   Remove any whitespace around header column names.
--- 
+--
 --   If the ValidatedCSV constructor is stripped off and this is
 --   reapplied, then this function must be idempotent.
 validateCSV :: CSV.CSV -> ValidatedCSV
@@ -1271,7 +1272,7 @@ validateCSV (header:csv) = ValidatedCSV (map strip header) (loop (2::Int) csv)
    loop p ([]:rest) = loop (p+1) rest -- Discard blank
    -- Ok, this is kind of weird... Text.CSV parses a trailing blank line
    -- as having one field of zero size:
-   loop p ([""]:rest) = loop (p+1) rest 
+   loop p ([""]:rest) = loop (p+1) rest
    loop pos (row:rest)
      | length row == numCols = row : loop (pos+1) rest
      | otherwise = error $ "error in validateCSV: encountered on row #"++ show pos
@@ -1281,7 +1282,7 @@ validateCSV (header:csv) = ValidatedCSV (map strip header) (loop (2::Int) csv)
 
 -- | Summarize each column
 printSummary :: ValidatedCSV -> IO ()
-printSummary ValidatedCSV{header,rows} = do 
+printSummary ValidatedCSV{header,rows} = do
   chatter "Printing summary of each column:"
   hPutStrLn stderr "   --------------------------------------------------------------------------------"
   forM_ rotated $ \ (hdr:vals) -> do
@@ -1307,14 +1308,14 @@ readDbl :: String -> Double
 readDbl s =
   case reads s of
     (d,_):_ -> d
-    _ -> error $ "Could not parse string as a Double: "++s    
+    _ -> error $ "Could not parse string as a Double: "++s
 
 readInt :: String -> Int
 readInt s =
   case reads s of
     (x,_):_ -> x
     _ -> error $ "Could not parse string as an Int: "++s
-    
+
 (#) :: (Ord k,Show k) => M.Map k v -> k -> v
 m # k = case M.lookup k m of
           Just x -> x
