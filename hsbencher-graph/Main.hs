@@ -179,7 +179,7 @@ data Flag = ShowHelp
           -- | AuxY    String -- column with aux y value
   deriving (Eq,Ord,Show)
 
-data ValueSpec = ValueSpec { valkey :: Key, valX :: SeriesData }
+data ValueSpec = ValueSpec { valkey :: Key, valX :: SeriesDatum }
   deriving (Eq,Ord,Show)
 
 -- | A ValueSpec is a comma separated list of COL=VAL settings.  E.g. "THREADS=1,VARIANT=foo"
@@ -247,7 +247,7 @@ parseFilterRange s =
 parseValueSpec :: String -> ValueSpec
 parseValueSpec s =
    case splitOn universalSeparator s of
-     [linekey,xval] -> ValueSpec (Key linekey) (toSeriesData xval)
+     [linekey,xval] -> ValueSpec (Key linekey) (toSeriesDatum xval)
      _ -> error$ "not a valid POINT for --ratio/--inverse-ratio: "++s
 
 parseAssigns :: String -> [(String,String)]
@@ -430,12 +430,12 @@ fullUsageInfo = usageInfo docs core_cli_options
 ---------------------------------------------------------------------------
 -- Data representations
 ---------------------------------------------------------------------------
-data SeriesData = IntData Int
-                | NumData Double
-                | StringData String
+data SeriesDatum = IntData Int
+                 | NumData Double
+                 | StringData String
                   deriving (Show, Eq, Read)
 
-instance Ord SeriesData where
+instance Ord SeriesDatum where
  IntData x <= IntData y = x <= y
  NumData x <= NumData y = x <= y
  IntData x <= NumData y = fromIntegral x <= y
@@ -443,22 +443,22 @@ instance Ord SeriesData where
  StringData x <= _ = error $ "Ord: cannot compare string data: "++ x
  _ <= StringData y = error $ "Ord: cannot compare string data: "++ y
 
-convertToString :: SeriesData -> String
+convertToString :: SeriesDatum -> String
 convertToString (IntData x) = (show x)
 convertToString (NumData x) = (show x)
 convertToString (StringData a) = a
 
-isNum :: SeriesData -> Bool
+isNum :: SeriesDatum -> Bool
 isNum (NumData _) = True
 isNum _ = False
 
-seriesType :: SeriesData -> ValueType
+seriesType :: SeriesDatum -> ValueType
 seriesType (IntData _) = Int
 seriesType (NumData _) = Double
 seriesType (StringData _) = String
 
 class FromData a where
-  fromData :: SeriesData -> a
+  fromData :: SeriesDatum -> a
 
 instance FromData Double where
   fromData (NumData a) = a
@@ -479,7 +479,7 @@ instance FromData String where
 
 -- | These correspond to lines in the plot: named progressions of (x,y) pairs.
 type DataSeries = M.Map Key [LinePoint]
-data LinePoint = LinePoint { x::SeriesData, y::SeriesData, err::ErrorVal }
+data LinePoint = LinePoint { x::SeriesDatum, y::SeriesDatum, err::ErrorVal }
   deriving (Eq,Show,Ord,Read)
 
 insertVal :: DataSeries -> Key -> LinePoint -> DataSeries
@@ -705,7 +705,7 @@ main = do
                               ", with this output format: "++show outFormat
 
 -- | Operate only on the Y data
-onY :: (SeriesData -> SeriesData) -> LinePoint -> LinePoint
+onY :: (SeriesDatum -> SeriesDatum) -> LinePoint -> LinePoint
 onY fn lp@LinePoint{y} = lp { y = fn y }
 
 ---------------------------------------------------------------------------
@@ -717,7 +717,7 @@ writeCSV :: PlotConfig -> [(Key, [LinePoint])] -> IO ()
 -- Assumes a shared and sensible X axis for all data series.
 writeCSV PlotConfig{..} series = do
   -- ASSUMPTION: we assume a sensible Ord instance for
-  -- SeriesData... that makes possible unfair assumptions about
+  -- SeriesDatum... that makes possible unfair assumptions about
   -- "deriving":
   let allKeys = map convertToString $
                 S.toAscList $ S.fromList $ concatMap ((map x) . snd) series
@@ -841,10 +841,10 @@ buildGnuplot PlotConfig{plotTitle, plotXLabel, plotYLabel, plotXLog, plotYLog, p
 
 
 #ifdef USECHART
-plotIntInt :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
+plotIntInt :: PlotConfig -> [(Key, [(SeriesDatum, SeriesDatum)])] -> IO ()
 plotIntInt conf series = error "hsbencher-graph: plotIntInt not implemented!"
 
-plotIntDouble :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
+plotIntDouble :: PlotConfig -> [(Key, [(SeriesDatum, SeriesDatum)])] -> IO ()
 plotIntDouble conf  series = do
   let fopts = Cairo.FileOptions (plotResolution conf)
                                 (convToFileFormat (plotOutFormat conf))
@@ -910,7 +910,7 @@ plotIntDouble conf  series = do
       plot_points_style . point_border_color .= color
       plot_points_style . point_radius .= 2
 
-plotDoubleDouble :: PlotConfig -> [(Key, [(SeriesData, SeriesData)])] -> IO ()
+plotDoubleDouble :: PlotConfig -> [(Key, [(SeriesDatum, SeriesDatum)])] -> IO ()
 plotDoubleDouble = error "hsbencher-graph: plotDoubleDouble not implemented!!"
 
 #endif
@@ -926,11 +926,11 @@ unifyTypes (name,series) =
       ys' = unify ys
   in (name, zipWith3 LinePoint xs' ys' errs)
   where
-    isString :: SeriesData -> Bool
+    isString :: SeriesDatum -> Bool
     isString (StringData _) = True
     isString _ = False
 
-    isInt :: SeriesData -> Bool
+    isInt :: SeriesDatum -> Bool
     isInt (IntData _) = True
     isInt _ = False
 
@@ -1008,7 +1008,7 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
                           loop  xy (m,aux) restRows
             ("",a)  -> do chatter$ "has no x value: " ++ show key ++ " Goes into aux data."
                           let aux' = insertVal aux key (LinePoint{ x= StringData "NO_X_VALUE"
-                                                             , y= toSeriesData a
+                                                             , y= toSeriesDatum a
                                                              , err=NoError })
                           loop  xy (m,aux') restRows
             (_a,"") -> do chatter$ "has no y value: " ++ show key ++ " discarding."
@@ -1019,8 +1019,8 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
                                  Just (ErrMinMax mn mx) ->
                                    MinMaxVal (readDbl$ collectVal (getIx mn) csv)
                                              (readDbl$ collectVal (getIx mx) csv)
-                           m' = insertVal m key (LinePoint { x= toSeriesData x
-                                                       , y= toSeriesData y
+                           m' = insertVal m key (LinePoint { x= toSeriesDatum x
+                                                       , y= toSeriesDatum y
                                                        , err=e
                                                        })
                        in  loop  xy (m',aux) restRows
@@ -1033,8 +1033,8 @@ extractData keys (xcol,ycol,errcols) (ValidatedCSV header rest) =
       -- trace ("Dereferencing !!2: "++show(csv,ix)) $
       csv !! ix
 
-toSeriesData :: String -> SeriesData
-toSeriesData x =
+toSeriesDatum :: String -> SeriesDatum
+toSeriesDatum x =
     case recogValueType x of
       Int    -> IntData (read x)
       Double -> NumData (read x)
@@ -1099,7 +1099,7 @@ mapPoints f ((k,lps):xs) = (k, L.map f lps) : mapPoints f xs
 
 -- | Find the value that matches a given predicate (ValueSpec).  Error
 -- if there is more than one.  Return the "Y" coordinate of the selected point.
-findVal :: ValueSpec -> MultilineDataset -> SeriesData
+findVal :: ValueSpec -> MultilineDataset -> SeriesDatum
 findVal (ValueSpec linekey xval) allLines =
     case candidates of
       [LinePoint{y}] -> y
