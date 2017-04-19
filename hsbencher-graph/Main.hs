@@ -78,19 +78,59 @@ data ValidatedCSV =
                   , rows   :: [CSV.Record]
                   }
 
+-- | A single validated row, not a whole table.  But like
+-- ValidatedCSV, this includes the header information.
+data ValidatedRow = ValidatedRow { row_header :: [CSV.Field]
+                                 , row_contents :: CSV.Record }
+
+-- | If a CSV is filtered down to one row, cast it to a row.
+fromSingleton :: ValidatedCSV -> Maybe ValidatedRow
+fromSingleton ValidatedCSV{header, rows=[x]} = Just (ValidatedRow header x)
+fromSingleton _ = Nothing
+
 -- | Groups of rows chunked together by "key"
 data KeyedCSV =
      KeyedCSV { keys    :: [ColName]
               , kheader :: [CSV.Field]
               , krows   :: M.Map Key [CSV.Record] }
 
--- | A combination of fields, e.g. A_B_C, stored as a String.
-newtype Key = Key String  deriving (Eq,Ord)
-instance Show Key where
-    show (Key s) = show s
+-- Keys
+--------------------------------------------------------------------------------           
 
-fromKey :: Key -> String
-fromKey (Key s) = s
+-- | A combination of field values, printed as A_B_C, stored as a String.
+data Key = Key [(ColName,CSV.Field)] deriving (Eq,Ord)
+instance Show Key where
+  show (Key ls) = keyPrint $ L.map fst ls
+
+-- | A key as displayed to the user, in A_B_C printed form.
+type RenderedKey = String
+         
+-- newtype Key = Key String  deriving (Eq,Ord)
+-- instance Show Key where
+--     show (Key s) = show s
+
+-- | Project the designated key fields out of a row, yielding a Key.
+toKey :: [ColName] -> ValidatedRow -> Key
+toKey = undefined
+
+-- | Parse a key given the names of the key fields and the printed
+-- A_B_C representation of the key values.
+parseKey :: [ColName] -> String -> Key
+parseKey cols str =
+    Key (fragileZipWith (\ x y -> (x,y)) cols (splitOn "_" str))
+
+
+-- | Encode the policy for printing keys in a human readable way.
+keyPrint :: [String] -> String
+keyPrint = concat . intersperse "_" . filter (/="")
+
+-- | Project multiple rows and put them together in a human readable way:
+combineFields :: [Int] -> [CSV.Field] -> Key
+combineFields = undefined
+-- combineFields ixs row = Key $ keyPrinter $ map (\i -> row !! i) ixs
+
+--------------------------------------------------------------------------------           
+
 
 type ColName = String
 
@@ -163,9 +203,9 @@ data Flag = ShowHelp
           | NormaliseKey String
             -- ^ Normalize against a line, produce a factor plot.
 
-          | Ratio        ValueSpec
+          | Ratio        NormValueSpec
             -- ^ Normalize against a single value: a single line point.
-          | InverseRatio ValueSpec
+          | InverseRatio NormValueSpec
             -- ^ Normalize against a single value: a single line point.
 
           -- TODO: More general way to map simple functions over points.
@@ -179,11 +219,14 @@ data Flag = ShowHelp
           -- | AuxY    String -- column with aux y value
   deriving (Eq,Ord,Show)
 
-data ValueSpec = ValueSpec { valkey :: Key, valX :: SeriesDatum }
-  deriving (Eq,Ord,Show)
+-- data ValueSpec = ValueSpec { valkey :: Key, valX :: SeriesDatum }
+--   deriving (Eq,Ord,Show)
 
--- | A ValueSpec is a comma separated list of COL=VAL settings.  E.g. "THREADS=1,VARIANT=foo"
--- type ValueSpec = [(String,String)]
+-- | A ValueSpec is a comma-separated list of COL=VAL settings, or COL
+-- entries by themselves.  COL=VAL is a filter, whereas COL alone
+-- indicates a GROUPBY, where different values of COL receive different normalization values
+data NormValueSpec = NormValueSpec [(ColName, Maybe String)]
+  deriving (Eq,Ord,Show)
 
 -- This is all a bit unfortunate.
 data MyFileFormat = MySVG | MyPNG | MyPDF | MyPS
@@ -244,12 +287,24 @@ parseFilterRange s =
  where
    err = error $ "--filtRange argument expected a column and two numbers separated by commas, not: "++s
 
-parseValueSpec :: String -> ValueSpec
-parseValueSpec s =
+parseNormValueSpec :: String -> NormValueSpec
+parseNormValueSpec s =
    case splitOn universalSeparator s of
-     [linekey,xval] -> ValueSpec (Key linekey) (toSeriesDatum xval)
-     _ -> error$ "not a valid POINT for --ratio/--inverse-ratio: "++s
+     ls -> NormValueSpec [ parse x | x <- ls ]
+ where
+   parse str =
+       case splitOn "=" str of
+         [col]     -> (col,Nothing)
+         [col,val] -> (col,Just val)
+         _ -> error$ "not a valid spec for --ratio/--inverse-ratio: "++str
+          
+-- parseValueSpec :: String -> ValueSpec
+-- parseValueSpec s =
+--    case splitOn universalSeparator s of
+--      [linekey,xval] -> ValueSpec (Key linekey) (toSeriesDatum xval)
+--      _ -> error$ "not a valid POINT for --ratio/--inverse-ratio: "++s
 
+          
 parseAssigns :: String -> [(String,String)]
 parseAssigns s0 = [ case splitOn "=" assn of
                         [lhs,rhs] -> (lhs,rhs)
@@ -376,7 +431,7 @@ core_cli_options =
                       , "The KEY must be a string, e.g. \"A_B_C\" where A B and C "
                       , "are values for the --key columns, in order."
                       , "This KEY identifies which line is the baseline." ])
-     , Option []    ["ratio"] (ReqArg (Ratio . parseValueSpec) "POINT")
+     , Option []    ["ratio"] (ReqArg (Ratio . parseNormValueSpec) "POINT")
                      (unlines
                       ["Report the ratio of each datapoint divided by a constant. "
                       ,"The constant normalization value is selected by POINT. "
@@ -385,7 +440,7 @@ core_cli_options =
                       ,"so as to select a line (see --factor), and VAL is the X-value "
                       ,"that selects which point (Y value) on the line becomes "
                       ,"the normalization constant."])
-     , Option []    ["inverse-ratio"] (ReqArg (InverseRatio . parseValueSpec) "POINT")
+     , Option []    ["inverse-ratio"] (ReqArg (InverseRatio . parseNormValueSpec) "POINT")
                      ("The inverse of --ratio.  That is, report a "++
                       "constant divided by each datapoint, respectively." ++
                       "The constant normalization value is selected by POINT, formatted as in --ratio."++
@@ -565,9 +620,9 @@ main = do
                 listToMaybe [file | OutFile file <- reverse options]
 
   --------------------------------------------------
-  -- Get keys
+  -- Get keys, in order
   let hasKey  = (not . null) [ () | KeyCol _ <- options]
-      key =
+      keyCols =
         case hasKey of
           False -> error "No key specified"
           True  -> [ q | KeyCol q <- options]
@@ -631,10 +686,11 @@ main = do
   let dat1 = validateCSV dat0
       dat2 = doFilters options dat1
       dat3 = doPadding [ (c,n) | Pad c n <- options ] dat2
+      dat4 :: ValidatedCSV
       dat4 = case [ c | Latest c <- options] of
                []  -> dat3
                [c] -> -- Here we must not collapse variation in the X axis:
-                      takeLatest (fst3 xyerr : key) c dat3
+                      takeLatest (fst3 xyerr : keyCols) c dat3
                ls  -> error $ "Error: More than one --latest provided: "++show ls
   chatter $ "After validation, read total rows: " ++ show (length (rows dat1))
   _ <- evaluate (force (rows dat4))  -- Flush out error messages.
@@ -646,7 +702,8 @@ main = do
 
   unless (null [ () | Summary <- options ]) $ printSummary dat4
 
-  (csv,aux) <- extractData key xyerr dat4
+  -- Now for the LOSSY step where we project out just what we care to plot:
+  (csv,aux) <- extractData keyCols xyerr dat4
   chatter $ "Data series extracted, number of lines: " ++ show (M.size csv)
 
   chatter$ "Here is a sample of the CSV before renaming and normalization:\n" ++
@@ -665,24 +722,27 @@ main = do
       series_type = typecheck series2
 
       -- normalise values against this datapoint
-      normKey = Key $ head [nom | NormaliseKey nom <- options]
-
-      -- base = getBaseVal normKey csv aux
-      -- RRN: Why would we look this up in "aux"?
-      base = csv # normKey -- The entire data series which we normalize against.
-
+      normKey = let [x] = [nom | NormaliseKey nom <- options] in
+                parseKey keyCols x
+      base = csv # normKey -- The entire data series which we normalize against
+        
       plot_series0 =
+          let (_,ycol,_) = xyerr in
           case normaliseKeyFlags ++ ratioFlags ++ inverseRatioFlags of
             [NormaliseKey{}] -> normalise base series2
-            [Ratio whichval]        -> let val = fromData (findVal whichval series2) in
-                                       mapPoints (\pt -> onY (\y -> NumData (fromData y / val)) pt) series2
-            [InverseRatio whichval] -> let val = fromData (findVal whichval series2) in
-                                       mapPoints (\pt -> onY (\y-> NumData (val/fromData y)) pt)  series2
+            [Ratio whichval] -> mapPoints (\ky pt -> let val = fromData (findNorm (ky,ycol) whichval dat4) in
+                                            onY (\y -> NumData (fromData y / val)) pt)
+                                          series2
+            [InverseRatio whichval] -> mapPoints
+                                       (\ky pt -> let val = fromData (findNorm (ky,ycol) whichval dat4) in
+                                                  onY (\y-> NumData (val/fromData y)) pt)
+                                       series2
+
             [] -> series2
             ls -> error $ "Expected only one of --factor, --ratio, --inverse-ratio, got:\n"++show ls
 
       renamer = buildRenamer renameTable
-      plot_series :: [(Key, [LinePoint])]
+      plot_series :: [(RenderedKey, [LinePoint])]
       plot_series = [ (renamer nm,dat) | (nm,dat) <- plot_series0 ]
 
   chatter$ "Inferred types for X/Y axes: "++show series_type
@@ -713,7 +773,7 @@ onY fn lp@LinePoint{y} = lp { y = fn y }
 
 
 -- | Don't produce an actual chart, rather write out the data as CSV.
-writeCSV :: PlotConfig -> [(Key, [LinePoint])] -> IO ()
+writeCSV :: PlotConfig -> [(RenderedKey, [LinePoint])] -> IO ()
 -- Assumes a shared and sensible X axis for all data series.
 writeCSV PlotConfig{..} series = do
   -- ASSUMPTION: we assume a sensible Ord instance for
@@ -723,7 +783,7 @@ writeCSV PlotConfig{..} series = do
                 S.toAscList $ S.fromList $ concatMap ((map x) . snd) series
       -- Format:  all data columns before all error columns:
       header = [plotXLabel] ++ yCols ++ yErrs
-      yCols  = map (fromKey . fst) series
+      yCols  = map (show . fst) series
       yErrs  = case plotErrorCols of
                  Nothing -> []
                  Just (ErrDelta _)    -> map (++"_Err")     yCols
@@ -966,7 +1026,7 @@ typecheck dat =
 --
 -- Note: This is in the IO monad only to produce chatter.
 --
--- Returns: 1. the good data series.
+-- Returns: 1. the good data series, extracted line data ZIPPED with the original rows.
 --          2. the misfits - bad rows that had Y values but were missing X values.
 extractData :: [ColName] -> (ColName,ColName,Maybe ErrorCols)
             -> ValidatedCSV -> IO (DataSeries,DataSeries)
@@ -1093,11 +1153,40 @@ getBaseVal normKey csv aux =
 type MultilineDataset = [(Key,[LinePoint])]
 
 -- | Simpler than normalise, this just operates pointwise on the data.
-mapPoints :: (LinePoint -> LinePoint) -> MultilineDataset -> MultilineDataset
+mapPoints :: (Key -> LinePoint -> LinePoint) -> MultilineDataset -> MultilineDataset
 mapPoints _ [] = []
-mapPoints f ((k,lps):xs) = (k, L.map f lps) : mapPoints f xs
+mapPoints f ((k,lps):xs) = (k, L.map (f k)  lps) : mapPoints f xs
 
--- | Find the value that matches a given predicate (ValueSpec).  Error
+-- | Find the normalization value that matches a given line
+-- represented by Key. Takes the Y-column name as well as key which it
+-- uses to extract out the Y value form the selected normalization point.
+-- 
+-- This assumes that all the points on a given
+-- line use the same normalization factor, rather than something
+-- dynamic that depends on the X axis.
+findNorm :: (Key,ColName) -> NormValueSpec -> ValidatedCSV -> SeriesDatum
+findNorm (Key kls, xcol) nvs0@(NormValueSpec nls0) vcsv0 =
+    go nls0 vcsv0
+  where
+    filtered = filterWithSpec nvs0 vcsv0  
+    go [] vcsv =
+       case fromSingleton vcsv of
+             Nothing -> error ("findNorm not enough information in spec: "++show nls++
+                               "\nDid not filter down to a single row for the normalization value.\n"++
+                               "Instead it left "++show (length (rows vcsv)++":\n "++show vcsv))
+    go ((col,mstr):nls) vcsv = 
+      undefined
+
+-- | Use the filters implied by a NormValueSpec to cut down the data in a CSV.
+--   Requires a designated Key, because NormValueSpec's are relative to an /observer/.
+--   Filters mentioned in the NormValueSpec which don't have a concrete value (RHS), implicitly
+--   filter to use the same value as the current key.
+filterWithSpec :: Key -> NormValueSpec -> ValidatedCSV -> ValidatedCSV
+filterWithSpec = undefined
+
+
+{-                           
+-- | Find the value that matches a given predicate (NormValueSpec).  Error
 -- if there is more than one.  Return the "Y" coordinate of the selected point.
 findVal :: ValueSpec -> MultilineDataset -> SeriesDatum
 findVal (ValueSpec linekey xval) allLines =
@@ -1114,6 +1203,7 @@ findVal (ValueSpec linekey xval) allLines =
                  , k == linekey
                  , lp@LinePoint{x} <- lps
                  , x == xval ]
+-}
 
 -- | Normalize a set of lines against their respective normalization values.
 --   This requires equal-length, isomorphic data series.
@@ -1139,19 +1229,19 @@ normalise base0 lns
     --             ++ "Baseline ran out to soon.  Points remaining"
     --              ++ show p2
 
-
 replace :: Eq a => [a] -> [a] -> [a] -> [a]
 replace old new = intercalate new . splitOn old
 
 -- | A list of "OLD,NEW" mappings.
 type RenameTable = [String]
 
-buildRenamer :: RenameTable -> Key -> Key
-buildRenamer [] = id
+-- | A renamer operates on the printed representation of the key.
+buildRenamer :: RenameTable -> Key -> String
+buildRenamer [] = show
 buildRenamer (ln:rest) =
   case (splitOn "," ln) of
-    [lhs,rhs] -> \ (Key str) -> buildRenamer rest
-                                 (Key $ replace lhs rhs str)
+    [lhs,rhs] -> \ key -> replace lhs rhs $
+                          buildRenamer rest key
     _ -> error ("Bad line in rename table: "++ ln)
 
 fromValidated :: ValidatedCSV -> CSV.CSV
@@ -1174,6 +1264,9 @@ doFilters (FilterRange col minV maxV : rest) (ValidatedCSV header csv) =
 -- | Everything else we ignore:
 doFilters (_ : rest) dat = doFilters rest dat
 
+                           
+                           
+-- | Build a projection function that looks up a given key.
 mkPrj :: (Show b, Eq b) => [b] -> b -> [a] -> a
 mkPrj header col =
   case elemIndex col header of
@@ -1246,10 +1339,8 @@ toKeyedGroups keys ValidatedCSV{header,rows} =
     let mp' = M.insertWith' (++) (combineFields keyIxs row) [row] mp in
     loop mp' rest
 
--- Project multiple rows and put them together in a human readable way:
-combineFields :: [Int] -> [CSV.Field] -> Key
-combineFields ixs row = Key $ concat $ intersperse "_" $ filter (/="") $
-                        map (\i -> row !! i) ixs
+         
+        
 
 -- | Collapse keyed groups back down to a flat list of rows, in no
 -- particular order.
@@ -1331,3 +1422,4 @@ fragileZipWith fn l1 l2 = go l1 l2
                 ++take 500 (show bs)
    go as [] = error $ "fragileZipWith: right list ran out first.  Remaining:\n "
                 ++take 500 (show as)
+
