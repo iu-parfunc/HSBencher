@@ -1256,7 +1256,7 @@ buildRenamer (ln:rest) =
     _ -> 
      case (splitOn "," ln) of
        [lhs,rhs] -> \ key ->
-                    trace ("Renaming "++show (lhs,rhs)++" in "++show key)$
+--                    trace ("Renaming "++show (lhs,rhs)++" in "++show key)$
                     replace lhs rhs $
                     buildRenamer rest key
        _ -> error ("Bad line in rename table: "++ ln)
