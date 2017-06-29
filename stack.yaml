@@ -48,8 +48,6 @@ extra-deps:
 # See stack issue https://github.com/commercialhaskell/stack/issues/1340
 local-bin-path: ./bin/
 
-system-ghc: false
-
 # flags:
 #  aeson:
 #    old-locale: false
@@ -60,3 +58,12 @@ system-ghc: false
 resolver: lts-5.16
 
 # allow-newer: true
+
+system-ghc: false
+
+# Required for nix:
+# system-ghc: true
+nix:
+  enable: false
+  pure: true
+  shell-file: shell.nix

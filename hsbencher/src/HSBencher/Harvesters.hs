@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Support for Tag harvesters.  `Tags` are keywords like "SELFTIMED"
 -- that HSBencher recognizes in benchmark output.  In particular,
@@ -32,6 +33,7 @@ module HSBencher.Harvesters
         ) where
 
 import           Data.Monoid
+import           Data.Typeable
 import           Data.ByteString.Char8 as B
 import           Data.Char (isAlpha, isAlphaNum, isSpace)
 import qualified Data.List as L
@@ -227,7 +229,8 @@ harvest_RETRIES = (taggedLineHarvester "RETRIES" (\d r -> r{ _RETRIES = d }))
 --  Lines without the specified tag are ignored.  Lines which have the
 --  tag but have an unparseable value on the RHS result in an error.
 --
-taggedLineHarvester :: Read a => B.ByteString -> (a -> BenchmarkResult -> BenchmarkResult) -> LineHarvester
+taggedLineHarvester :: forall a . (Typeable a, Read a) =>
+                       B.ByteString -> (a -> BenchmarkResult -> BenchmarkResult) -> LineHarvester
 taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
   let fail = (id, False) in
   case fromTaggedLine ln of
@@ -237,7 +240,8 @@ taggedLineHarvester tag stickit = LineHarvester $ \ ln ->
       case reads rhs of
         (val,_):_ -> (stickit val, True)
         _ -> error$ "[taggedLineHarvester] Error: line tagged with "
-                  ++B.unpack tag++", but couldn't parse number: "++B.unpack ln
+                  ++B.unpack tag++", but couldn't parse at type "
+                  ++show (typeOf (undefined::a))++": "++ rhs
     _ -> fail
 
 
@@ -324,7 +328,8 @@ customAccumHarvesterDouble = accumHarvester DoubleResult
 customAccumHarvesterString :: String -> LineHarvester
 customAccumHarvesterString = accumHarvester StringResult
 
-accumHarvester :: Read a => (a -> SomeResult) -> String -> LineHarvester
+accumHarvester :: (Typeable a, Read a) =>
+                  (a -> SomeResult) -> String -> LineHarvester
 accumHarvester ctr tag =
   taggedLineHarvester (pack tag) $ \s r ->
             r {
