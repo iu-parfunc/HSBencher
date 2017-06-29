@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Simple application to parse logs.
 
@@ -13,9 +14,11 @@ import           Data.Maybe
 import           Data.Default 
 import           Data.List as L
 import           Data.Monoid
+import           Data.Char (ord)
 import           Data.List.Split (splitWhen)
 -- import qualified Data.ByteString.Lazy.Char8 as BS
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.Text as T
 import           Prelude as P hiding (log)
 import           Text.Show.Pretty (ppShow)
 
@@ -134,15 +137,16 @@ getSelfTimed (x:xs) =
      -- ["time","12.47","ns","(12.41","ns","..","12.58","ns)"]
      ["time",num,unit,_,_,"..",_,_] -> 
         case reads (BS.unpack num) of
-          ((n,_):_) ->
-             (case unit of
-               "ns"    -> n * 1000 * 1000 * 1000
-               "\956s" -> n * 1000 * 1000        -- μs
-               "μs"    -> n * 1000 * 1000        -- μs
-               "ms"    -> n * 1000       
-               "s"     -> n
-               _ -> error$ "Internal error, hack to read criterion output didn't recognize unit: "
-                         ++ BS.unpack unit
+          ((n::Double,_):_) ->
+             (case BS.unpack unit of
+               "ns"        -> n / (1000 * 1000 * 1000)
+               "\956s"     -> n / (1000 * 1000)     -- μs
+               "\206\188s" -> n / (1000 * 1000) -- μs - HACK need to use Text instead of Bytestring.
+               "μs"        -> n / (1000 * 1000)
+               "ms"        -> n / 1000
+               "s"         -> n
+               oth -> error$ "Internal error, hack to read criterion output didn't recognize unit: "
+                         ++ oth ++"\nThat is,. "++show oth++" with character numbers: "++ show (map ord oth)
                          ++ "\n Within line: "++BS.unpack x)
              : getSelfTimed xs
           [] -> error $ "Could not read numeric time value from apparent criterion output: "
