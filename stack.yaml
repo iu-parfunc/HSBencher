@@ -55,7 +55,8 @@ local-bin-path: ./bin/
 # [2015.12.23] Running into problems.  See DEVLOG
 # resolver: lts-3.11
 # resolver: lts-3.5
-resolver: lts-5.16
+# resolver: lts-5.16
+resolver: lts-8.6
 
 # allow-newer: true
 

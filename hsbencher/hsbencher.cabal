@@ -219,7 +219,7 @@ Library
                    HSBencher.Internal.MeasureProcess
   other-modules: Paths_hsbencher
   build-depends:
-      base >= 4.5 && < 4.9, base-orphans, bytestring, process >= 1.2,
+      base >= 4.5, base-orphans, bytestring, process >= 1.2,
       directory, filepath, random, unix, containers, time, mtl,
       async >= 2.0,
       io-streams >= 1.1,
