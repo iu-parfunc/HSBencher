@@ -58,7 +58,8 @@ local-bin-path: ./bin/
 # resolver: lts-5.16
 resolver: lts-8.6
 
-# allow-newer: true
+# GHC 8: simple-sql-parser upper bound on base
+allow-newer: true
 
 system-ghc: false
 
